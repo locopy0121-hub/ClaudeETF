@@ -34,6 +34,15 @@ object Fmt {
 
     fun price(v: Double): String = num(v, 2)
 
+    /** 毫秒 → 台灣時間；今天顯示 HH:mm，其他日期顯示 M/d HH:mm */
+    fun time(ms: Long): String {
+        val tpe = java.time.ZoneId.of("Asia/Taipei")
+        val t = java.time.Instant.ofEpochMilli(ms).atZone(tpe)
+        val today = java.time.LocalDate.now(tpe)
+        val pattern = if (t.toLocalDate() == today) "HH:mm" else "M/d HH:mm"
+        return t.format(java.time.format.DateTimeFormatter.ofPattern(pattern))
+    }
+
     fun shares(v: Double): String =
         if (abs(v - Math.rint(v)) < 1e-9) num(v, 0) else DecimalFormat("#,##0.####", symbols).format(v)
 }

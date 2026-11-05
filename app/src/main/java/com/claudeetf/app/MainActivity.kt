@@ -23,6 +23,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -31,6 +34,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.claudeetf.app.data.AppState
+import com.claudeetf.app.data.MarketData
+import com.claudeetf.app.util.UsSession
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.claudeetf.app.ui.Routes
 import com.claudeetf.app.ui.screens.AddTradeScreen
 import com.claudeetf.app.ui.screens.AlertsScreen
@@ -52,6 +59,18 @@ class MainActivity : ComponentActivity() {
         AppState.init(applicationContext)
         setContent {
             AppTheme { AppRoot() }
+        }
+        // App 在前景時自動更新行情：交易時段每分鐘、其餘每 15 分鐘
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (true) {
+                    runCatching { MarketData.refreshAll() }
+                    val usOpen = UsSession.info().phase.let {
+                        it == UsSession.Phase.PRE || it == UsSession.Phase.REGULAR || it == UsSession.Phase.POST
+                    }
+                    delay(if (usOpen || MarketData.isTwIntraday()) 60_000L else 15 * 60_000L)
+                }
+            }
         }
     }
 }

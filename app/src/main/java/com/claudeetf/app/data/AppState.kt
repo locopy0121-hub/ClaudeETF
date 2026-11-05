@@ -4,11 +4,14 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import org.json.JSONObject
+import com.claudeetf.app.data.remote.RemoteQuote
 import kotlin.math.max
 
 /**
@@ -32,6 +35,19 @@ object AppState {
         private set
     var hideAmounts by mutableStateOf(false)
 
+    /** 使用者自行填入的 API 金鑰（自動儲存在本機） */
+    var fugleKey by mutableStateOf("")
+        private set
+    var finnhubKey by mutableStateOf("")
+        private set
+    var refreshing by mutableStateOf(false)
+    var fxSource by mutableStateOf("手動輸入")
+        private set
+    var fxUpdatedAt by mutableLongStateOf(0L)
+        private set
+    /** 各市場最近一次更新結果，key：TW / US / FX */
+    val sourceStatus = mutableStateMapOf<String, String>()
+
     val quotes = mutableStateListOf<Quote>().apply { addAll(SampleData.quotes) }
     val holdings = mutableStateListOf<Holding>()
     val trades = mutableStateListOf<Trade>()
@@ -50,6 +66,18 @@ object AppState {
         dividendTwYtd = p.getFloat("divTw", 61_300f).toDouble()
         dividendUsGrossYtd = p.getFloat("divUs", 1_120.73f).toDouble()
         cashTwd = p.getFloat("cash", 164_000f).toDouble()
+        fugleKey = p.getString("fugleKey", "") ?: ""
+        finnhubKey = p.getString("finnhubKey", "") ?: ""
+        fxSource = p.getString("fxSource", "手動輸入") ?: "手動輸入"
+        fxUpdatedAt = p.getLong("fxUpdatedAt", 0L)
+
+        p.getString("quotes", null)?.let { json ->
+            val saved = parseQuotes(json)
+            if (saved.isNotEmpty()) {
+                quotes.clear()
+                quotes.addAll(saved)
+            }
+        }
 
         holdings.clear()
         val savedHoldings = p.getString("holdings", null)
@@ -83,6 +111,11 @@ object AppState {
             .putString("holdings", holdingsJson())
             .putString("trades", tradesJson())
             .putString("alerts", alerts.filter { it.enabled }.joinToString(",") { it.id.toString() })
+            .putString("fugleKey", fugleKey)
+            .putString("finnhubKey", finnhubKey)
+            .putString("fxSource", fxSource)
+            .putLong("fxUpdatedAt", fxUpdatedAt)
+            .putString("quotes", quotesJson())
             .apply()
     }
 
@@ -133,6 +166,76 @@ object AppState {
         return pricePart to fxPart
     }
 
+    // ---------- 行情資料 ----------
+
+    fun updateFugleKey(key: String) {
+        fugleKey = key.trim()
+        save()
+    }
+
+    fun updateFinnhubKey(key: String) {
+        finnhubKey = key.trim()
+        save()
+    }
+
+    fun setStatus(market: String, text: String) {
+        sourceStatus[market] = text
+    }
+
+    /** 把遠端報價合併進清單（保留 ETF 標記與基本面） */
+    fun applyRemote(rq: RemoteQuote, source: QuoteSource, now: Long, persist: Boolean = false) {
+        val i = quotes.indexOfFirst { it.symbol.equals(rq.symbol, ignoreCase = true) }
+        if (i < 0) return
+        val old = quotes[i]
+        // 沒有逐筆走勢時，用 昨收→開盤→低/高→高/低→現價 畫出當日輪廓
+        val up = rq.price >= rq.prevClose
+        val spark = listOfNotNull(
+            rq.prevClose, rq.open,
+            if (up) rq.low else rq.high,
+            if (up) rq.high else rq.low,
+            rq.price,
+        ).map { it.toFloat() }
+        quotes[i] = old.copy(
+            name = if (old.name == old.symbol && rq.name != null) rq.name else old.name,
+            price = rq.price,
+            prevClose = rq.prevClose,
+            spark = spark,
+            source = source,
+            updatedAt = now,
+        )
+        if (persist) save()
+    }
+
+    fun setFx(mid: Double, source: String, now: Long) {
+        if (mid <= 0) return
+        usdTwd = Math.round(mid * 1000) / 1000.0
+        fxSource = source
+        fxUpdatedAt = now
+        save()
+    }
+
+    fun persist() = save()
+
+    fun isWatched(symbol: String) = quote(symbol) != null
+
+    /** 加入自選；台股代號以數字開頭 */
+    fun addWatch(symbol: String, name: String? = null): Boolean {
+        val s = symbol.trim().uppercase()
+        if (s.isEmpty() || quote(s) != null) return false
+        val market = if (s.first().isDigit()) Market.TW else Market.US
+        quotes.add(Quote(s, name ?: s, market, 0.0, 0.0, isEtf = market == Market.TW && s.startsWith("00")))
+        save()
+        return true
+    }
+
+    /** 移出自選（仍有持股的不移除） */
+    fun removeWatch(symbol: String): Boolean {
+        if (holdings.any { it.symbol.equals(symbol, true) }) return false
+        val removed = quotes.removeAll { it.symbol.equals(symbol, true) }
+        if (removed) save()
+        return removed
+    }
+
     // ---------- 動作 ----------
 
     fun updateColorMode(mode: ColorMode) {
@@ -143,6 +246,7 @@ object AppState {
     fun updateUsdTwd(value: Double) {
         if (value > 0) {
             usdTwd = value
+            fxSource = "手動輸入"
             save()
         }
     }
@@ -220,6 +324,38 @@ object AppState {
     }
 
     // ---------- JSON ----------
+
+    private fun quotesJson(): String = JSONArray().apply {
+        quotes.forEach {
+            put(
+                JSONObject().put("s", it.symbol).put("n", it.name).put("m", it.market.name)
+                    .put("p", it.price).put("pc", it.prevClose).put("etf", it.isEtf)
+                    .put("src", it.source.name).put("t", it.updatedAt)
+                    .put("sp", JSONArray(it.spark.map { v -> v.toDouble() }))
+            )
+        }
+    }.toString()
+
+    private fun parseQuotes(json: String): List<Quote> = runCatching {
+        val arr = JSONArray(json)
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            val sym = o.getString("s")
+            val sp = o.optJSONArray("sp")
+            Quote(
+                symbol = sym,
+                name = o.optString("n", sym),
+                market = Market.valueOf(o.optString("m", "US")),
+                price = o.optDouble("p", 0.0),
+                prevClose = o.optDouble("pc", 0.0),
+                isEtf = o.optBoolean("etf", false),
+                spark = if (sp == null) emptyList() else (0 until sp.length()).map { sp.getDouble(it).toFloat() },
+                stats = SampleData.quotes.firstOrNull { it.symbol == sym }?.stats,
+                source = runCatching { QuoteSource.valueOf(o.optString("src", "SAMPLE")) }.getOrDefault(QuoteSource.SAMPLE),
+                updatedAt = o.optLong("t", 0L),
+            )
+        }
+    }.getOrDefault(emptyList())
 
     private fun holdingsJson(): String = JSONArray().apply {
         holdings.forEach {

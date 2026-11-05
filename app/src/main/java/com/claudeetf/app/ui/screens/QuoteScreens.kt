@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,6 +27,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.claudeetf.app.data.AppState
+import com.claudeetf.app.data.MarketData
+import com.claudeetf.app.data.QuoteSource
+import kotlinx.coroutines.launch
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.Quote
 import com.claudeetf.app.ui.*
@@ -39,6 +43,8 @@ fun WatchlistScreen(nav: NavController) {
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val session = rememberUsSession()
+    val scope = rememberCoroutineScope()
+    var addMsg by remember { mutableStateOf<String?>(null) }
     val list = AppState.quotes.filter { q ->
         when (filter) {
             1 -> q.market == Market.TW
@@ -50,6 +56,9 @@ fun WatchlistScreen(nav: NavController) {
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("自選行情") {
+            IconButton(onClick = { scope.launch { MarketData.refreshAll() } }, enabled = !AppState.refreshing) {
+                Icon(Icons.Filled.Refresh, contentDescription = "更新行情", tint = if (AppState.refreshing) C.Muted else C.Text)
+            }
             IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
                 Icon(if (searching) Icons.Filled.Close else Icons.Filled.Search, contentDescription = "搜尋", tint = C.Text)
             }
@@ -62,6 +71,22 @@ fun WatchlistScreen(nav: NavController) {
                     placeholder = { Text("輸入代號或名稱，例如 2330、AAPL") },
                     colors = fieldColors(),
                 )
+                val q = query.trim().uppercase()
+                if (q.isNotEmpty() && !AppState.isWatched(q) && q.all { it.isLetterOrDigit() || it == '.' }) {
+                    Text(
+                        "＋ 加入自選：$q",
+                        color = C.Primary, fontSize = 14.sp,
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Card)
+                            .clickable {
+                                scope.launch {
+                                    addMsg = MarketData.addAndFetch(q) ?: "已加入 $q"
+                                    query = ""
+                                }
+                            }
+                            .padding(14.dp),
+                    )
+                }
+                addMsg?.let { Label(it) }
             }
             Segmented(listOf("全部", "台股", "美股", "ETF"), filter, { filter = it })
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -116,17 +141,21 @@ fun QuoteRow(q: Quote, onClick: () -> Unit) {
             Text(q.name, color = C.Text, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MarketTag(q.market); HGap(6.dp); NumText(q.symbol, 12.sp, C.Muted)
+                HGap(6.dp); Text(sourceText(q.source, q.updatedAt), color = C.Muted, fontSize = 10.sp, maxLines = 1)
             }
         }
         Sparkline(q.spark, Trend.fg(q.change), Modifier.size(width = 60.dp, height = 24.dp))
         HGap(10.dp)
         Column(Modifier.widthIn(min = 96.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            NumText(Fmt.price(q.price), 15.sp)
+            NumText(if (q.price > 0) Fmt.price(q.price) else "—", 15.sp)
             ChangePill(q.changePct)
         }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
 }
+
+fun sourceText(src: QuoteSource, at: Long): String =
+    if (at == 0L) src.label else src.label + " " + Fmt.time(at)
 
 @Composable
 fun fieldColors() = OutlinedTextFieldDefaults.colors(
@@ -161,6 +190,12 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar(q.symbol, onBack = { nav.popBackStack() }) {
+            val held = AppState.holdings.any { it.symbol == q.symbol }
+            if (!held) {
+                IconButton(onClick = { if (AppState.removeWatch(q.symbol)) nav.popBackStack() }) {
+                    Icon(Icons.Filled.Close, contentDescription = "移出自選", tint = C.Muted)
+                }
+            }
             IconButton(onClick = { nav.navigate(Routes.ALERTS) }) {
                 Icon(Icons.Filled.Notifications, contentDescription = "設定提醒", tint = C.Text)
             }
@@ -194,6 +229,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                     } else {
                         Label(twStatus())
                     }
+                    Label("資料：" + sourceText(q.source, q.updatedAt))
                 }
             }
             item { Segmented(listOf("1日", "5日", "1月", "6月", "1年", "5年"), range, { range = it }) }
@@ -217,9 +253,10 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                                 KeyValue("52 週低", s.low52); KeyValue("下次財報", s.nextEarnings)
                             }
                         }
+                        Label("基本面為示意資料，下一版接上資料來源", Modifier.padding(top = 6.dp))
                     }
                 } else {
-                    Label("此區塊將在接上即時資料來源後顯示（第二階段）", Modifier.padding(vertical = 16.dp))
+                    Label("此區塊將在下一版接上資料來源後顯示", Modifier.padding(vertical = 16.dp))
                 }
             }
             if (holding != null) {

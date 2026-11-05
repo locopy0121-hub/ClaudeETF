@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -23,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +36,8 @@ import androidx.navigation.NavController
 import com.claudeetf.app.data.AppState
 import com.claudeetf.app.data.IndexQuote
 import com.claudeetf.app.data.Market
+import com.claudeetf.app.data.MarketData
+import kotlinx.coroutines.launch
 import com.claudeetf.app.data.SampleData
 import com.claudeetf.app.ui.Card
 import com.claudeetf.app.ui.Dot
@@ -65,10 +69,14 @@ fun HomeScreen(nav: NavController) {
     val usUsd = AppState.holdingsOf(Market.US).sumOf { AppState.marketValue(it) }
     val session = rememberUsSession()
     var range by remember { mutableIntStateOf(1) }
+    val scope = rememberCoroutineScope()
     val trend = SampleData.perfMine.takeLast(listOf(4, 6, 8, 10, 12)[range])
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("總覽") {
+            IconButton(onClick = { scope.launch { MarketData.refreshAll() } }, enabled = !AppState.refreshing) {
+                Icon(Icons.Filled.Refresh, contentDescription = "更新行情", tint = if (AppState.refreshing) C.Muted else C.Text)
+            }
             IconButton(onClick = { AppState.hideAmounts = !AppState.hideAmounts }) {
                 Icon(Icons.Filled.Lock, contentDescription = "隱藏金額", tint = if (AppState.hideAmounts) C.Primary else C.Text)
             }
@@ -128,6 +136,16 @@ fun HomeScreen(nav: NavController) {
                     HGap(8.dp)
                     Text("美股 " + session.phase.label, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
                     Label("收盤 ${session.closeTw}（${if (session.isDst) "夏令" else "冬令"}）›")
+                }
+            }
+            item {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Card)
+                        .clickable { nav.navigate(Routes.SETTINGS) }.padding(12.dp),
+                ) {
+                    Label("台股：" + MarketData.twSourcePlan())
+                    Label("美股：" + (if (AppState.finnhubKey.isBlank()) "尚未填 Finnhub 金鑰 ›" else (AppState.sourceStatus["US"] ?: "Finnhub")))
+                    Label("匯率：" + AppState.fxSource + (if (AppState.fxUpdatedAt > 0) " " + Fmt.time(AppState.fxUpdatedAt) else ""))
                 }
             }
             val idx = listOf(SampleData.twIndices[0]) + SampleData.usIndices.filter {

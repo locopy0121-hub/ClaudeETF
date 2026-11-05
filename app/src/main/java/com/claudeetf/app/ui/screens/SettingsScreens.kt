@@ -18,12 +18,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.claudeetf.app.BuildConfigInfo
 import com.claudeetf.app.data.AppState
 import com.claudeetf.app.data.ColorMode
+import com.claudeetf.app.data.MarketData
+import kotlinx.coroutines.launch
 import com.claudeetf.app.ui.*
 import com.claudeetf.app.ui.theme.C
 
@@ -87,6 +91,7 @@ fun AlertsScreen(nav: NavController) {
 @Composable
 fun SettingsScreen(nav: NavController) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var fxText by remember { mutableStateOf(AppState.usdTwd.toString()) }
     val version = remember { BuildConfigInfo.versionName(context) }
 
@@ -99,9 +104,66 @@ fun SettingsScreen(nav: NavController) {
             item {
                 Card(padding = 14.dp) {
                     Text("資料存在本機", color = C.Text, fontSize = 15.sp)
-                    Label("持股 ${AppState.holdings.size} 檔 · 交易紀錄 ${AppState.trades.size} 筆")
+                    Label("持股 ${AppState.holdings.size} 檔 · 自選 ${AppState.quotes.size} 檔 · 交易紀錄 ${AppState.trades.size} 筆")
                 }
             }
+
+            item { Group("行情資料來源") }
+            item {
+                Card(padding = 14.dp) {
+                    Text("台股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Label("盤中優先使用富果即時行情；盤後、未填金鑰或富果失敗時，自動改用證交所 OpenAPI 收盤資料（上櫃股票用櫃買中心）。")
+                    KeyField(
+                        label = "富果 Fugle API 金鑰",
+                        initial = AppState.fugleKey,
+                        onSave = { AppState.updateFugleKey(it) },
+                        onTest = { MarketData.testFugle(it) },
+                    )
+                    Label("目前來源：" + MarketData.twSourcePlan())
+                    AppState.sourceStatus["TW"]?.let { Label("最近更新：$it", color = C.Text2) }
+                }
+            }
+            item {
+                Card(padding = 14.dp) {
+                    Text("美股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Label("使用 Finnhub 報價（免費方案每分鐘 60 次）。")
+                    KeyField(
+                        label = "Finnhub API 金鑰",
+                        initial = AppState.finnhubKey,
+                        onSave = { AppState.updateFinnhubKey(it) },
+                        onTest = { MarketData.testFinnhub(it) },
+                    )
+                    AppState.sourceStatus["US"]?.let { Label("最近更新：$it", color = C.Text2) }
+                }
+            }
+            item {
+                Card(padding = 14.dp) {
+                    Text("美元匯率 USD/TWD", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Label("目前 " + AppState.usdTwd + "（" + AppState.fxSource + "）")
+                    AppState.sourceStatus["FX"]?.let { Label(it, color = C.Text2) }
+                    OutlinedTextField(
+                        value = fxText,
+                        onValueChange = {
+                            fxText = it
+                            it.toDoubleOrNull()?.let { v -> AppState.updateUsdTwd(v) }
+                        },
+                        label = { Text("手動輸入（下次自動更新時會被台銀匯率取代）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        colors = fieldColors(),
+                    )
+                }
+            }
+            item {
+                PrimaryButton(if (AppState.refreshing) "更新中…" else "立即更新全部行情") {
+                    scope.launch {
+                        MarketData.refreshAll()
+                        fxText = AppState.usdTwd.toString()
+                    }
+                }
+            }
+
             item { Group("顯示") }
             item {
                 Card(padding = 14.dp) {
@@ -118,23 +180,6 @@ fun SettingsScreen(nav: NavController) {
                     }
                 }
             }
-            item {
-                Card(padding = 14.dp) {
-                    Text("美元匯率 USD/TWD", color = C.Text, fontSize = 14.sp)
-                    OutlinedTextField(
-                        value = fxText,
-                        onValueChange = {
-                            fxText = it
-                            it.toDoubleOrNull()?.let { v -> AppState.updateUsdTwd(v) }
-                        },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        colors = fieldColors(),
-                    )
-                    Label("第二階段會自動抓台灣銀行即期牌告；目前可手動輸入")
-                }
-            }
             item { SettingRow("美股時間", "台灣時間・自動夏冬令") }
             item { Group("帳戶與手續費") }
             item { SettingRow("台股手續費", "0.1425%（最低 20 元）") }
@@ -143,9 +188,72 @@ fun SettingsScreen(nav: NavController) {
             item { SettingRow("提醒中心", "${AppState.alerts.count { it.enabled }} 項開啟 ›") { nav.navigate(Routes.ALERTS) } }
             item { Group("關於") }
             item { SettingRow("版本", version) }
-            item { SettingRow("資料來源", "示意資料（第二階段接即時行情）") }
+            item { Label("金鑰只存在這支手機，不會上傳到其他地方。", Modifier.padding(4.dp)) }
         }
     }
+}
+
+/** API 金鑰輸入：打字即自動儲存，可顯示／隱藏與測試連線 */
+@Composable
+private fun KeyField(
+    label: String,
+    initial: String,
+    onSave: (String) -> Unit,
+    onTest: suspend (String) -> String,
+) {
+    val scope = rememberCoroutineScope()
+    var text by remember { mutableStateOf(initial) }
+    var show by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = {
+            text = it
+            onSave(it)
+            result = null
+        },
+        label = { Text(label) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+        visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        trailingIcon = {
+            Text(
+                if (show) "隱藏" else "顯示", color = C.Primary, fontSize = 12.sp,
+                modifier = Modifier.clickable { show = !show }.padding(12.dp),
+            )
+        },
+        colors = fieldColors(),
+    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (testing) "測試中…" else "測試連線",
+            color = if (text.isBlank()) C.Muted else C.Primary, fontSize = 13.sp,
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .clickable(enabled = text.isNotBlank() && !testing) {
+                    testing = true
+                    scope.launch {
+                        result = onTest(text)
+                        testing = false
+                    }
+                }
+                .padding(horizontal = 4.dp, vertical = 10.dp),
+        )
+        HGap(10.dp)
+        Label(if (text.isBlank()) "尚未填寫" else "已自動儲存", Modifier.weight(1f))
+    }
+    result?.let { Text(it, color = if (it.startsWith("連線成功")) C.Primary else C.Red, fontSize = 12.sp) }
+}
+
+@Composable
+fun PrimaryButton(text: String, onClick: () -> Unit) {
+    Box(
+        Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(12.dp)).background(C.Primary)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = C.OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
 }
 
 @Composable
