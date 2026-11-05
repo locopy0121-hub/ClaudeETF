@@ -34,6 +34,13 @@ import com.claudeetf.app.data.Holding
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.SampleData
 import com.claudeetf.app.data.TaxKind
+import com.claudeetf.app.data.Analytics
+import com.claudeetf.app.data.CalendarEvent
+import com.claudeetf.app.data.CalendarRepo
+import com.claudeetf.app.data.EventKind
+import com.claudeetf.app.data.TradeOrigin
+import com.claudeetf.app.data.remote.friendly
+import androidx.compose.material.icons.filled.Refresh
 import com.claudeetf.app.data.TaxRules
 import com.claudeetf.app.data.Trade
 import com.claudeetf.app.data.TradeType
@@ -367,26 +374,40 @@ private fun Field(
 
 @Composable
 fun DividendScreen(nav: NavController) {
+    val year = LocalDate.now().year
     val gross = AppState.dividendUsGrossYtd
     val usNet = gross * 0.7
     val usNetTwd = usNet * AppState.usdTwd
     val total = AppState.dividendTwYtd + usNetTwd
-    val months = SampleData.monthlyDividendK
-    val maxK = months.max()
+    val months = Analytics.monthlyDividends(year)
+    val maxV = months.maxOrNull()?.takeIf { it > 0 } ?: 1.0
+    val divTrades = AppState.trades.filter { it.type == TradeType.DIVIDEND && it.origin != TradeOrigin.LEGACY }
+    var upcoming by remember { mutableStateOf<Load<List<CalendarEvent>>>(Load.Loading) }
+    LaunchedEffect(Unit) {
+        upcoming = runCatching {
+            val held = AppState.holdings.map { it.symbol }.toSet()
+            CalendarRepo.load().filter { it.kind == EventKind.DIVIDEND && it.isHolding }
+                .filter { e -> held.any { e.title.startsWith(it + " ") } }
+        }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+    }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
-        TopBar("股息與稅務", onBack = { nav.popBackStack() })
+        TopBar("股息與稅務", onBack = { nav.popBackStack() }) {
+            IconButton(onClick = { nav.navigate(Routes.trade()) }) {
+                Icon(Icons.Filled.Add, contentDescription = "記錄股息", tint = C.Text)
+            }
+        }
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
                 Card(padding = 14.dp) {
-                    Label(LocalDate.now().year.toString() + " 累計實收股息（TWD）")
+                    Label("$year 累計實收股息（TWD）")
                     NumText(mask(Fmt.num(total)), 26.sp, weight = FontWeight.Bold)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         MarketTag(Market.TW); HGap(6.dp)
-                        Text("台股", Modifier.weight(1f), color = C.Text, fontSize = 12.sp)
+                        Text("台股（扣二代健保後）", Modifier.weight(1f), color = C.Text, fontSize = 12.sp)
                         NumText("NT$" + mask(Fmt.num(AppState.dividendTwYtd)), 12.sp)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -400,47 +421,54 @@ fun DividendScreen(nav: NavController) {
             }
             item {
                 Card(padding = 14.dp) {
-                    SectionTitle("每月股息（千元）", "最後一格為預估")
-                    Row(
-                        Modifier.fillMaxWidth().height(110.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.Bottom,
-                    ) {
-                        months.forEachIndexed { i, v ->
-                            val last = i == months.lastIndex
-                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(
-                                    Modifier.fillMaxWidth().height((v / maxK * 86f).dp)
-                                        .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                                        .then(
-                                            if (last) Modifier.border(1.5.dp, C.Primary, RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                                            else Modifier.background(C.Primary)
-                                        )
-                                )
-                                Text("${i + 1}", color = C.Muted, fontSize = 10.sp)
+                    SectionTitle("$year 每月股息", "依交易紀錄")
+                    if (months.all { it == 0.0 }) {
+                        Label("今年還沒有記錄股息。在「持股 › 記一筆」選「股息」即可記錄。")
+                    } else {
+                        Row(
+                            Modifier.fillMaxWidth().height(110.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            months.forEachIndexed { i, v ->
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(
+                                        Modifier.fillMaxWidth().height((v / maxV * 86).toFloat().dp)
+                                            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)).background(C.Primary)
+                                    )
+                                    Text("${i + 1}", color = C.Muted, fontSize = 10.sp)
+                                }
                             }
+                        }
+                        Label("最高 " + mask("NT$" + Fmt.num(maxV)) + " · 平均每月 " + mask("NT$" + Fmt.num(months.sum() / 12)))
+                    }
+                }
+            }
+            item { SectionTitle("持股即將除息", "取自財經行事曆") }
+            when (val u = upcoming) {
+                is Load.Loading -> item { Label("載入中…") }
+                is Load.Err -> item { Label("無法取得：" + u.message) }
+                is Load.Ok -> {
+                    if (u.value.isEmpty()) item { Label("未來 120 天沒有已公布的除息日") }
+                    items(u.value) { e ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Text(e.dateLabel, Modifier.width(110.dp), color = C.Text2, fontSize = 13.sp)
+                            Text(e.title, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
                         }
                     }
                 }
             }
-            item { SectionTitle("即將除息・配息", "日期為預估") }
-            items(SampleData.upcomingDividends) { d ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(
-                        Modifier.width(48.dp).clip(RoundedCornerShape(10.dp)).background(C.Card2).padding(vertical = 5.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+            if (divTrades.isNotEmpty()) {
+                item { SectionTitle("股息紀錄", "實收（台幣）") }
+                items(divTrades.take(20)) { t ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { nav.navigate(Routes.trade(t.symbol, t.id)) }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Label(d.dateTop)
-                        NumText(d.dateMain, 16.sp, weight = FontWeight.Bold)
+                        Label(t.date, Modifier.width(90.dp))
+                        Text(t.symbol + " " + (AppState.quote(t.symbol)?.name ?: ""), Modifier.weight(1f), color = C.Text, fontSize = 13.sp, maxLines = 1)
+                        NumText(mask("NT$" + Fmt.num(AppState.dividendById[t.id] ?: 0.0)), 13.sp)
                     }
-                    HGap(10.dp)
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(d.title, color = C.Text, fontSize = 14.sp); HGap(6.dp); MarketTag(d.market)
-                        }
-                        Label(d.detail)
-                    }
-                    NumText(d.amount, 14.sp)
                 }
             }
             item {
@@ -457,61 +485,112 @@ fun DividendScreen(nav: NavController) {
 
 // ============================== 績效分析 ==============================
 
-private fun sectorOf(symbol: String): String = when (symbol) {
-    "2330", "NVDA" -> "半導體"
-    "0050", "VOO" -> "市值型 ETF"
-    "AAPL", "MSFT" -> "科技硬體／軟體"
-    "00878" -> "高股息 ETF"
-    else -> "其他"
+private fun sectorOf(symbol: String): String {
+    val q = AppState.quote(symbol)
+    return when {
+        q == null -> "其他"
+        q.isEtf || symbol.startsWith("00") -> when (TaxRules.kindOf(symbol)) {
+            TaxKind.TW_ETF_BOND -> "債券 ETF"
+            TaxKind.TW_ETF_OVERSEAS -> "海外 ETF"
+            TaxKind.TW_ETF_OPTION -> "收益型 ETF"
+            else -> if (q.market == Market.US) "美國 ETF" else "台股 ETF"
+        }
+        q.market == Market.US -> "美股個股"
+        else -> "台股個股"
+    }
 }
 
 @Composable
 fun AnalysisScreen(nav: NavController) {
-    var range by remember { mutableIntStateOf(1) }
+    var range by remember { mutableIntStateOf(2) }
     var allocBy by remember { mutableIntStateOf(0) }
+    var reload by remember { mutableIntStateOf(0) }
     val (pricePart, fxPart) = AppState.usPnlBreakdown()
     val usTotal = pricePart + fxPart
     val mv = AppState.totalMarketValueTwd()
-    val alloc: List<Pair<String, Double>> = when (allocBy) {
+    val cost = AppState.totalCostTwd()
+    val xirr = remember(AppState.trades.size) { Analytics.xirr() }
+    var bt by remember { mutableStateOf<Load<Analytics.Backtest>>(Load.Loading) }
+    LaunchedEffect(reload) {
+        bt = Load.Loading
+        bt = runCatching { Analytics.backtest(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+    }
+    val alloc: List<Pair<String, Double>> = if (mv <= 0) emptyList() else when (allocBy) {
         0 -> AppState.holdings.groupBy { sectorOf(it.symbol) }
             .map { (k, v) -> k to v.sumOf { AppState.marketValueTwd(it) } / mv * 100 }
         1 -> listOf(
             "台股" to AppState.totalMarketValueTwd(Market.TW) / mv * 100,
             "美股" to AppState.totalMarketValueTwd(Market.US) / mv * 100,
         )
-        else -> AppState.holdings.map { it.symbol to AppState.marketValueTwd(it) / mv * 100 }
+        else -> AppState.holdings.map { (AppState.quote(it.symbol)?.name ?: it.symbol) to AppState.marketValueTwd(it) / mv * 100 }
     }.sortedByDescending { it.second }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
-        TopBar("績效分析", onBack = { nav.popBackStack() })
+        TopBar("績效分析", onBack = { nav.popBackStack() }) {
+            IconButton(onClick = { reload++ }) { Icon(Icons.Filled.Refresh, contentDescription = "重新計算", tint = C.Text) }
+        }
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { Segmented(listOf("今年", "1年", "3年", "全部"), range, { range = it }) }
             item {
                 Card(padding = 14.dp) {
                     Row {
-                        Stat("期間報酬", "+18.4%", Modifier.weight(1f))
-                        Stat("年化 XIRR", "+14.8%", Modifier.weight(1f))
-                        Stat("勝過 0050", "+1.5%", Modifier.weight(1f))
+                        Stat("未實現報酬", Fmt.pct(if (cost > 0) (mv - cost) / cost * 100 else 0.0), Modifier.weight(1f), mv - cost)
+                        Stat("今年已實現", mask(Fmt.signed(AppState.realizedTwdYtd)), Modifier.weight(1f), AppState.realizedTwdYtd)
+                        Stat("年化 XIRR", xirr?.let { Fmt.pct(it, 1) } ?: "—", Modifier.weight(1f), xirr ?: 0.0)
                     }
-                    Label("報酬率為示意，接上完整交易紀錄後自動計算")
+                    if (xirr == null) Label("XIRR 需要完整且有日期的交易紀錄（不含期初持股），且最早一筆距今超過 30 天。")
                 }
             }
-            item {
-                Card(padding = 14.dp) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Legend(C.Primary, "我的 +18.4%"); Legend(C.Tw, "0050 +16.9%"); Legend(C.Us, "SPY +15.2%")
+            item { SectionTitle("持股回測 vs 大盤", "以目前持股回推") }
+            item { Segmented(listOf("1月", "3月", "6月", "1年"), range, { range = it }) }
+            when (val b = bt) {
+                is Load.Loading -> item { Label("下載各持股一年歷史價格中…", Modifier.padding(vertical = 20.dp)) }
+                is Load.Err -> item { Text("回測失敗：" + b.message, color = C.Red, fontSize = 13.sp) }
+                is Load.Ok -> {
+                    val r = b.value
+                    val days = listOf(31L, 92L, 183L, 366L)[range]
+                    val cutoff = LocalDate.now().minusDays(days)
+                    val from = r.dates.indexOfFirst { !it.isBefore(cutoff) }.coerceAtLeast(0)
+                    fun rebase(v: List<Float>): List<Float> {
+                        if (v.size <= from) return emptyList()
+                        val base = 1 + v[from] / 100
+                        return v.drop(from).map { ((1 + it / 100) / base - 1) * 100 }
                     }
-                    MultiLine(
-                        listOf(
-                            Triple(SampleData.perfSpy, C.Us, true),
-                            Triple(SampleData.perf0050, C.Tw, false),
-                            Triple(SampleData.perfMine, C.Primary, false),
-                        ),
-                        Modifier.fillMaxWidth().height(130.dp),
-                    )
+                    val mine = rebase(r.mine)
+                    val tw = rebase(r.tw50)
+                    val spy = rebase(r.spy)
+                    item {
+                        Card(padding = 14.dp) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Legend(C.Primary, "我的 " + Fmt.pct((mine.lastOrNull() ?: 0f).toDouble(), 1))
+                                Legend(C.Tw, "0050 " + Fmt.pct((tw.lastOrNull() ?: 0f).toDouble(), 1))
+                                if (spy.isNotEmpty()) Legend(C.Us, "SPY " + Fmt.pct((spy.last()).toDouble(), 1))
+                            }
+                            MultiLine(
+                                listOfNotNull(
+                                    if (spy.isNotEmpty()) Triple(spy, C.Us, true) else null,
+                                    Triple(tw, C.Tw, false),
+                                    Triple(mine, C.Primary, false),
+                                ),
+                                Modifier.fillMaxWidth().height(140.dp),
+                            )
+                            Row {
+                                Label(r.dates.getOrNull(from)?.toString() ?: "", Modifier.weight(1f))
+                                Label(r.dates.lastOrNull()?.toString() ?: "")
+                            }
+                            Label("以目前持股數量套用歷史收盤價計算，美股以目前匯率換算；不含期間買賣與股息。")
+                            if (r.missing.isNotEmpty()) Label("缺少歷史價格：" + r.missing.joinToString("、"), color = C.Red)
+                        }
+                    }
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MiniStat("最大回撤（1年）", Fmt.num(r.maxDrawdownPct, 1) + "%", Modifier.weight(1f))
+                            MiniStat("年化波動", Fmt.num(r.volPct, 1) + "%", Modifier.weight(1f))
+                            MiniStat("夏普值", Fmt.num(r.sharpe, 2), Modifier.weight(1f))
+                        }
+                    }
                 }
             }
             item {
@@ -520,7 +599,7 @@ fun AnalysisScreen(nav: NavController) {
                         Text("美股損益拆解（TWD）", Modifier.weight(1f), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         NumText(mask(Fmt.signed(usTotal)), 14.sp, Trend.fg(usTotal))
                     }
-                    if (usTotal > 0 && pricePart > 0 && fxPart > 0) {
+                    if (pricePart > 0 && fxPart > 0) {
                         StackBar(listOf(pricePart.toFloat() to C.Primary, fxPart.toFloat() to C.Tw))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -533,7 +612,8 @@ fun AnalysisScreen(nav: NavController) {
             item {
                 Card(padding = 14.dp) {
                     Text("配置", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Segmented(listOf("產業", "市場", "個股"), allocBy, { allocBy = it }, background = C.Bg)
+                    Segmented(listOf("類型", "市場", "個股"), allocBy, { allocBy = it }, background = C.Bg)
+                    if (alloc.isEmpty()) Label("目前沒有持股")
                     alloc.forEach { (name, pct) ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(name, Modifier.width(110.dp), color = C.Text, fontSize = 12.sp, maxLines = 1)
@@ -545,22 +625,15 @@ fun AnalysisScreen(nav: NavController) {
                     }
                 }
             }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MiniStat("最大回撤", "−12.3%", Modifier.weight(1f))
-                    MiniStat("年化波動", "18.6%", Modifier.weight(1f))
-                    MiniStat("夏普值", "0.92", Modifier.weight(1f))
-                }
-            }
         }
     }
 }
 
 @Composable
-private fun Stat(label: String, value: String, modifier: Modifier) {
+private fun Stat(label: String, value: String, modifier: Modifier, sign: Double = 1.0) {
     Column(modifier) {
         Label(label)
-        NumText(value, 18.sp, Trend.fg(1.0), FontWeight.Bold)
+        NumText(value, 17.sp, Trend.fg(sign), FontWeight.Bold)
     }
 }
 

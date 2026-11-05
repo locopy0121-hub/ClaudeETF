@@ -20,6 +20,8 @@ import android.Manifest
 import android.os.Build
 import com.claudeetf.app.alerts.AlertEngine
 import com.claudeetf.app.data.AlertType
+import com.claudeetf.app.data.Backup
+import com.claudeetf.app.data.TradeCsv
 import com.claudeetf.app.util.Fmt
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -278,6 +280,9 @@ fun SettingsScreen(nav: NavController) {
             item { Group("帳本") }
             item { LedgerCard() }
 
+            item { Group("備份與匯入") }
+            item { DataCard() }
+
             item { Group("顯示") }
             item {
                 Card(padding = 14.dp) {
@@ -430,4 +435,93 @@ private fun LedgerCard() {
         )
         msg?.let { Label(it, color = C.Primary) }
     }
+}
+
+private fun readText(context: android.content.Context, uri: android.net.Uri): String? = runCatching {
+    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+    val utf = bytes.toString(Charsets.UTF_8)
+    // 台灣券商對帳單常用 Big5，UTF-8 解碼出現亂碼時改用 Big5
+    if (utf.contains('\uFFFD')) String(bytes, java.nio.charset.Charset.forName("Big5")) else utf
+}.getOrNull()
+
+private fun writeText(context: android.content.Context, uri: android.net.Uri, text: String): Boolean = runCatching {
+    context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) } != null
+}.getOrDefault(false)
+
+@Composable
+private fun DataCard() {
+    val context = LocalContext.current
+    var msg by remember { mutableStateOf<String?>(null) }
+    var pending by remember { mutableStateOf<TradeCsv.ParseResult?>(null) }
+    var restoreText by remember { mutableStateOf<String?>(null) }
+
+    val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) msg = if (writeText(context, uri, Backup.export(context))) "備份已儲存" else "備份失敗"
+    }
+    val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val t = readText(context, uri)
+            if (t == null) msg = "無法讀取檔案" else restoreText = t
+        }
+    }
+    val exportCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) msg = if (writeText(context, uri, TradeCsv.export(AppState.trades.toList()))) "交易 CSV 已匯出" else "匯出失敗"
+    }
+    val openCsv = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val t = readText(context, uri)
+            if (t == null) msg = "無法讀取檔案" else pending = TradeCsv.parse(t, AppState.usdTwd)
+        }
+    }
+
+    Card(padding = 14.dp) {
+        Text("完整備份", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Label("交易、帳本、自選、提醒、稅務設定與淨值紀錄存成一個檔案。存檔時選 Google 雲端硬碟即可雲端備份；API 金鑰不會匯出。")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SmallButton("匯出備份", Modifier.weight(1f)) { exportBackup.launch(Backup.fileName("json")) }
+            SmallButton("從備份還原", Modifier.weight(1f)) { openBackup.launch(arrayOf("application/json", "text/plain", "*/*")) }
+        }
+        restoreText?.let { text ->
+            Text("還原會取代手機上目前的所有資料，確定嗎？", color = C.Red, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallButton("確定還原", Modifier.weight(1f)) {
+                    val err = Backup.import(context, text)
+                    msg = err ?: "已還原備份"
+                    restoreText = null
+                }
+                SmallButton("取消", Modifier.weight(1f)) { restoreText = null }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
+        Text("交易 CSV", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Label("可匯入券商對帳單：第一列為標題，需有「日期、代號、股數、價格」，可選「類別（買進／賣出／股息）、手續費、交易稅、匯率、備註」。日期支援 2025/11/05、2025-11-05、114/11/05。先匯出一次就能當範本。")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SmallButton("匯入 CSV", Modifier.weight(1f)) { openCsv.launch(arrayOf("text/*", "application/vnd.ms-excel", "*/*")) }
+            SmallButton("匯出 CSV", Modifier.weight(1f)) { exportCsv.launch(Backup.fileName("csv")) }
+        }
+        pending?.let { r ->
+            Text("讀到 ${r.trades.size} 筆交易" + if (r.errors.isNotEmpty()) "，${r.errors.size} 列無法辨識" else "", color = C.Text, fontSize = 13.sp)
+            r.errors.take(5).forEach { Label(it, color = C.Red) }
+            r.trades.take(3).forEach { t -> Label(t.date + " " + t.type.label + " " + t.symbol + " " + Fmt.shares(t.shares) + " 股 × " + Fmt.price(t.price)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (r.trades.isNotEmpty()) {
+                    SmallButton("匯入 ${r.trades.size} 筆", Modifier.weight(1f)) {
+                        val err = AppState.importTrades(r.trades)
+                        msg = err?.let { "匯入失敗：$it" } ?: "已匯入 ${r.trades.size} 筆交易"
+                        pending = null
+                    }
+                }
+                SmallButton("取消", Modifier.weight(1f)) { pending = null }
+            }
+        }
+        msg?.let { Label(it, color = C.Primary) }
+    }
+}
+
+@Composable
+private fun SmallButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.height(44.dp).clip(RoundedCornerShape(10.dp)).background(C.Selected).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = C.Text, fontSize = 13.sp) }
 }

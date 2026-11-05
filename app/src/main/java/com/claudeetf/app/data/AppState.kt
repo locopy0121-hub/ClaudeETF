@@ -80,6 +80,8 @@ object AppState {
         fxSource = p.getString("fxSource", "手動輸入") ?: "手動輸入"
         fxUpdatedAt = p.getLong("fxUpdatedAt", 0L)
 
+        taxKindOverride.clear()
+        taxRatioOverride.clear()
         p.getString("taxKinds", null)?.let { json ->
             runCatching {
                 val o = JSONObject(json)
@@ -436,6 +438,23 @@ object AppState {
     fun deleteTrade(id: Long): String? = applyLedger(trades.filter { it.id != id })
 
     fun trade(id: Long): Trade? = trades.firstOrNull { it.id == id }
+
+    /** 一次匯入多筆交易（全部成功才套用） */
+    fun importTrades(list: List<Trade>): String? {
+        var id = nextId()
+        val fixed = list.map { t ->
+            validate(t)?.let { return "${t.date} ${t.symbol}：$it" }
+            ensureQuote(t.symbol, t.price)
+            t.copy(id = id++, origin = TradeOrigin.NORMAL)
+        }
+        return applyLedger(trades.toList() + fixed)
+    }
+
+    /** 從備份還原後重新讀取全部資料 */
+    fun reload(context: Context) {
+        prefs = null
+        init(context)
+    }
 
     /** 調整現金餘額（改期初現金，讓目前現金等於輸入值） */
     fun setCash(value: Double) {
