@@ -99,14 +99,14 @@ fun PortfolioScreen(nav: NavController) {
             items(tw, key = { "tw-" + it.symbol }) { h -> HoldingRow(h, true) { nav.navigate(Routes.stock(h.symbol)) } }
             item { GroupHeader(Market.US, us.size, "US$" + mask(Fmt.num(usUsd, 2))) }
             items(us, key = { "us-" + it.symbol }) { h -> HoldingRow(h, inTwd) { nav.navigate(Routes.stock(h.symbol)) } }
-            if (AppState.trades.isNotEmpty()) {
-                item { SectionTitle("最近交易") }
-                items(AppState.trades.take(10)) { t ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                        Label(t.date, Modifier.width(84.dp))
-                        Text(t.type.label + " " + t.symbol, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
-                        NumText(Fmt.shares(t.shares) + " × " + Fmt.price(t.price), 13.sp)
-                    }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card)
+                        .clickable { nav.navigate(Routes.TRADES) }.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("交易紀錄", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+                    Label("${AppState.trades.count { it.origin != com.claudeetf.app.data.TradeOrigin.LEGACY }} 筆 ›")
                 }
             }
         }
@@ -173,15 +173,20 @@ private fun HoldingRow(h: Holding, inTwd: Boolean, onClick: () -> Unit) {
 // ============================== 新增交易 ==============================
 
 @Composable
-fun AddTradeScreen(nav: NavController, initialSymbol: String) {
-    var type by remember { mutableIntStateOf(0) }
-    var symbol by remember { mutableStateOf(initialSymbol) }
-    var date by remember { mutableStateOf(LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))) }
-    var shares by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf(AppState.quote(initialSymbol)?.price?.let { Fmt.price(it).replace(",", "") } ?: "") }
-    var fx by remember { mutableStateOf(Fmt.num(AppState.usdTwd, 2)) }
-    var feeText by remember { mutableStateOf("") }
-    var feeEdited by remember { mutableStateOf(false) }
+fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L) {
+    val editing = remember(editId) { if (editId > 0) AppState.trade(editId) else null }
+    fun plain(v: Double) = java.math.BigDecimal(v).setScale(6, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
+    var type by remember { mutableIntStateOf(editing?.type?.ordinal ?: 0) }
+    var symbol by remember { mutableStateOf(editing?.symbol ?: initialSymbol) }
+    var date by remember { mutableStateOf(editing?.date ?: LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))) }
+    var shares by remember { mutableStateOf(editing?.let { plain(it.shares) } ?: "") }
+    var price by remember {
+        mutableStateOf(editing?.let { plain(it.price) } ?: AppState.quote(initialSymbol)?.price?.let { Fmt.price(it).replace(",", "") } ?: "")
+    }
+    var fx by remember { mutableStateOf(editing?.let { plain(it.fx) } ?: Fmt.num(AppState.usdTwd, 2)) }
+    var feeText by remember { mutableStateOf(editing?.let { plain(it.fee) } ?: "") }
+    var feeEdited by remember { mutableStateOf(editing != null && editing.type != TradeType.DIVIDEND) }
+    var confirmDelete by remember { mutableStateOf(false) }
     var ratioText by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -215,7 +220,20 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String) {
     val dec = if (isUs) 2 else 0
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
-        TopBar("新增交易", onBack = { nav.popBackStack() })
+        TopBar(if (editing != null) "編輯交易" else "新增交易", onBack = { nav.popBackStack() }) {
+            if (editing != null) {
+                Text(
+                    if (confirmDelete) "確定刪除？" else "刪除", color = C.Red, fontSize = 14.sp,
+                    modifier = Modifier.clickable {
+                        if (!confirmDelete) confirmDelete = true
+                        else {
+                            val err = AppState.deleteTrade(editing.id)
+                            if (err == null) nav.popBackStack() else { error = "無法刪除：$err"; confirmDelete = false }
+                        }
+                    }.padding(12.dp),
+                )
+            }
+        }
         LazyColumn(
             Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -314,14 +332,14 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String) {
         Box(
             Modifier.fillMaxWidth().padding(16.dp).height(50.dp).clip(RoundedCornerShape(12.dp)).background(C.Primary)
                 .clickable {
-                    val err = AppState.addTrade(
-                        Trade(
-                            tType, sym, date,
-                            if (tType == TradeType.SPLIT) 0.0 else q, p,
-                            if (isUs) fx.toDoubleOrNull() ?: AppState.usdTwd else 1.0,
-                            fee, tax,
-                        )
+                    val t = Trade(
+                        tType, sym, date.trim(),
+                        if (tType == TradeType.SPLIT) 0.0 else q, p,
+                        if (isUs) fx.toDoubleOrNull() ?: AppState.usdTwd else 1.0,
+                        fee, tax,
                     )
+                    val err = if (editing != null) AppState.updateTrade(t.copy(id = editing.id, origin = editing.origin, note = editing.note))
+                    else AppState.addTrade(t)
                     if (err == null) nav.popBackStack() else error = err
                 },
             contentAlignment = Alignment.Center,

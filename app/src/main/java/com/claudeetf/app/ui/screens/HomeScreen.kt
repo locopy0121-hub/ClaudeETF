@@ -70,7 +70,8 @@ fun HomeScreen(nav: NavController) {
     val session = rememberUsSession()
     var range by remember { mutableIntStateOf(1) }
     val scope = rememberCoroutineScope()
-    val trend = SampleData.perfMine.takeLast(listOf(4, 6, 8, 10, 12)[range])
+    val navPoints = AppState.navSeries(listOf(7, 31, 92, 366, null)[range])
+    val trend = navPoints.map { it.second.toFloat() }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("總覽") {
@@ -100,7 +101,19 @@ fun HomeScreen(nav: NavController) {
                         Label("未實現"); HGap(8.dp)
                         NumText(mask(Fmt.signed(unreal)) + "（" + Fmt.pct(if (cost > 0) unreal / cost * 100 else 0.0) + "）", 13.sp, Trend.fg(unreal))
                     }
-                    Sparkline(trend, C.Primary, Modifier.fillMaxWidth().height(72.dp), fill = true)
+                    if (trend.size >= 2) {
+                        val chg = trend.last() - trend.first()
+                        Sparkline(trend, Trend.fg(chg.toDouble()), Modifier.fillMaxWidth().height(72.dp), fill = true)
+                        Row {
+                            Label(navPoints.first().first, Modifier.weight(1f))
+                            NumText(
+                                "區間 " + mask(Fmt.signed(chg.toDouble())) + "（" + Fmt.pct(if (trend.first() > 0) chg / trend.first() * 100.0 else 0.0) + "）",
+                                12.sp, Trend.fg(chg.toDouble()),
+                            )
+                        }
+                    } else {
+                        Label("每天開啟 App 會自動記錄總資產，累積兩天後顯示走勢", Modifier.padding(vertical = 18.dp))
+                    }
                     Segmented(listOf("1週", "1月", "3月", "1年", "全部"), range, { range = it }, background = C.Bg)
                 }
             }

@@ -123,8 +123,14 @@ object AppState {
         trades.clear()
         p.getString("trades", null)?.let { trades.addAll(parseTrades(it)) }
 
+        navHistory.clear()
+        p.getString("nav", null)?.let { json ->
+            runCatching { val o = JSONObject(json); o.keys().forEach { k -> navHistory[k] = o.getDouble(k) } }
+        }
+
         // 交易中新增過的股票也要放回行情清單
         for (h in holdings) ensureQuote(h.symbol, h.avgCost)
+        migrateLedger(p)
     }
 
     private fun save() {
@@ -147,6 +153,12 @@ object AppState {
             .putString("quotes", quotesJson())
             .putString("taxKinds", JSONObject().apply { taxKindOverride.forEach { (k, v) -> put(k, v.name) } }.toString())
             .putString("taxRatios", JSONObject().apply { taxRatioOverride.forEach { (k, v) -> put(k, v) } }.toString())
+            .putFloat("baseCash", base.cash.toFloat())
+            .putInt("baseYear", base.year)
+            .putFloat("baseRealized", base.realized.toFloat())
+            .putFloat("baseDivTw", base.divTw.toFloat())
+            .putFloat("baseDivUs", base.divUsGross.toFloat())
+            .putString("nav", JSONObject().apply { navHistory.forEach { (k, v) -> put(k, v) } }.toString())
             .apply()
     }
 
@@ -362,62 +374,125 @@ object AppState {
         quotes.add(Quote(symbol.uppercase(), symbol.uppercase(), market, price, price))
     }
 
-    /** 回傳錯誤訊息；成功回傳 null */
-    fun addTrade(t: Trade): String? {
+    // ---------- 帳本 ----------
+
+    private var base = LedgerBase(0.0, java.time.LocalDate.now().year, 0.0, 0.0, 0.0)
+    /** 賣出的已實現損益、股息實收（台幣），交易紀錄頁使用 */
+    val realizedById = mutableStateMapOf<Long, Double>()
+    val dividendById = mutableStateMapOf<Long, Double>()
+
+    private fun year() = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei")).year
+
+    /** 以候選交易重算；成功時套用並回傳 null，失敗回傳錯誤 */
+    private fun applyLedger(candidate: List<Trade>, newBase: LedgerBase = base): String? {
+        val (res, err) = Ledger.compute(newBase, candidate, year()) { marketOf(it) }
+        if (res == null) return err ?: "計算失敗"
+        base = newBase
+        if (trades.toList() != candidate) {
+            trades.clear()
+            trades.addAll(candidate.sortedByDescending { Ledger.sortKey(it) })
+        }
+        holdings.clear(); holdings.addAll(res.holdings)
+        cashTwd = res.cash
+        realizedTwdYtd = res.realizedYtd
+        dividendTwYtd = res.divTwYtd
+        dividendUsGrossYtd = res.divUsGrossYtd
+        realizedById.clear(); realizedById.putAll(res.realizedById)
+        dividendById.clear(); dividendById.putAll(res.dividendById)
+        for (h in holdings) ensureQuote(h.symbol, h.avgCost)
+        save()
+        return null
+    }
+
+    fun recompute() { applyLedger(trades.toList()) }
+
+    private fun nextId(): Long = (trades.maxOfOrNull { it.id } ?: 0L) + 1
+
+    private fun validate(t: Trade): String? {
         if (t.symbol.isBlank()) return "請輸入股票代號"
         if (t.shares <= 0 && t.type != TradeType.SPLIT) return "股數必須大於 0"
         if (t.price <= 0) return if (t.type == TradeType.SPLIT) "請輸入拆股比例" else "請輸入價格"
+        if (!Regex("^\\d{4}/\\d{2}/\\d{2}$").matches(t.date)) return "日期格式請用 yyyy/MM/dd"
+        return null
+    }
+
+    /** 回傳錯誤訊息；成功回傳 null */
+    fun addTrade(t: Trade): String? {
+        validate(t)?.let { return it }
         val symbol = t.symbol.trim().uppercase()
         ensureQuote(symbol, t.price)
-        val market = marketOf(symbol)
-        val fx = if (market == Market.US) t.fx else 1.0
-        val idx = holdings.indexOfFirst { it.symbol == symbol }
-        val existing = if (idx >= 0) holdings[idx] else null
+        val fixed = t.copy(symbol = symbol, id = nextId(), origin = TradeOrigin.NORMAL)
+        return applyLedger(trades.toList() + fixed)
+    }
 
-        when (t.type) {
-            TradeType.BUY -> {
-                val addCost = t.shares * t.price + t.fee
-                val oldCost = (existing?.shares ?: 0.0) * (existing?.avgCost ?: 0.0)
-                val newShares = (existing?.shares ?: 0.0) + t.shares
-                val newAvg = (oldCost + addCost) / newShares
-                val newFx = if (market == Market.US) {
-                    val oldFxCost = oldCost * (existing?.avgFx ?: fx)
-                    (oldFxCost + addCost * fx) / (oldCost + addCost)
-                } else 1.0
-                val h = Holding(symbol, newShares, newAvg, newFx)
-                if (idx >= 0) holdings[idx] = h else holdings.add(h)
-                cashTwd = max(0.0, cashTwd - addCost * fx)
-            }
-            TradeType.SELL -> {
-                if (existing == null) return "目前沒有 $symbol 的持股"
-                if (t.shares > existing.shares + 1e-9) return "賣出股數超過持有股數"
-                val proceeds = t.shares * t.price - t.fee - t.tax
-                val costFx = if (market == Market.US) existing.avgFx else 1.0
-                realizedTwdYtd += proceeds * fx - t.shares * existing.avgCost * costFx
-                cashTwd += proceeds * fx
-                val left = existing.shares - t.shares
-                if (left <= 1e-9) holdings.removeAt(idx) else holdings[idx] = existing.copy(shares = left)
-            }
-            TradeType.DIVIDEND -> {
-                // 股數 × 每股股息；美股預扣 30%
-                val gross = t.shares * t.price
-                if (market == Market.US) {
-                    dividendUsGrossYtd += gross
-                    cashTwd += gross * 0.7 * fx
-                } else {
-                    dividendTwYtd += gross - t.fee
-                    cashTwd += gross - t.fee
-                }
-            }
-            TradeType.SPLIT -> {
-                if (existing == null) return "目前沒有 $symbol 的持股"
-                val ratio = t.price
-                holdings[idx] = existing.copy(shares = existing.shares * ratio, avgCost = existing.avgCost / ratio)
-            }
-        }
-        trades.add(0, t.copy(symbol = symbol))
+    fun updateTrade(t: Trade): String? {
+        validate(t)?.let { return it }
+        val symbol = t.symbol.trim().uppercase()
+        ensureQuote(symbol, t.price)
+        val fixed = t.copy(symbol = symbol)
+        return applyLedger(trades.map { if (it.id == t.id) fixed else it })
+    }
+
+    fun deleteTrade(id: Long): String? = applyLedger(trades.filter { it.id != id })
+
+    fun trade(id: Long): Trade? = trades.firstOrNull { it.id == id }
+
+    /** 調整現金餘額（改期初現金，讓目前現金等於輸入值） */
+    fun setCash(value: Double) {
+        applyLedger(trades.toList(), base.copy(cash = base.cash + (value - cashTwd)))
+    }
+
+    /** 清除示意資料：持股、交易、股息與已實現歸零，保留自選清單與設定 */
+    fun clearSampleData() {
+        navHistory.clear()
+        applyLedger(emptyList(), LedgerBase(0.0, year(), 0.0, 0.0, 0.0))
+        alertHistory.clear()
         save()
-        return null
+    }
+
+    /** 舊版資料轉成帳本：目前持股變成期初交易，舊交易保留但不重算 */
+    private fun migrateLedger(p: SharedPreferences) {
+        if (p.getInt("ledgerV", 0) >= 1) {
+            base = LedgerBase(
+                p.getFloat("baseCash", 0f).toDouble(),
+                p.getInt("baseYear", year()),
+                p.getFloat("baseRealized", 0f).toDouble(),
+                p.getFloat("baseDivTw", 0f).toDouble(),
+                p.getFloat("baseDivUs", 0f).toDouble(),
+            )
+            recompute()
+            return
+        }
+        val legacy = trades.mapIndexed { i, t -> t.copy(id = (i + 1).toLong(), origin = TradeOrigin.LEGACY) }
+        var id = legacy.size.toLong()
+        val opening = holdings.map { h ->
+            id++
+            Trade(TradeType.BUY, h.symbol, "1900/01/01", h.shares, h.avgCost, h.avgFx, 0.0, 0.0, id, TradeOrigin.OPENING, "期初持股")
+        }
+        val b = LedgerBase(cashTwd, year(), realizedTwdYtd, dividendTwYtd, dividendUsGrossYtd)
+        applyLedger(legacy + opening, b)
+        p.edit().putInt("ledgerV", 1).apply()
+    }
+
+    // ---------- 每日資產淨值 ----------
+
+    /** 日期（yyyy-MM-dd）→ 總資產（台幣） */
+    val navHistory = mutableStateMapOf<String, Double>()
+
+    fun recordNav() {
+        val total = totalAssetsTwd()
+        if (total <= 0) return
+        val key = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei")).toString()
+        navHistory[key] = Math.round(total).toDouble()
+        if (navHistory.size > 900) navHistory.keys.sorted().take(navHistory.size - 900).forEach { navHistory.remove(it) }
+        save()
+    }
+
+    fun navSeries(days: Int?): List<Pair<String, Double>> {
+        val all = navHistory.entries.sortedBy { it.key }.map { it.key to it.value }
+        if (days == null) return all
+        val cutoff = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei")).minusDays(days.toLong()).toString()
+        return all.filter { it.first >= cutoff }
     }
 
     // ---------- JSON ----------
@@ -469,11 +544,12 @@ object AppState {
     }.getOrDefault(SampleData.holdings)
 
     private fun tradesJson(): String = JSONArray().apply {
-        trades.take(500).forEach {
+        trades.forEach {
             put(
                 JSONObject().put("t", it.type.name).put("s", it.symbol).put("d", it.date)
                     .put("n", it.shares).put("p", it.price).put("x", it.fx)
                     .put("fee", it.fee).put("tax", it.tax)
+                    .put("id", it.id).put("o", it.origin).put("note", it.note)
             )
         }
     }.toString()
@@ -485,6 +561,7 @@ object AppState {
             Trade(
                 TradeType.valueOf(o.getString("t")), o.getString("s"), o.getString("d"),
                 o.getDouble("n"), o.getDouble("p"), o.getDouble("x"), o.getDouble("fee"), o.getDouble("tax"),
+                o.optLong("id", 0L), o.optString("o", ""), o.optString("note", ""),
             )
         }
     }.getOrDefault(emptyList())

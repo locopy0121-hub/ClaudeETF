@@ -275,6 +275,9 @@ fun SettingsScreen(nav: NavController) {
                 }
             }
 
+            item { Group("帳本") }
+            item { LedgerCard() }
+
             item { Group("顯示") }
             item {
                 Card(padding = 14.dp) {
@@ -382,5 +385,49 @@ private fun SettingRow(title: String, value: String, onClick: (() -> Unit)? = nu
     ) {
         Text(title, Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
         Label(value)
+    }
+}
+
+@Composable
+private fun LedgerCard() {
+    var cashText by remember { mutableStateOf(Fmt.num(AppState.cashTwd, 0).replace(",", "")) }
+    var confirm by remember { mutableStateOf(false) }
+    var msg by remember { mutableStateOf<String?>(null) }
+    Card(padding = 14.dp) {
+        Text("現金餘額（TWD）", color = C.Text, fontSize = 14.sp)
+        OutlinedTextField(
+            value = cashText,
+            onValueChange = { cashText = it },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            colors = fieldColors(),
+            trailingIcon = {
+                Text(
+                    "套用", color = C.Primary, fontSize = 13.sp,
+                    modifier = Modifier.clickable {
+                        cashText.replace(",", "").toDoubleOrNull()?.let { AppState.setCash(it); msg = "現金已更新" }
+                    }.padding(12.dp),
+                )
+            },
+        )
+        Label("買賣與股息會自動增減現金；這裡用來對齊券商帳戶的實際餘額。")
+        Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
+        Text("清除示意資料", color = C.Text, fontSize = 14.sp)
+        Label("刪除示意持股、交易、股息與已實現損益，從你自己的部位開始記錄。自選清單、金鑰與提醒會保留。")
+        Text(
+            if (confirm) "確定清除？此動作無法復原" else "清除示意資料",
+            color = C.Red, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable {
+                if (!confirm) confirm = true
+                else {
+                    AppState.clearSampleData()
+                    cashText = "0"
+                    confirm = false
+                    msg = "已清除，請到「持股 › 記一筆」新增你的交易"
+                }
+            }.padding(vertical = 10.dp),
+        )
+        msg?.let { Label(it, color = C.Primary) }
     }
 }

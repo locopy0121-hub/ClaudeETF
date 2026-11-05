@@ -71,6 +71,10 @@ data class Trade(
     val fx: Double,
     val fee: Double,
     val tax: Double,
+    val id: Long = 0L,
+    /** TradeOrigin：一般、期初部位、舊版紀錄 */
+    val origin: String = "",
+    val note: String = "",
 )
 
 data class IndexQuote(

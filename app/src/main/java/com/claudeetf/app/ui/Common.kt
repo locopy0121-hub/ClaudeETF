@@ -42,7 +42,8 @@ object Routes {
     const val ANALYSIS = "analysis"
     const val ALERTS = "alerts"
     const val SETTINGS = "settings"
+    const val TRADES = "trades"
 
     fun stock(symbol: String) = "$STOCK/$symbol"
-    fun trade(symbol: String = "") = "$TRADE?symbol=$symbol"
+    fun trade(symbol: String = "", id: Long = -1L) = "$TRADE?symbol=$symbol&id=$id"
 }

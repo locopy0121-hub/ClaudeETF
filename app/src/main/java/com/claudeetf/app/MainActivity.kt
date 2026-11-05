@@ -50,6 +50,7 @@ import com.claudeetf.app.ui.screens.MarketScreen
 import com.claudeetf.app.ui.screens.PortfolioScreen
 import com.claudeetf.app.ui.screens.SettingsScreen
 import com.claudeetf.app.ui.screens.StockDetailScreen
+import com.claudeetf.app.ui.screens.TradesScreen
 import com.claudeetf.app.ui.screens.WatchlistScreen
 import com.claudeetf.app.ui.theme.AppTheme
 import com.claudeetf.app.ui.theme.C
@@ -68,6 +69,7 @@ class MainActivity : ComponentActivity() {
                 while (true) {
                     runCatching { MarketData.refreshAll() }
                     runCatching { AlertEngine.check(applicationContext) }
+                    runCatching { AppState.recordNav() }
                     val usOpen = UsSession.info().phase.let {
                         it == UsSession.Phase.PRE || it == UsSession.Phase.REGULAR || it == UsSession.Phase.POST
                     }
@@ -99,7 +101,7 @@ private val tabs = listOf(
 private fun tabOf(route: String?): String? = when {
     route == null -> null
     route.startsWith(Routes.STOCK) -> Routes.WATCH
-    route.startsWith(Routes.TRADE) || route == Routes.DIVIDEND || route == Routes.ANALYSIS -> Routes.PORTFOLIO
+    route.startsWith(Routes.TRADE) || route == Routes.TRADES || route == Routes.DIVIDEND || route == Routes.ANALYSIS -> Routes.PORTFOLIO
     route == Routes.CALENDAR -> Routes.MARKET
     route == Routes.ALERTS -> Routes.HOME
     else -> route
@@ -148,9 +150,13 @@ fun AppRoot() {
             ) { StockDetailScreen(nav, it.arguments?.getString("symbol") ?: "") }
             composable(Routes.PORTFOLIO) { PortfolioScreen(nav) }
             composable(
-                Routes.TRADE + "?symbol={symbol}",
-                arguments = listOf(navArgument("symbol") { type = NavType.StringType; defaultValue = "" }),
-            ) { AddTradeScreen(nav, it.arguments?.getString("symbol") ?: "") }
+                Routes.TRADE + "?symbol={symbol}&id={id}",
+                arguments = listOf(
+                    navArgument("symbol") { type = NavType.StringType; defaultValue = "" },
+                    navArgument("id") { type = NavType.LongType; defaultValue = -1L },
+                ),
+            ) { AddTradeScreen(nav, it.arguments?.getString("symbol") ?: "", it.arguments?.getLong("id") ?: -1L) }
+            composable(Routes.TRADES) { TradesScreen(nav) }
             composable(Routes.DIVIDEND) { DividendScreen(nav) }
             composable(Routes.ANALYSIS) { AnalysisScreen(nav) }
             composable(Routes.MARKET) { MarketScreen(nav) }
