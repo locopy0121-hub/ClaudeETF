@@ -158,6 +158,8 @@ class AlertWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
             AppState.persist()
         }
         AlertEngine.check(applicationContext)
+        runCatching { AppState.recordNav() }
+        runCatching { com.claudeetf.app.widget.WidgetUpdater.update(applicationContext) }
         return Result.success()
     }
 }

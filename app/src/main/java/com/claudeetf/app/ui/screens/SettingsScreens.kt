@@ -22,6 +22,8 @@ import com.claudeetf.app.alerts.AlertEngine
 import com.claudeetf.app.data.AlertType
 import com.claudeetf.app.data.Backup
 import com.claudeetf.app.data.TradeCsv
+import com.claudeetf.app.data.Account
+import com.claudeetf.app.data.Market
 import com.claudeetf.app.util.Fmt
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -286,6 +288,20 @@ fun SettingsScreen(nav: NavController) {
             item { Group("顯示") }
             item {
                 Card(padding = 14.dp) {
+                    Text("主題", color = C.Text, fontSize = 14.sp)
+                    Segmented(listOf("跟隨系統", "深色", "淺色"), AppState.themeMode, { AppState.updateTheme(it) }, background = C.Bg)
+                    Text("字級", color = C.Text, fontSize = 14.sp)
+                    val scales = listOf(0.9f, 1f, 1.15f, 1.3f)
+                    Segmented(
+                        listOf("小", "標準", "大", "特大"),
+                        scales.indexOfFirst { kotlin.math.abs(it - AppState.fontScale) < 0.01f }.coerceAtLeast(1),
+                        { AppState.updateFontScale(scales[it]) },
+                        background = C.Bg,
+                    )
+                }
+            }
+            item {
+                Card(padding = 14.dp) {
                     Text("漲跌配色", color = C.Text, fontSize = 14.sp)
                     Segmented(
                         listOf("台式 紅漲綠跌", "美式 綠漲紅跌"),
@@ -301,8 +317,8 @@ fun SettingsScreen(nav: NavController) {
             }
             item { SettingRow("美股時間", "台灣時間・自動夏冬令") }
             item { Group("帳戶與手續費") }
-            item { SettingRow("台股手續費", "0.1425%（最低 20 元）") }
-            item { SettingRow("美股手續費", "0.1%（可在交易時修改）") }
+            items(AppState.accounts.toList(), key = { "acc-" + it.id }) { a -> AccountCard(a) }
+            item { AddAccountRow() }
             item { Group("提醒") }
             item { SettingRow("提醒中心", "${AppState.alerts.count { it.enabled }} 項開啟 ›") { nav.navigate(Routes.ALERTS) } }
             item { Group("關於") }
@@ -524,4 +540,76 @@ private fun SmallButton(text: String, modifier: Modifier = Modifier, onClick: ()
         modifier.height(44.dp).clip(RoundedCornerShape(10.dp)).background(C.Selected).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Text(text, color = C.Text, fontSize = 13.sp) }
+}
+
+/** 帳戶設定卡：名稱、折扣／費率、最低收費；可刪除 */
+@Composable
+private fun AccountCard(a: Account) {
+    var expanded by remember { mutableStateOf(false) }
+    var name by remember(a.id) { mutableStateOf(a.name) }
+    var rateText by remember(a.id) {
+        mutableStateOf(if (a.market == Market.TW) Fmt.num(a.discount * 10, 2).trimEnd('0').trimEnd('.') else Fmt.num(a.usRate * 100, 3).trimEnd('0').trimEnd('.'))
+    }
+    var minText by remember(a.id) { mutableStateOf(Fmt.num(if (a.market == Market.TW) a.minFee else a.usMinFee, 2).trimEnd('0').trimEnd('.')) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    val tw = a.market == Market.TW
+    Card(padding = 14.dp) {
+        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
+            MarketTag(a.market); HGap(8.dp)
+            Column(Modifier.weight(1f)) {
+                Text(a.name, color = C.Text, fontSize = 14.sp)
+                Label(
+                    if (tw) "0.1425% × " + Fmt.num(a.discount * 10, 2).trimEnd('0').trimEnd('.') + " 折，最低 " + Fmt.num(a.minFee) + " 元"
+                    else "手續費 " + Fmt.num(a.usRate * 100, 3).trimEnd('0').trimEnd('.') + "%，最低 $" + Fmt.num(a.usMinFee, 2)
+                )
+            }
+            Label(if (expanded) "收合" else "編輯")
+        }
+        if (expanded) {
+            OutlinedTextField(name, { name = it }, label = { Text("帳戶名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    rateText, { rateText = it },
+                    label = { Text(if (tw) "折扣（例：2.8 折填 2.8）" else "費率 %（例：0.1）") },
+                    singleLine = true, modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), colors = fieldColors(),
+                )
+                OutlinedTextField(
+                    minText, { minText = it },
+                    label = { Text(if (tw) "最低（元）" else "最低（美元）") },
+                    singleLine = true, modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), colors = fieldColors(),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallButton("儲存", Modifier.weight(1f)) {
+                    val r = rateText.toDoubleOrNull()
+                    val m = minText.toDoubleOrNull() ?: 0.0
+                    if (r != null && r > 0) {
+                        AppState.saveAccount(
+                            if (tw) a.copy(name = name.ifBlank { a.name }, discount = (r / 10).coerceIn(0.01, 1.0), minFee = m)
+                            else a.copy(name = name.ifBlank { a.name }, usRate = r / 100, usMinFee = m)
+                        )
+                        expanded = false
+                    }
+                }
+                SmallButton(if (confirmDelete) "確定刪除" else "刪除", Modifier.weight(1f)) {
+                    if (confirmDelete) AppState.deleteAccount(a.id) else confirmDelete = true
+                }
+            }
+            Label("交易時選這個帳戶，手續費會依此設定自動計算。刪除帳戶不會刪除交易。")
+        }
+    }
+}
+
+@Composable
+private fun AddAccountRow() {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        SmallButton("＋ 台股帳戶", Modifier.weight(1f)) {
+            AppState.saveAccount(Account(0, "台股帳戶 ${AppState.accountsFor(Market.TW).size + 1}", Market.TW))
+        }
+        SmallButton("＋ 美股帳戶", Modifier.weight(1f)) {
+            AppState.saveAccount(Account(0, "美股帳戶 ${AppState.accountsFor(Market.US).size + 1}", Market.US))
+        }
+    }
 }

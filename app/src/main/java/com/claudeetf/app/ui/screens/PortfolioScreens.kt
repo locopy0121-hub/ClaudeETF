@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
@@ -39,6 +41,8 @@ import com.claudeetf.app.data.CalendarEvent
 import com.claudeetf.app.data.CalendarRepo
 import com.claudeetf.app.data.EventKind
 import com.claudeetf.app.data.TradeOrigin
+import com.claudeetf.app.data.Ledger
+import com.claudeetf.app.data.LedgerBase
 import com.claudeetf.app.data.remote.friendly
 import androidx.compose.material.icons.filled.Refresh
 import com.claudeetf.app.data.TaxRules
@@ -58,11 +62,23 @@ import kotlin.math.roundToLong
 @Composable
 fun PortfolioScreen(nav: NavController) {
     var inTwd by remember { mutableStateOf(true) }
-    val mv = AppState.totalMarketValueTwd()
-    val cost = AppState.totalCostTwd()
+    var accFilter by remember { mutableIntStateOf(-1) } // -1 = 全部帳戶
+    val usedAccounts = AppState.trades.filter { it.origin != TradeOrigin.LEGACY }.map { it.account }.toSet()
+    val accChoices = listOf(-1) + AppState.accounts.map { it.id }.filter { it in usedAccounts } +
+        (if (0 in usedAccounts && AppState.accounts.isNotEmpty()) listOf(0) else emptyList())
+    val hs: List<Holding> = if (accFilter == -1) AppState.holdings.toList() else {
+        val y = LocalDate.now().year
+        Ledger.compute(
+            LedgerBase(0.0, y, 0.0, 0.0, 0.0),
+            AppState.trades.filter { it.account == accFilter },
+            y,
+        ) { AppState.marketOf(it) }.first?.holdings ?: emptyList()
+    }
+    val mv = hs.sumOf { AppState.marketValueTwd(it) }
+    val cost = hs.sumOf { AppState.costTwd(it) }
     val unreal = mv - cost
-    val tw = AppState.holdingsOf(Market.TW)
-    val us = AppState.holdingsOf(Market.US)
+    val tw = hs.filter { AppState.marketOf(it.symbol) == Market.TW }
+    val us = hs.filter { AppState.marketOf(it.symbol) == Market.US }
     val usUsd = us.sumOf { AppState.marketValue(it) }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
@@ -102,7 +118,23 @@ fun PortfolioScreen(nav: NavController) {
                     Shortcut("績效分析", Icons.Filled.Star, Modifier.weight(1f)) { nav.navigate(Routes.ANALYSIS) }
                 }
             }
-            item { GroupHeader(Market.TW, tw.size, "NT$" + mask(Fmt.num(AppState.totalMarketValueTwd(Market.TW)))) }
+            if (accChoices.size > 2) {
+                item {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        accChoices.forEach { id ->
+                            val on = id == accFilter
+                            Text(
+                                when (id) { -1 -> "全部帳戶"; 0 -> "未指定"; else -> AppState.account(id)?.name ?: "帳戶 $id" },
+                                color = if (on) C.Text else C.Muted, fontSize = 13.sp,
+                                fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.clip(RoundedCornerShape(15.dp)).background(if (on) C.Selected else C.Card)
+                                    .clickable { accFilter = id }.padding(horizontal = 12.dp, vertical = 8.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            item { GroupHeader(Market.TW, tw.size, "NT$" + mask(Fmt.num(tw.sumOf { AppState.marketValueTwd(it) }))) }
             items(tw, key = { "tw-" + it.symbol }) { h -> HoldingRow(h, true) { nav.navigate(Routes.stock(h.symbol)) } }
             item { GroupHeader(Market.US, us.size, "US$" + mask(Fmt.num(usUsd, 2))) }
             items(us, key = { "us-" + it.symbol }) { h -> HoldingRow(h, inTwd) { nav.navigate(Routes.stock(h.symbol)) } }
@@ -194,6 +226,7 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
     var feeText by remember { mutableStateOf(editing?.let { plain(it.fee) } ?: "") }
     var feeEdited by remember { mutableStateOf(editing != null && editing.type != TradeType.DIVIDEND) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var accountId by remember { mutableIntStateOf(editing?.account ?: 0) }
     var ratioText by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -205,13 +238,13 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
     val q = shares.toDoubleOrNull() ?: 0.0
     val p = price.toDoubleOrNull() ?: 0.0
     val amount = q * p
+    val accOptions = AppState.accountsFor(market)
+    val effAccount = if (accOptions.any { it.id == accountId }) accountId else accOptions.firstOrNull()?.id ?: 0
     val taxKind = TaxRules.kindOf(sym)
     val ratio = ratioText.toDoubleOrNull()?.div(100) ?: TaxRules.taxableRatio(sym)
     val divBd = TaxRules.dividend(sym, amount, ratio)
     val autoFee = when (tType) {
-        TradeType.BUY, TradeType.SELL ->
-            if (isUs) Math.round(amount * 0.001 * 100) / 100.0
-            else if (amount > 0) max(20.0, (amount * 0.001425).roundToLong().toDouble()) else 0.0
+        TradeType.BUY, TradeType.SELL -> AppState.feeFor(effAccount, market, amount)
         TradeType.DIVIDEND -> if (isUs) 0.0 else divBd.nhi
         TradeType.SPLIT -> 0.0
     }
@@ -253,6 +286,22 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
                     Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         MarketTag(market); HGap(6.dp)
                         Label((AppState.quote(sym)?.name ?: "新股票") + " · 幣別 " + market.currency + (if (isEtf) " · ETF" else ""))
+                    }
+                }
+            }
+            if (accOptions.isNotEmpty() && tType != TradeType.SPLIT) {
+                item {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Label("帳戶", Modifier.align(Alignment.CenterVertically))
+                        accOptions.forEach { a ->
+                            val on = a.id == effAccount
+                            Text(
+                                a.name, color = if (on) C.Text else C.Muted, fontSize = 13.sp,
+                                fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.clip(RoundedCornerShape(15.dp)).background(if (on) C.Selected else C.Card)
+                                    .clickable { accountId = a.id; feeEdited = false }.padding(horizontal = 12.dp, vertical = 8.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -307,8 +356,10 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
                         { feeText = it; feeEdited = true },
                     )
                     Label(
-                        if (isUs) "美股手續費預設 0.1%，可依券商修改；美股股息預扣 30%"
-                        else "台股手續費 0.1425%（最低 20 元）；賣出證交稅 股票 0.3%、ETF 0.1%",
+                        (AppState.account(effAccount)?.let { a ->
+                            if (isUs) "${a.name}：手續費 ${Fmt.num(a.usRate * 100, 3)}%，最低 $${Fmt.num(a.usMinFee, 2)}"
+                            else "${a.name}：0.1425% × ${Fmt.num(a.discount * 10, 2)} 折，最低 ${Fmt.num(a.minFee)} 元"
+                        } ?: "") + if (isUs) "；美股免交易稅" else "；賣出證交稅 股票 0.3%、ETF 0.1%",
                         Modifier.padding(top = 4.dp),
                     )
                     }
@@ -345,8 +396,9 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
                         if (isUs) fx.toDoubleOrNull() ?: AppState.usdTwd else 1.0,
                         fee, tax,
                     )
-                    val err = if (editing != null) AppState.updateTrade(t.copy(id = editing.id, origin = editing.origin, note = editing.note))
-                    else AppState.addTrade(t)
+                    val tt = t.copy(account = effAccount)
+                    val err = if (editing != null) AppState.updateTrade(tt.copy(id = editing.id, origin = editing.origin, note = editing.note))
+                    else AppState.addTrade(tt)
                     if (err == null) nav.popBackStack() else error = err
                 },
             contentAlignment = Alignment.Center,

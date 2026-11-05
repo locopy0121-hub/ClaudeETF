@@ -59,6 +59,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppState.init(applicationContext)
+        AppState.systemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
         runCatching { AlertEngine.schedule(applicationContext) }
         setContent {
             AppTheme { AppRoot() }
@@ -70,6 +72,7 @@ class MainActivity : ComponentActivity() {
                     runCatching { MarketData.refreshAll() }
                     runCatching { AlertEngine.check(applicationContext) }
                     runCatching { AppState.recordNav() }
+                    runCatching { com.claudeetf.app.widget.WidgetUpdater.update(applicationContext) }
                     val usOpen = UsSession.info().phase.let {
                         it == UsSession.Phase.PRE || it == UsSession.Phase.REGULAR || it == UsSession.Phase.POST
                     }

@@ -75,6 +75,21 @@ data class Trade(
     /** TradeOrigin：一般、期初部位、舊版紀錄 */
     val origin: String = "",
     val note: String = "",
+    /** 帳戶編號，0 = 未指定 */
+    val account: Int = 0,
+)
+
+/** 券商帳戶與手續費設定 */
+data class Account(
+    val id: Int,
+    val name: String,
+    val market: Market,
+    /** 台股手續費折扣（1 = 不打折，0.28 = 2.8 折） */
+    val discount: Double = 1.0,
+    val minFee: Double = 20.0,
+    /** 美股手續費率與最低收費（美元） */
+    val usRate: Double = 0.001,
+    val usMinFee: Double = 0.0,
 )
 
 data class IndexQuote(

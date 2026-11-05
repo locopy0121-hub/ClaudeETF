@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -35,6 +37,16 @@ object AppState {
         private set
     var hideAmounts by mutableStateOf(false)
 
+    /** 主題：0 跟隨系統、1 深色、2 淺色；字級倍率 */
+    var themeMode by mutableIntStateOf(1)
+        private set
+    var fontScale by mutableFloatStateOf(1f)
+        private set
+    var systemDark by mutableStateOf(true)
+
+    fun updateTheme(mode: Int) { themeMode = mode; save() }
+    fun updateFontScale(scale: Float) { fontScale = scale; save() }
+
     /** 使用者自行填入的 API 金鑰（自動儲存在本機） */
     var fugleKey by mutableStateOf("")
         private set
@@ -56,6 +68,7 @@ object AppState {
     val holdings = mutableStateListOf<Holding>()
     val trades = mutableStateListOf<Trade>()
     val alerts = mutableStateListOf<AlertRule>()
+    val accounts = mutableStateListOf<Account>()
     /** 最近觸發的提醒（新到舊，最多 30 筆） */
     val alertHistory = mutableStateListOf<AlertHit>()
     val twIndices = mutableStateListOf<IndexQuote>().apply { addAll(SampleData.twIndices) }
@@ -71,6 +84,8 @@ object AppState {
         colorMode = runCatching { ColorMode.valueOf(p.getString("colorMode", "TW") ?: "TW") }
             .getOrDefault(ColorMode.TW)
         usdTwd = p.getFloat("usdTwd", 32.02f).toDouble()
+        themeMode = p.getInt("themeMode", 1)
+        fontScale = p.getFloat("fontScale", 1f)
         realizedTwdYtd = p.getFloat("realized", 56_800f).toDouble()
         dividendTwYtd = p.getFloat("divTw", 61_300f).toDouble()
         dividendUsGrossYtd = p.getFloat("divUs", 1_120.73f).toDouble()
@@ -125,6 +140,26 @@ object AppState {
         trades.clear()
         p.getString("trades", null)?.let { trades.addAll(parseTrades(it)) }
 
+        accounts.clear()
+        p.getString("accounts", null)?.let { json ->
+            runCatching {
+                val arr = JSONArray(json)
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    accounts.add(
+                        Account(
+                            o.getInt("id"), o.getString("n"), Market.valueOf(o.getString("m")),
+                            o.optDouble("d", 1.0), o.optDouble("min", 20.0), o.optDouble("r", 0.001), o.optDouble("umin", 0.0),
+                        )
+                    )
+                }
+            }
+        }
+        if (accounts.isEmpty()) {
+            accounts.add(Account(1, "台股帳戶", Market.TW))
+            accounts.add(Account(2, "美股帳戶", Market.US))
+        }
+
         navHistory.clear()
         p.getString("nav", null)?.let { json ->
             runCatching { val o = JSONObject(json); o.keys().forEach { k -> navHistory[k] = o.getDouble(k) } }
@@ -140,6 +175,8 @@ object AppState {
         p.edit()
             .putString("colorMode", colorMode.name)
             .putFloat("usdTwd", usdTwd.toFloat())
+            .putInt("themeMode", themeMode)
+            .putFloat("fontScale", fontScale)
             .putFloat("realized", realizedTwdYtd.toFloat())
             .putFloat("divTw", dividendTwYtd.toFloat())
             .putFloat("divUs", dividendUsGrossYtd.toFloat())
@@ -160,6 +197,12 @@ object AppState {
             .putFloat("baseRealized", base.realized.toFloat())
             .putFloat("baseDivTw", base.divTw.toFloat())
             .putFloat("baseDivUs", base.divUsGross.toFloat())
+            .putString("accounts", JSONArray().apply {
+                accounts.forEach {
+                    put(JSONObject().put("id", it.id).put("n", it.name).put("m", it.market.name).put("d", it.discount)
+                        .put("min", it.minFee).put("r", it.usRate).put("umin", it.usMinFee))
+                }
+            }.toString())
             .putString("nav", JSONObject().apply { navHistory.forEach { (k, v) -> put(k, v) } }.toString())
             .apply()
     }
@@ -439,6 +482,36 @@ object AppState {
 
     fun trade(id: Long): Trade? = trades.firstOrNull { it.id == id }
 
+    // ---------- 帳戶 ----------
+
+    fun account(id: Int): Account? = accounts.firstOrNull { it.id == id }
+
+    fun accountsFor(market: Market) = accounts.filter { it.market == market }
+
+    fun saveAccount(a: Account) {
+        val i = accounts.indexOfFirst { it.id == a.id }
+        if (i >= 0) accounts[i] = a
+        else accounts.add(a.copy(id = (accounts.maxOfOrNull { it.id } ?: 0) + 1))
+        save()
+    }
+
+    fun deleteAccount(id: Int) {
+        if (accounts.removeAll { it.id == id }) save()
+    }
+
+    /** 依帳戶設定計算買賣手續費（台股無條件捨去到元、套用最低收費） */
+    fun feeFor(accountId: Int, market: Market, amount: Double): Double {
+        if (amount <= 0) return 0.0
+        val a = account(accountId)
+        return if (market == Market.US) {
+            val rate = a?.usRate ?: 0.001
+            maxOf(a?.usMinFee ?: 0.0, Math.round(amount * rate * 100) / 100.0)
+        } else {
+            val discount = a?.discount ?: 1.0
+            maxOf(a?.minFee ?: 20.0, Math.floor(amount * 0.001425 * discount))
+        }
+    }
+
     /** 一次匯入多筆交易（全部成功才套用） */
     fun importTrades(list: List<Trade>): String? {
         var id = nextId()
@@ -568,7 +641,7 @@ object AppState {
                 JSONObject().put("t", it.type.name).put("s", it.symbol).put("d", it.date)
                     .put("n", it.shares).put("p", it.price).put("x", it.fx)
                     .put("fee", it.fee).put("tax", it.tax)
-                    .put("id", it.id).put("o", it.origin).put("note", it.note)
+                    .put("id", it.id).put("o", it.origin).put("note", it.note).put("acc", it.account)
             )
         }
     }.toString()
@@ -580,7 +653,7 @@ object AppState {
             Trade(
                 TradeType.valueOf(o.getString("t")), o.getString("s"), o.getString("d"),
                 o.getDouble("n"), o.getDouble("p"), o.getDouble("x"), o.getDouble("fee"), o.getDouble("tax"),
-                o.optLong("id", 0L), o.optString("o", ""), o.optString("note", ""),
+                o.optLong("id", 0L), o.optString("o", ""), o.optString("note", ""), o.optInt("acc", 0),
             )
         }
     }.getOrDefault(emptyList())
