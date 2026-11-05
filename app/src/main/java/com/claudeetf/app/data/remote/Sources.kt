@@ -160,3 +160,70 @@ object BotFxApi {
         return Fx(buy, sell)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Yahoo Finance（美股、指數、債息、美元指數；免金鑰，非官方公開端點）
+// GET https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1d&interval=5m
+// meta：regularMarketPrice、previousClose／chartPreviousClose、longName、shortName…
+// ---------------------------------------------------------------------------
+object YahooApi {
+    data class Chart(val quote: RemoteQuote, val spark: List<Float>, val time: Long)
+
+    private val hosts = listOf("https://query1.finance.yahoo.com", "https://query2.finance.yahoo.com")
+    private val headers = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
+    )
+
+    fun chart(symbol: String): Chart {
+        val enc = URLEncoder.encode(symbol, "UTF-8")
+        var last: Throwable? = null
+        for (host in hosts) {
+            try {
+                return parse(symbol, Http.get("$host/v8/finance/chart/$enc?range=1d&interval=5m", headers))
+            } catch (e: Throwable) {
+                last = e
+                if (e is HttpException && e.code == 404) throw e
+            }
+        }
+        throw last ?: IllegalStateException("Yahoo 無回應")
+    }
+
+    private fun parse(symbol: String, body: String): Chart {
+        val chart = JSONObject(body).getJSONObject("chart")
+        val result = chart.optJSONArray("result")?.optJSONObject(0)
+            ?: throw HttpException(404, "查無 $symbol")
+        val meta = result.getJSONObject("meta")
+        val price = meta.num("regularMarketPrice") ?: throw IllegalStateException("Yahoo 缺少價格")
+        val prev = meta.num("previousClose") ?: meta.num("chartPreviousClose") ?: price
+        val name = meta.optString("longName").ifBlank { meta.optString("shortName") }.ifBlank { null }
+
+        // 當日走勢：取收盤價序列，抽樣到約 40 點
+        val closes = result.optJSONObject("indicators")?.optJSONArray("quote")?.optJSONObject(0)?.optJSONArray("close")
+        val series = ArrayList<Float>()
+        if (closes != null) {
+            for (i in 0 until closes.length()) {
+                if (!closes.isNull(i)) {
+                    val v = closes.optDouble(i, Double.NaN)
+                    if (!v.isNaN()) series.add(v.toFloat())
+                }
+            }
+        }
+        val step = maxOf(1, series.size / 40)
+        val spark = if (series.size < 2) emptyList()
+        else listOf(prev.toFloat()) + series.filterIndexed { i, _ -> i % step == 0 } + price.toFloat()
+
+        return Chart(
+            RemoteQuote(
+                symbol = symbol,
+                name = name,
+                price = price,
+                prevClose = prev,
+                open = null,
+                high = meta.num("regularMarketDayHigh"),
+                low = meta.num("regularMarketDayLow"),
+            ),
+            spark,
+            (meta.optLong("regularMarketTime", 0L)) * 1000,
+        )
+    }
+}

@@ -72,26 +72,27 @@ fun MarketScreen(nav: NavController) {
                         Label("台灣時間 · " + if (s.isDst) "夏令" else "冬令")
                     }
                 }
-                items(SampleData.usIndices.chunked(3)) { row ->
+                items(AppState.usIndices.chunked(3)) { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { IndexCard(it, Modifier.weight(1f)) }
                     }
                 }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SmallCard("美 10 年債", "4.12%", Modifier.weight(1f))
-                        SmallCard("美元指數", "99.40", Modifier.weight(1f))
+                        SmallCard("美 10 年債", Fmt.num(AppState.macro[0].value, 2) + "%", Modifier.weight(1f))
+                        SmallCard("美元指數", Fmt.num(AppState.macro[1].value, 2), Modifier.weight(1f))
                         SmallCard("USD/TWD", Fmt.num(AppState.usdTwd, 2), Modifier.weight(1f))
                     }
                 }
-                item { SectionTitle("板塊熱力圖", "S&P 500 · 今日") }
+                AppState.sourceStatus["IDX"]?.let { st -> item { Label("指數來源 Yahoo Finance · $st") } }
+                item { SectionTitle("板塊熱力圖", "示意資料") }
                 items(SampleData.sectors.chunked(4)) { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         row.forEach { SectorTile(it, Modifier.weight(1f)) }
                         repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
-                item { SectionTitle("漲幅排行") }
+                item { SectionTitle("漲幅排行", "示意資料") }
                 items(SampleData.movers) { (sym, name, pct) ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         NumText(sym, 14.sp); HGap(8.dp)
@@ -106,7 +107,7 @@ fun MarketScreen(nav: NavController) {
                     )
                 }
             } else {
-                items(SampleData.twIndices.chunked(2)) { row ->
+                items(AppState.twIndices.chunked(2)) { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { IndexCard(it, Modifier.weight(1f)) }
                     }

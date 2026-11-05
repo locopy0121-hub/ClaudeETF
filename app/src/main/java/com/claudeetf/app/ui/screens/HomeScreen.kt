@@ -144,11 +144,11 @@ fun HomeScreen(nav: NavController) {
                         .clickable { nav.navigate(Routes.SETTINGS) }.padding(12.dp),
                 ) {
                     Label("台股：" + MarketData.twSourcePlan())
-                    Label("美股：" + (if (AppState.finnhubKey.isBlank()) "尚未填 Finnhub 金鑰 ›" else (AppState.sourceStatus["US"] ?: "Finnhub")))
+                    Label("美股：" + (AppState.sourceStatus["US"] ?: "Yahoo Finance"))
                     Label("匯率：" + AppState.fxSource + (if (AppState.fxUpdatedAt > 0) " " + Fmt.time(AppState.fxUpdatedAt) else ""))
                 }
             }
-            val idx = listOf(SampleData.twIndices[0]) + SampleData.usIndices.filter {
+            val idx = listOf(AppState.twIndices[0]) + AppState.usIndices.filter {
                 it.name in listOf("S&P 500", "Nasdaq", "費城半導體")
             }
             items(idx.chunked(2)) { pair ->

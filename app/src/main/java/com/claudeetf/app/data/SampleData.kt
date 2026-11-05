@@ -29,17 +29,23 @@ object SampleData {
     )
 
     val twIndices = listOf(
-        IndexQuote("加權指數", 27436.18, 0.82),
-        IndexQuote("櫃買指數", 268.45, 0.35),
+        IndexQuote("加權指數", 27436.18, 0.82, "^TWII"),
+        IndexQuote("櫃買指數", 268.45, 0.35, "^TWOII"),
     )
 
     val usIndices = listOf(
-        IndexQuote("道瓊", 47385.20, 0.28),
-        IndexQuote("S&P 500", 6812.40, 0.41),
-        IndexQuote("Nasdaq", 23105.66, 0.67),
-        IndexQuote("費城半導體", 7248.90, -0.35),
-        IndexQuote("羅素 2000", 2468.31, 0.52),
-        IndexQuote("VIX 恐慌", 17.42, -3.10),
+        IndexQuote("道瓊", 47385.20, 0.28, "^DJI"),
+        IndexQuote("S&P 500", 6812.40, 0.41, "^GSPC"),
+        IndexQuote("Nasdaq", 23105.66, 0.67, "^IXIC"),
+        IndexQuote("費城半導體", 7248.90, -0.35, "^SOX"),
+        IndexQuote("羅素 2000", 2468.31, 0.52, "^RUT"),
+        IndexQuote("VIX 恐慌", 17.42, -3.10, "^VIX"),
+    )
+
+    /** 美 10 年債殖利率、美元指數 */
+    val macro = listOf(
+        IndexQuote("美 10 年債", 4.12, 0.0, "^TNX"),
+        IndexQuote("美元指數", 99.40, 0.0, "DX-Y.NYB"),
     )
 
     val sectors = listOf(

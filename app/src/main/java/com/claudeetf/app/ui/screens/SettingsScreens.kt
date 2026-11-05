@@ -125,10 +125,18 @@ fun SettingsScreen(nav: NavController) {
             }
             item {
                 Card(padding = 14.dp) {
-                    Text("美股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Label("使用 Finnhub 報價（免費方案每分鐘 60 次）。")
+                    Text("美股・指數", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Label("使用 Yahoo Finance，免金鑰；含當日走勢、道瓊、S&P 500、那斯達克、費半、VIX、加權指數、10 年債與美元指數。")
+                    var yahooTest by remember { mutableStateOf<String?>(null) }
+                    Text(
+                        "測試 Yahoo 連線", color = C.Primary, fontSize = 13.sp,
+                        modifier = Modifier.clickable { scope.launch { yahooTest = MarketData.testYahoo() } }
+                            .padding(vertical = 10.dp),
+                    )
+                    yahooTest?.let { Text(it, color = if (it.startsWith("連線成功")) C.Primary else C.Red, fontSize = 12.sp) }
+                    Label("選填：Yahoo 抓不到某檔時，改用 Finnhub 備援。")
                     KeyField(
-                        label = "Finnhub API 金鑰",
+                        label = "Finnhub API 金鑰（選填）",
                         initial = AppState.finnhubKey,
                         onSave = { AppState.updateFinnhubKey(it) },
                         onTest = { MarketData.testFinnhub(it) },

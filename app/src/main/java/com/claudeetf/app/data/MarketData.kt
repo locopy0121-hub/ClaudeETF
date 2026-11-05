@@ -6,6 +6,7 @@ import com.claudeetf.app.data.remote.FugleApi
 import com.claudeetf.app.data.remote.RemoteQuote
 import com.claudeetf.app.data.remote.TpexApi
 import com.claudeetf.app.data.remote.TwseApi
+import com.claudeetf.app.data.remote.YahooApi
 import com.claudeetf.app.data.remote.friendly
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -23,7 +24,7 @@ import java.time.format.DateTimeFormatter
  *
  * 台股：盤中（週一至五 08:30–13:35）且已填富果金鑰 → 富果即時；
  *      盤後、沒有金鑰、或富果失敗 → 證交所 OpenAPI（上櫃股票用櫃買中心）。
- * 美股：已填 Finnhub 金鑰 → Finnhub；否則保留上次資料。
+ * 美股與指數：Yahoo Finance（免金鑰）；個別失敗且有 Finnhub 金鑰時以 Finnhub 備援。
  * 匯率：台灣銀行即期買賣中價。
  */
 object MarketData {
@@ -59,7 +60,8 @@ object MarketData {
                 val tw = async { refreshTw() }
                 val us = async { refreshUs() }
                 val fx = async { refreshFx() }
-                tw.await(); us.await(); fx.await()
+                val idx = async { refreshIndices() }
+                tw.await(); us.await(); fx.await(); idx.await()
             }
             AppState.persist()
         } finally {
@@ -131,26 +133,62 @@ object MarketData {
         return closeCache
     }
 
+    /** 美股：Yahoo Finance 為主（免金鑰）；個別失敗且有 Finnhub 金鑰時改用 Finnhub */
     suspend fun refreshUs() {
         val symbols = AppState.quotes.filter { it.market == Market.US }.map { it.symbol }
         if (symbols.isEmpty()) return
-        val key = AppState.finnhubKey
-        if (key.isBlank()) {
-            AppState.setStatus("US", "尚未填 Finnhub 金鑰，顯示上次資料")
-            return
-        }
         val now = System.currentTimeMillis()
         val results = withContext(Dispatchers.IO) {
             symbols.map { s ->
-                val r = runCatching { FinnhubApi.quote(s, key) }
-                delay(80)
+                val r = runCatching { YahooApi.chart(s) }
+                delay(60)
                 s to r
             }
         }
-        results.forEach { (_, r) -> r.getOrNull()?.let { AppState.applyRemote(it, QuoteSource.FINNHUB, now) } }
+        var yahooOk = 0
+        results.forEach { (_, r) ->
+            r.getOrNull()?.let {
+                AppState.applyRemote(it.quote, QuoteSource.YAHOO, now, sparkOverride = it.spark)
+                yahooOk++
+            }
+        }
+        val failed = results.filter { it.second.isFailure }.map { it.first }
+        val yahooErr = results.firstOrNull { it.second.isFailure }?.second?.exceptionOrNull()?.friendly()
+
+        var finnOk = 0
+        val key = AppState.finnhubKey
+        if (failed.isNotEmpty() && key.isNotBlank()) {
+            val backup = withContext(Dispatchers.IO) {
+                failed.map { s ->
+                    val r = runCatching { FinnhubApi.quote(s, key) }
+                    delay(80)
+                    r
+                }
+            }
+            backup.forEach { r -> r.getOrNull()?.let { AppState.applyRemote(it, QuoteSource.FINNHUB, now); finnOk++ } }
+        }
+        AppState.setStatus(
+            "US",
+            clock(now) + " Yahoo $yahooOk/${symbols.size} 檔" +
+                (if (finnOk > 0) "，Finnhub 備援 $finnOk 檔" else "") +
+                (if (yahooErr != null && yahooOk + finnOk < symbols.size) "｜$yahooErr" else ""),
+        )
+    }
+
+    /** 指數、10 年債、美元指數：Yahoo Finance */
+    suspend fun refreshIndices() {
+        val symbols = AppState.indexSymbols()
+        val now = System.currentTimeMillis()
+        val results = withContext(Dispatchers.IO) {
+            symbols.map { s ->
+                val r = runCatching { YahooApi.chart(s) }
+                delay(60)
+                s to r
+            }
+        }
+        results.forEach { (s, r) -> r.getOrNull()?.let { AppState.applyIndex(s, it.quote.price, it.quote.prevClose, now) } }
         val ok = results.count { it.second.isSuccess }
-        val err = results.firstOrNull { it.second.isFailure }?.second?.exceptionOrNull()?.friendly()
-        AppState.setStatus("US", clock(now) + " Finnhub $ok/${symbols.size} 檔" + (err?.let { "｜$it" } ?: ""))
+        AppState.setStatus("IDX", clock(now) + " 指數 $ok/${symbols.size}")
     }
 
     suspend fun refreshFx() {
@@ -170,9 +208,12 @@ object MarketData {
         if (AppState.isWatched(s)) return "$s 已在自選清單"
         val isTw = s.first().isDigit()
         var name: String? = null
-        if (!isTw && AppState.finnhubKey.isNotBlank()) {
-            val key = AppState.finnhubKey
-            name = withContext(Dispatchers.IO) { FinnhubApi.name(s, key) }
+        if (!isTw) {
+            name = withContext(Dispatchers.IO) { runCatching { YahooApi.chart(s).quote.name }.getOrNull() }
+            if (name == null && AppState.finnhubKey.isNotBlank()) {
+                val key = AppState.finnhubKey
+                name = withContext(Dispatchers.IO) { FinnhubApi.name(s, key) }
+            }
         }
         AppState.addWatch(s, name)
         if (isTw) refreshTw() else refreshUs()
@@ -189,5 +230,10 @@ object MarketData {
     suspend fun testFinnhub(key: String): String = withContext(Dispatchers.IO) {
         runCatching { FinnhubApi.quote("AAPL", key.trim()) }
             .fold({ "連線成功：AAPL ${it.price}" }, { "失敗：" + it.friendly() })
+    }
+
+    suspend fun testYahoo(): String = withContext(Dispatchers.IO) {
+        runCatching { YahooApi.chart("AAPL") }
+            .fold({ "連線成功：AAPL ${it.quote.price}" }, { "失敗：" + it.friendly() })
     }
 }

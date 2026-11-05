@@ -12,6 +12,7 @@ enum class QuoteSource(val label: String) {
     TWSE("證交所收盤"),
     TPEX("櫃買收盤"),
     FINNHUB("Finnhub"),
+    YAHOO("Yahoo"),
 }
 
 /** 漲跌配色：台式紅漲綠跌、美式綠漲紅跌 */
@@ -72,7 +73,13 @@ data class Trade(
     val tax: Double,
 )
 
-data class IndexQuote(val name: String, val value: Double, val changePct: Double)
+data class IndexQuote(
+    val name: String,
+    val value: Double,
+    val changePct: Double,
+    val symbol: String = "",
+    val updatedAt: Long = 0L,
+)
 
 data class SectorMove(val name: String, val changePct: Double)
 

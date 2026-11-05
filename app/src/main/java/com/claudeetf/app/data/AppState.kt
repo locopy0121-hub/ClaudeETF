@@ -52,6 +52,9 @@ object AppState {
     val holdings = mutableStateListOf<Holding>()
     val trades = mutableStateListOf<Trade>()
     val alerts = mutableStateListOf<AlertRule>()
+    val twIndices = mutableStateListOf<IndexQuote>().apply { addAll(SampleData.twIndices) }
+    val usIndices = mutableStateListOf<IndexQuote>().apply { addAll(SampleData.usIndices) }
+    val macro = mutableStateListOf<IndexQuote>().apply { addAll(SampleData.macro) }
 
     // ---------- 初始化與儲存 ----------
 
@@ -183,7 +186,13 @@ object AppState {
     }
 
     /** 把遠端報價合併進清單（保留 ETF 標記與基本面） */
-    fun applyRemote(rq: RemoteQuote, source: QuoteSource, now: Long, persist: Boolean = false) {
+    fun applyRemote(
+        rq: RemoteQuote,
+        source: QuoteSource,
+        now: Long,
+        persist: Boolean = false,
+        sparkOverride: List<Float>? = null,
+    ) {
         val i = quotes.indexOfFirst { it.symbol.equals(rq.symbol, ignoreCase = true) }
         if (i < 0) return
         val old = quotes[i]
@@ -194,7 +203,7 @@ object AppState {
             if (up) rq.low else rq.high,
             if (up) rq.high else rq.low,
             rq.price,
-        ).map { it.toFloat() }
+        ).map { it.toFloat() }.let { if (sparkOverride != null && sparkOverride.size >= 2) sparkOverride else it }
         quotes[i] = old.copy(
             name = if (old.name == old.symbol && rq.name != null) rq.name else old.name,
             price = rq.price,
@@ -205,6 +214,17 @@ object AppState {
         )
         if (persist) save()
     }
+
+    /** 更新指數（依 symbol 對應到 twIndices／usIndices／macro） */
+    fun applyIndex(symbol: String, value: Double, prev: Double, now: Long) {
+        val pct = if (prev > 0) (value - prev) / prev * 100 else 0.0
+        for (list in listOf(twIndices, usIndices, macro)) {
+            val i = list.indexOfFirst { it.symbol == symbol }
+            if (i >= 0) list[i] = list[i].copy(value = value, changePct = pct, updatedAt = now)
+        }
+    }
+
+    fun indexSymbols(): List<String> = (twIndices + usIndices + macro).map { it.symbol }.filter { it.isNotEmpty() }
 
     fun setFx(mid: Double, source: String, now: Long) {
         if (mid <= 0) return
