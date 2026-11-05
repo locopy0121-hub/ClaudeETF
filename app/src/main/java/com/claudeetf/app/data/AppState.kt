@@ -44,6 +44,13 @@ object AppState {
         private set
     var systemDark by mutableStateOf(true)
 
+    /** 是否完成首次使用引導；網路是否連線 */
+    var onboarded by mutableStateOf(true)
+        private set
+    var online by mutableStateOf(true)
+
+    fun finishOnboarding() { onboarded = true; prefs?.edit()?.putBoolean("onboarded", true)?.apply() }
+
     fun updateTheme(mode: Int) { themeMode = mode; save() }
     fun updateFontScale(scale: Float) { fontScale = scale; save() }
 
@@ -89,6 +96,7 @@ object AppState {
             .getOrDefault(ColorMode.TW)
         usdTwd = p.getFloat("usdTwd", 32.02f).toDouble()
         themeMode = p.getInt("themeMode", 1)
+        onboarded = p.getBoolean("onboarded", false)
         fontScale = p.getFloat("fontScale", 1f)
         realizedTwdYtd = p.getFloat("realized", 56_800f).toDouble()
         dividendTwYtd = p.getFloat("divTw", 61_300f).toDouble()

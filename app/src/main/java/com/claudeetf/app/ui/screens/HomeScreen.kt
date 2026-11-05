@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -75,6 +76,9 @@ fun HomeScreen(nav: NavController) {
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("總覽") {
+            IconButton(onClick = { nav.navigate(Routes.SEARCH) }) {
+                Icon(androidx.compose.material.icons.Icons.Filled.Search, contentDescription = "搜尋", tint = C.Text)
+            }
             IconButton(onClick = { scope.launch { MarketData.refreshAll() } }, enabled = !AppState.refreshing) {
                 Icon(Icons.Filled.Refresh, contentDescription = "更新行情", tint = if (AppState.refreshing) C.Muted else C.Text)
             }

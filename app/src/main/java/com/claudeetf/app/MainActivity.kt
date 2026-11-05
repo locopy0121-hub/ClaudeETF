@@ -5,6 +5,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
@@ -58,7 +61,9 @@ import com.claudeetf.app.ui.theme.C
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.claudeetf.app.util.CrashLog.install(applicationContext)
         AppState.init(applicationContext)
+        watchNetwork()
         AppState.systemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
         runCatching { AlertEngine.schedule(applicationContext) }
@@ -80,6 +85,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+/** 監聽網路狀態，離線時顯示提示 */
+private fun ComponentActivity.watchNetwork() {
+    val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+    AppState.online = cm.activeNetwork?.let { n ->
+        cm.getNetworkCapabilities(n)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    } == true
+    runCatching {
+        cm.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) { runOnUiThread { AppState.online = true } }
+            override fun onLost(network: android.net.Network) { runOnUiThread { AppState.online = false } }
+        })
     }
 }
 
@@ -116,11 +135,22 @@ fun AppRoot() {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val current = tabOf(entry?.destination?.route)
+    val route = entry?.destination?.route
+    val hideBar = route == Routes.WELCOME
 
     Scaffold(
         containerColor = C.Bg,
+        topBar = {
+            if (!AppState.online) {
+                Text(
+                    "離線中：顯示上次更新的資料",
+                    color = C.OnPrimary, fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth().background(C.Tw).padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            }
+        },
         bottomBar = {
-            NavigationBar(containerColor = C.Bg) {
+            if (!hideBar) NavigationBar(containerColor = C.Bg) {
                 tabs.forEach { t ->
                     NavigationBarItem(
                         selected = current == t.route,
@@ -145,7 +175,13 @@ fun AppRoot() {
             }
         },
     ) { padding ->
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            if (!AppState.onboarded) nav.navigate(Routes.WELCOME)
+        }
         NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.fillMaxSize().padding(padding)) {
+            composable(Routes.WELCOME) { com.claudeetf.app.ui.screens.WelcomeScreen(nav) }
+            composable(Routes.SEARCH) { com.claudeetf.app.ui.screens.SearchScreen(nav) }
+            composable(Routes.ERRORS) { com.claudeetf.app.ui.screens.ErrorLogScreen(nav) }
             composable(Routes.HOME) { HomeScreen(nav) }
             composable(Routes.WATCH) { WatchlistScreen(nav) }
             composable(

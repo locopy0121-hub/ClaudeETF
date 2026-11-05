@@ -323,6 +323,8 @@ fun SettingsScreen(nav: NavController) {
             item { SettingRow("提醒中心", "${AppState.alerts.count { it.enabled }} 項開啟 ›") { nav.navigate(Routes.ALERTS) } }
             item { Group("關於") }
             item { SettingRow("版本", version) }
+            item { SettingRow("錯誤紀錄", if (com.claudeetf.app.util.CrashLog.read(context) != null) "有紀錄 ›" else "無 ›") { nav.navigate(Routes.ERRORS) } }
+            item { SettingRow("重新看使用引導", "›") { nav.navigate(Routes.WELCOME) } }
             item { Label("金鑰只存在這支手機，不會上傳到其他地方。", Modifier.padding(4.dp)) }
         }
     }
