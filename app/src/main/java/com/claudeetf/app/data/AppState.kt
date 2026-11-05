@@ -56,6 +56,8 @@ object AppState {
     val holdings = mutableStateListOf<Holding>()
     val trades = mutableStateListOf<Trade>()
     val alerts = mutableStateListOf<AlertRule>()
+    /** 最近觸發的提醒（新到舊，最多 30 筆） */
+    val alertHistory = mutableStateListOf<AlertHit>()
     val twIndices = mutableStateListOf<IndexQuote>().apply { addAll(SampleData.twIndices) }
     val usIndices = mutableStateListOf<IndexQuote>().apply { addAll(SampleData.usIndices) }
     val macro = mutableStateListOf<IndexQuote>().apply { addAll(SampleData.macro) }
@@ -105,11 +107,17 @@ object AppState {
         else holdings.addAll(parseHoldings(savedHoldings))
 
         alerts.clear()
-        alerts.addAll(SampleData.alerts)
-        val enabled = p.getString("alerts", null)
-        if (enabled != null) {
-            val on = enabled.split(",").filter { it.isNotBlank() }.map { it.toInt() }.toSet()
-            for (i in alerts.indices) alerts[i] = alerts[i].copy(enabled = alerts[i].id in on)
+        val savedAlerts = p.getString("alertsV2", null)
+        if (savedAlerts == null) alerts.addAll(SampleData.alerts) else alerts.addAll(parseAlerts(savedAlerts))
+        alertHistory.clear()
+        p.getString("alertHistory", null)?.let { json ->
+            runCatching {
+                val arr = JSONArray(json)
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    alertHistory.add(AlertHit(o.getLong("t"), o.getString("x")))
+                }
+            }
         }
 
         trades.clear()
@@ -130,7 +138,8 @@ object AppState {
             .putFloat("cash", cashTwd.toFloat())
             .putString("holdings", holdingsJson())
             .putString("trades", tradesJson())
-            .putString("alerts", alerts.filter { it.enabled }.joinToString(",") { it.id.toString() })
+            .putString("alertsV2", alertsJson())
+            .putString("alertHistory", JSONArray().apply { alertHistory.take(30).forEach { put(JSONObject().put("t", it.time).put("x", it.text)) } }.toString())
             .putString("fugleKey", fugleKey)
             .putString("finnhubKey", finnhubKey)
             .putString("fxSource", fxSource)
@@ -305,10 +314,47 @@ object AppState {
     fun toggleAlert(id: Int) {
         val i = alerts.indexOfFirst { it.id == id }
         if (i >= 0) {
-            alerts[i] = alerts[i].copy(enabled = !alerts[i].enabled)
+            alerts[i] = alerts[i].copy(enabled = !alerts[i].enabled, lastFired = "")
             save()
         }
     }
+
+    fun addAlert(symbol: String, type: AlertType, value: Double) {
+        val id = (alerts.maxOfOrNull { it.id } ?: 0) + 1
+        alerts.add(0, AlertRule(id, symbol.trim().uppercase(), type, value, true))
+        save()
+    }
+
+    fun deleteAlert(id: Int) {
+        if (alerts.removeAll { it.id == id }) save()
+    }
+
+    /** 標記已觸發並寫入歷史 */
+    fun markFired(id: Int, key: String, text: String, now: Long) {
+        val i = alerts.indexOfFirst { it.id == id }
+        if (i >= 0) alerts[i] = alerts[i].copy(lastFired = key)
+        alertHistory.add(0, AlertHit(now, text))
+        while (alertHistory.size > 30) alertHistory.removeAt(alertHistory.lastIndex)
+        save()
+    }
+
+    private fun alertsJson(): String = JSONArray().apply {
+        alerts.forEach {
+            put(
+                JSONObject().put("id", it.id).put("s", it.symbol).put("t", it.type.name)
+                    .put("v", it.value).put("on", it.enabled).put("f", it.lastFired)
+            )
+        }
+    }.toString()
+
+    private fun parseAlerts(json: String): List<AlertRule> = runCatching {
+        val arr = JSONArray(json)
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.getJSONObject(i)
+            val type = runCatching { AlertType.valueOf(o.getString("t")) }.getOrNull() ?: return@mapNotNull null
+            AlertRule(o.getInt("id"), o.optString("s"), type, o.optDouble("v", 0.0), o.optBoolean("on", true), o.optString("f"))
+        }
+    }.getOrDefault(SampleData.alerts)
 
     private fun ensureQuote(symbol: String, price: Double) {
         if (quote(symbol) != null) return

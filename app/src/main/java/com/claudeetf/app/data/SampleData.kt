@@ -61,21 +61,12 @@ object SampleData {
         Triple("PLTR", "Palantir", 4.7),
     )
 
-    val events = listOf(
-        CalendarEvent("今天 11/5（四）", "21:30", "美國 初領失業救濟金人數", "前值 — · 預期 —", EventKind.ECONOMIC, 2),
-        CalendarEvent("11/6（五）", "21:30", "美國 非農就業人口・失業率", "前值 — · 預期 —", EventKind.ECONOMIC, 3),
-        CalendarEvent("11/18（三）預估", "全日", "00878 除息", "每股 0.40（預估）", EventKind.DIVIDEND, 0, true),
-        CalendarEvent("11/19（四）預估", "盤後", "NVDA 財報", "台灣時間 11/20 清晨公布", EventKind.EARNINGS, 3, true),
-        CalendarEvent("11/26（四）", "全日", "美股休市・感恩節", "隔日提早收盤（台灣時間 11/28 02:00）", EventKind.HOLIDAY),
-    )
-
     val alerts = listOf(
-        AlertRule(1, Market.US, "AAPL 價格 ≥ $280.00", "觸及時推播 · 每日最多 1 次", true, true),
-        AlertRule(2, Market.TW, "2330 單日跌幅 ≥ 3%", "盤中即時", true, true),
-        AlertRule(3, Market.US, "NVDA 財報前一日", "預估 11/19 盤後公布", true, false),
-        AlertRule(4, Market.TW, "00878 除息前 3 天", "預估 11/18 除息", true, false),
-        AlertRule(5, Market.US, "美股開盤推播", "依夏令／冬令自動調整時間", false, false),
-        AlertRule(6, Market.US, "持股盤後漲跌 ≥ 5%", "盤後時段", true, true),
+        AlertRule(1, "AAPL", AlertType.PRICE_ABOVE, 280.0, true),
+        AlertRule(2, "2330", AlertType.CHANGE_DOWN, 3.0, true),
+        AlertRule(3, "NVDA", AlertType.EARNINGS, 1.0, true),
+        AlertRule(4, "00878", AlertType.EXDIV, 3.0, true),
+        AlertRule(5, "", AlertType.US_OPEN, 0.0, false),
     )
 
     val upcomingDividends = listOf(

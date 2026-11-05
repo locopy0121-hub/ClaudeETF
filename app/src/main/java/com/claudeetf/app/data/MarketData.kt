@@ -123,6 +123,9 @@ object MarketData {
         )
     }
 
+    /** 全部盤後資料，需在 IO 執行緒呼叫 */
+    fun closeAll(): Map<String, Pair<RemoteQuote, QuoteSource>> = runCatching { closeData() }.getOrDefault(emptyMap())
+
     /** 盤後資料中的單一證券（含成交量），需在 IO 執行緒呼叫 */
     fun closeRecord(symbol: String): Pair<RemoteQuote, QuoteSource>? = runCatching { closeData()[symbol] }.getOrNull()
 

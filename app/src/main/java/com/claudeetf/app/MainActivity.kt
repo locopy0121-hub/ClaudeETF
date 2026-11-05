@@ -33,6 +33,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.claudeetf.app.alerts.AlertEngine
 import com.claudeetf.app.data.AppState
 import com.claudeetf.app.data.MarketData
 import com.claudeetf.app.util.UsSession
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppState.init(applicationContext)
+        runCatching { AlertEngine.schedule(applicationContext) }
         setContent {
             AppTheme { AppRoot() }
         }
@@ -65,6 +67,7 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 while (true) {
                     runCatching { MarketData.refreshAll() }
+                    runCatching { AlertEngine.check(applicationContext) }
                     val usOpen = UsSession.info().phase.let {
                         it == UsSession.Phase.PRE || it == UsSession.Phase.REGULAR || it == UsSession.Phase.POST
                     }

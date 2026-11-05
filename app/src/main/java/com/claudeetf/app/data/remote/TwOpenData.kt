@@ -95,6 +95,23 @@ object TwOpenData {
         )
     }
 
+    // ---------- 類股指數（MI_INDEX） ----------
+    /** 回傳 (類股名稱, 漲跌%)；名稱含「類指數」者 */
+    fun sectorIndices(): List<Pair<String, Double>> {
+        val arr = dataset("/exchangeReport/MI_INDEX")
+        val out = ArrayList<Pair<String, Double>>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val name = o.find("指數", exclude = "收盤") ?: continue
+            if (!name.contains("類指數") || name.contains("報酬")) continue
+            var pct = toNum(o.find("百分比")?.replace("%", "")) ?: continue
+            val sign = o.optString("漲跌").trim()
+            if ((sign == "-" || sign == "－") && pct > 0) pct = -pct
+            out += name.replace("類指數", "").replace("類", "") to pct
+        }
+        return out.distinctBy { it.first }
+    }
+
     // ---------- 公司基本資料 ----------
     data class Company(val fields: List<Pair<String, String>>)
 

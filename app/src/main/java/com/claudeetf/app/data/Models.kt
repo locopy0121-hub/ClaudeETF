@@ -92,6 +92,7 @@ enum class EventKind(val label: String) {
 
 data class CalendarEvent(
     val dateLabel: String,
+    val date: java.time.LocalDate? = null,
     val time: String,
     val title: String,
     val detail: String,
@@ -100,14 +101,52 @@ data class CalendarEvent(
     val isHolding: Boolean = false,
 )
 
+enum class AlertType(val label: String, val isPrice: Boolean, val unit: String) {
+    PRICE_ABOVE("價格高於", true, "價格"),
+    PRICE_BELOW("價格低於", true, "價格"),
+    CHANGE_UP("單日漲幅達", true, "%"),
+    CHANGE_DOWN("單日跌幅達", true, "%"),
+    EARNINGS("財報前", false, "天"),
+    EXDIV("除息前", false, "天"),
+    US_OPEN("美股開盤", false, ""),
+}
+
 data class AlertRule(
     val id: Int,
-    val market: Market,
-    val title: String,
-    val subtitle: String,
+    /** US_OPEN 不需要代號 */
+    val symbol: String,
+    val type: AlertType,
+    val value: Double,
     val enabled: Boolean,
-    val isPrice: Boolean,
-)
+    /** 已觸發的標記（日期或事件日），避免重複通知 */
+    val lastFired: String = "",
+) {
+    val market: Market get() = if (symbol.firstOrNull()?.isDigit() == true) Market.TW else Market.US
+    val isPrice: Boolean get() = type.isPrice
+
+    val title: String
+        get() = when (type) {
+            AlertType.US_OPEN -> "美股開盤推播"
+            AlertType.PRICE_ABOVE, AlertType.PRICE_BELOW -> "$symbol ${type.label} ${trimNum(value)}"
+            AlertType.CHANGE_UP, AlertType.CHANGE_DOWN -> "$symbol ${type.label} ${trimNum(value)}%"
+            AlertType.EARNINGS, AlertType.EXDIV -> "$symbol ${type.label} ${trimNum(value)} 天"
+        }
+
+    val subtitle: String
+        get() = when (type) {
+            AlertType.US_OPEN -> "開盤後推播一次，自動依夏令／冬令調整"
+            AlertType.EARNINGS -> "依 Yahoo 公布的財報日"
+            AlertType.EXDIV -> "依 Yahoo 公布的除息日"
+            else -> "盤中與背景更新時檢查，每天最多通知一次"
+        }
+
+    companion object {
+        fun trimNum(v: Double): String =
+            if (v == Math.floor(v)) v.toLong().toString() else java.math.BigDecimal(v).stripTrailingZeros().toPlainString()
+    }
+}
+
+data class AlertHit(val time: Long, val text: String)
 
 data class UpcomingDividend(
     val dateTop: String,

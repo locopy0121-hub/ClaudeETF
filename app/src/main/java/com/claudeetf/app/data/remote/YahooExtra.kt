@@ -133,6 +133,55 @@ object YahooExtra {
         throw HttpException(401, "Yahoo 驗證失敗")
     }
 
+    /** 需要 crumb 的一般 GET；url 不含 crumb 參數 */
+    private fun authedGet(url: String): String {
+        for (attempt in 0..1) {
+            ensureCrumb(force = attempt == 1)
+            val sep = if (url.contains("?")) "&" else "?"
+            val res = Http.raw(url + sep + "crumb=" + enc(crumb ?: ""), mapOf("User-Agent" to UA, "Cookie" to (cookie ?: "")))
+            if (res.code == 401 || res.code == 403) continue
+            if (res.code !in 200..299) throw HttpException(res.code, "Yahoo ${res.code}")
+            return res.body
+        }
+        throw HttpException(401, "Yahoo 驗證失敗")
+    }
+
+    // ---------------- 漲跌排行（預設篩選器） ----------------
+
+    data class Mover(val symbol: String, val name: String, val price: Double, val changePct: Double, val volume: Double)
+
+    /** id：day_gainers、day_losers、most_actives */
+    fun screener(id: String, count: Int = 10): List<Mover> {
+        val body = authedGet("$Q2/v1/finance/screener/predefined/saved?formatted=false&scrIds=$id&count=$count&lang=en-US&region=US")
+        val quotes = JSONObject(body).getJSONObject("finance").optJSONArray("result")?.optJSONObject(0)?.optJSONArray("quotes")
+            ?: return emptyList()
+        return (0 until quotes.length()).mapNotNull { i ->
+            val o = quotes.optJSONObject(i) ?: return@mapNotNull null
+            val sym = o.optString("symbol").ifBlank { return@mapNotNull null }
+            Mover(
+                sym,
+                o.optString("shortName").ifBlank { o.optString("longName").ifBlank { sym } },
+                o.raw("regularMarketPrice") ?: 0.0,
+                o.raw("regularMarketChangePercent") ?: 0.0,
+                o.raw("regularMarketVolume") ?: 0.0,
+            )
+        }
+    }
+
+    /** 財報日、除息日、發放日（毫秒）；沒有則為 null */
+    data class Events(val earnings: Long?, val exDividend: Long?, val dividendPay: Long?)
+
+    fun events(symbol: String): Events {
+        val ce = summary(symbol, listOf("calendarEvents")).optJSONObject("calendarEvents")
+        val earn = ce?.optJSONObject("earnings")?.optJSONArray("earningsDate")?.optJSONObject(0)?.raw("raw")
+            ?: ce?.optJSONObject("earnings")?.optJSONArray("earningsDate")?.optJSONObject(0)?.optDouble("raw", Double.NaN)?.takeIf { !it.isNaN() }
+        return Events(
+            earn?.let { (it * 1000).toLong() },
+            ce.raw("exDividendDate")?.let { (it * 1000).toLong() },
+            ce.raw("dividendDate")?.let { (it * 1000).toLong() },
+        )
+    }
+
     // ---------------- ETF 持股、機構持股 ----------------
 
     data class Holding(val symbol: String, val name: String, val weightPct: Double)

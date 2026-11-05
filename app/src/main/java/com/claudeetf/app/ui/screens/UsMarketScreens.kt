@@ -5,11 +5,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -19,22 +21,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.claudeetf.app.data.AppState
 import com.claudeetf.app.data.CalendarEvent
+import com.claudeetf.app.data.CalendarRepo
 import com.claudeetf.app.data.ColorMode
 import com.claudeetf.app.data.EventKind
 import com.claudeetf.app.data.Market
-import com.claudeetf.app.data.SampleData
+import com.claudeetf.app.data.MarketBoards
+import com.claudeetf.app.data.MarketData
 import com.claudeetf.app.data.SectorMove
+import com.claudeetf.app.data.remote.YahooExtra
+import com.claudeetf.app.data.remote.friendly
 import com.claudeetf.app.ui.*
 import com.claudeetf.app.ui.theme.C
 import com.claudeetf.app.ui.theme.Trend
 import com.claudeetf.app.util.Fmt
-import java.time.DayOfWeek
-import java.time.LocalDate
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 // ============================== 市場 ==============================
@@ -42,10 +48,28 @@ import kotlin.math.abs
 @Composable
 fun MarketScreen(nav: NavController) {
     var tab by remember { mutableIntStateOf(0) }
+    var moverTab by remember { mutableIntStateOf(0) }
+    var reload by remember { mutableIntStateOf(0) }
     val s = rememberUsSession()
+    val scope = rememberCoroutineScope()
+    var board by remember { mutableStateOf<Load<MarketBoards.Board>>(Load.Loading) }
+
+    LaunchedEffect(tab, reload) {
+        board = Load.Loading
+        board = runCatching { if (tab == 0) MarketBoards.us(reload > 0) else MarketBoards.tw(reload > 0) }
+            .fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+    }
+
+    fun open(sym: String) {
+        scope.launch {
+            if (!AppState.isWatched(sym)) MarketData.addAndFetch(sym)
+            nav.navigate(Routes.stock(sym))
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("市場") {
+            IconButton(onClick = { reload++ }) { Icon(Icons.Filled.Refresh, contentDescription = "重新整理", tint = C.Text) }
             IconButton(onClick = { nav.navigate(Routes.CALENDAR) }) {
                 Icon(Icons.Filled.DateRange, contentDescription = "財經行事曆", tint = C.Text)
             }
@@ -54,7 +78,7 @@ fun MarketScreen(nav: NavController) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { Segmented(listOf("美股", "台股"), tab, { tab = it }) }
+            item { Segmented(listOf("美股", "台股"), tab, { tab = it; moverTab = 0 }) }
             if (tab == 0) {
                 item {
                     Card(padding = 14.dp) {
@@ -73,9 +97,7 @@ fun MarketScreen(nav: NavController) {
                     }
                 }
                 items(AppState.usIndices.chunked(3)) { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        row.forEach { IndexCard(it, Modifier.weight(1f)) }
-                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { IndexCard(it, Modifier.weight(1f)) } }
                 }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -84,39 +106,70 @@ fun MarketScreen(nav: NavController) {
                         SmallCard("USD/TWD", Fmt.num(AppState.usdTwd, 2), Modifier.weight(1f))
                     }
                 }
-                AppState.sourceStatus["IDX"]?.let { st -> item { Label("指數來源 Yahoo Finance · $st") } }
-                item { SectionTitle("板塊熱力圖", "示意資料") }
-                items(SampleData.sectors.chunked(4)) { row ->
+            } else {
+                items(AppState.twIndices.chunked(2)) { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { IndexCard(it, Modifier.weight(1f)) } }
+                }
+            }
+            boardSection(board, tab == 0, moverTab, { moverTab = it }, ::open)
+            item {
+                Text(
+                    "財經行事曆 ›", color = C.Primary, fontSize = 14.sp,
+                    modifier = Modifier.clickable { nav.navigate(Routes.CALENDAR) }.padding(vertical = 12.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun LazyListScope.boardSection(
+    board: Load<MarketBoards.Board>,
+    us: Boolean,
+    moverTab: Int,
+    onMoverTab: (Int) -> Unit,
+    open: (String) -> Unit,
+) {
+    when (board) {
+        is Load.Loading -> item { Label("載入類股與排行中…", Modifier.padding(vertical = 16.dp)) }
+        is Load.Err -> item { Text("市場資料載入失敗：" + board.message, color = C.Red, fontSize = 13.sp) }
+        is Load.Ok -> {
+            val b = board.value
+            if (b.sectors.isNotEmpty()) {
+                item { SectionTitle(if (us) "類股熱力圖" else "類股漲跌", if (us) "S&P 500 類股 ETF" else "證交所類股指數") }
+                items(b.sectors.chunked(4)) { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         row.forEach { SectorTile(it, Modifier.weight(1f)) }
                         repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
-                item { SectionTitle("漲幅排行", "示意資料") }
-                items(SampleData.movers) { (sym, name, pct) ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        NumText(sym, 14.sp); HGap(8.dp)
-                        Label(name, Modifier.weight(1f))
-                        NumText(Fmt.signedPct(pct, 1), 14.sp, Trend.fg(pct))
-                    }
-                }
-                item {
-                    Text(
-                        "財經行事曆 ›", color = C.Primary, fontSize = 14.sp,
-                        modifier = Modifier.clickable { nav.navigate(Routes.CALENDAR) }.padding(vertical = 12.dp),
-                    )
-                }
-            } else {
-                items(AppState.twIndices.chunked(2)) { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        row.forEach { IndexCard(it, Modifier.weight(1f)) }
-                    }
-                }
-                item { SectionTitle("我的台股") }
-                items(AppState.quotes.filter { it.market == Market.TW }) { q ->
-                    QuoteRow(q) { nav.navigate(Routes.stock(q.symbol)) }
-                }
             }
+            item { SectionTitle("排行", if (us) "Yahoo Finance" else "證交所收盤 · 成交 ≥ 500 張") }
+            item { Segmented(listOf("漲幅", "跌幅", "成交量"), moverTab, onMoverTab) }
+            val list = when (moverTab) { 0 -> b.gainers; 1 -> b.losers; else -> b.actives }
+            if (list.isEmpty()) item { Label("目前沒有排行資料") }
+            items(list) { m -> MoverRow(m, us) { open(m.symbol) } }
+            b.notes.forEach { n -> item { Label(n) } }
+        }
+    }
+}
+
+@Composable
+private fun MoverRow(m: YahooExtra.Mover, us: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 8.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(m.name, color = C.Text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                MarketTag(if (us) Market.US else Market.TW); HGap(6.dp)
+                NumText(m.symbol, 12.sp, C.Muted); HGap(8.dp)
+                Label("量 " + Fmt.num(m.volume) + if (us) "" else " 張")
+            }
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            NumText(Fmt.price(m.price), 14.sp)
+            ChangePill(m.changePct)
         }
     }
 }
@@ -136,18 +189,19 @@ private fun SectorTile(m: SectorMove, modifier: Modifier) {
     val isUp = m.changePct >= 0
     val redSide = isUp == upIsRed
     val bg = when {
+        abs(m.changePct) < 0.05 -> C.Card2
         redSide && strong -> Color(0xFF7A2A2E)
         redSide -> Color(0xFF4A2428)
         strong -> Color(0xFF1D5A3C)
         else -> Color(0xFF1B3B2B)
     }
-    val fg = if (redSide) Color(0xFFFFE3E3) else Color(0xFFE0FFF0)
+    val fg = if (abs(m.changePct) < 0.05) C.Text2 else if (redSide) Color(0xFFFFE3E3) else Color(0xFFE0FFF0)
     Column(
         modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(8.dp)).background(bg).padding(6.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(m.name, color = fg, fontSize = 11.sp, maxLines = 1)
-        NumText(Fmt.signedPct(m.changePct, 1), 11.sp, fg)
+        Text(m.name, color = fg, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        NumText(Fmt.signedPct(m.changePct, 2), 11.sp, fg)
     }
 }
 
@@ -156,39 +210,22 @@ private fun SectorTile(m: SectorMove, modifier: Modifier) {
 @Composable
 fun CalendarScreen(nav: NavController) {
     var filter by remember { mutableIntStateOf(0) }
+    var reload by remember { mutableIntStateOf(0) }
     val kinds = listOf<EventKind?>(null) + EventKind.entries
-    val today = LocalDate.now()
-    val monday = today.with(DayOfWeek.MONDAY)
-    var picked by remember { mutableStateOf(today) }
-    val list: List<CalendarEvent> = SampleData.events.filter { filter == 0 || it.kind == kinds[filter] }
-    val weekNames = listOf("一", "二", "三", "四", "五", "六", "日")
+    var events by remember { mutableStateOf<Load<List<CalendarEvent>>>(Load.Loading) }
+    LaunchedEffect(reload) {
+        events = Load.Loading
+        events = runCatching { CalendarRepo.load(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+    }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("財經行事曆", onBack = { nav.popBackStack() }) {
-            Label("${today.monthValue} 月", Modifier.padding(end = 12.dp))
+            IconButton(onClick = { reload++ }) { Icon(Icons.Filled.Refresh, contentDescription = "重新整理", tint = C.Text) }
         }
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (i in 0..6) {
-                        val d = monday.plusDays(i.toLong())
-                        val on = d == picked
-                        Column(
-                            Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(12.dp))
-                                .background(if (on) C.Primary else C.Card)
-                                .clickable { picked = d },
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Text(weekNames[i], color = if (on) C.OnPrimary else C.Muted, fontSize = 11.sp)
-                            NumText("${d.dayOfMonth}", 16.sp, if (on) C.OnPrimary else C.Text, FontWeight.Bold)
-                        }
-                    }
-                }
-            }
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     kinds.forEachIndexed { i, k ->
@@ -205,14 +242,21 @@ fun CalendarScreen(nav: NavController) {
                     }
                 }
             }
-            item { Label("時間皆為台灣時間（自動夏令／冬令）") }
-            val grouped = list.groupBy { it.dateLabel }
-            grouped.forEach { (date, events) ->
-                item { Text(date, color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp)) }
-                items(events) { e -> EventRow(e) }
+            item { Label("未來 120 天 · 時間皆為台灣時間 · 包含自選與持股") }
+            when (val e = events) {
+                is Load.Loading -> item { Label("載入行事曆中…（每檔查詢一次，自選越多越久）", Modifier.padding(vertical = 16.dp)) }
+                is Load.Err -> item { Text("行事曆載入失敗：" + e.message, color = C.Red, fontSize = 13.sp) }
+                is Load.Ok -> {
+                    val list = e.value.filter { filter == 0 || it.kind == kinds[filter] }
+                    if (list.isEmpty()) item { Label("這段期間沒有事件", Modifier.padding(vertical = 16.dp)) }
+                    list.groupBy { it.dateLabel }.forEach { (date, evs) ->
+                        item { Text(date, color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp)) }
+                        items(evs) { ev -> EventRow(ev) }
+                    }
+                }
             }
             item {
-                Label("經濟數據發布時間以官方公告為準；財報日期由資料來源更新。", Modifier.padding(top = 8.dp))
+                Label("財報與除息日來自 Yahoo Finance，公司可能調整；FOMC 依聯準會公告日程。", Modifier.padding(top = 8.dp))
             }
         }
     }
@@ -227,7 +271,7 @@ private fun EventRow(e: CalendarEvent) {
         NumText(e.time, 13.sp, C.Text2, modifier = Modifier.width(48.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(e.title, color = C.Text, fontSize = 14.sp)
+                Text(e.title, Modifier.weight(1f, fill = false), color = C.Text, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (e.isHolding) {
                     HGap(6.dp)
                     Text(
@@ -238,10 +282,7 @@ private fun EventRow(e: CalendarEvent) {
             }
             Label(e.detail)
         }
-        if (e.importance > 0) {
-            Text("●".repeat(e.importance) + "○".repeat(3 - e.importance), color = C.Tw, fontSize = 10.sp)
-        } else {
-            MarketTag(if (e.title.firstOrNull()?.isDigit() == true) Market.TW else Market.US)
-        }
+        HGap(6.dp)
+        Text(e.kind.label, color = C.Muted, fontSize = 11.sp)
     }
 }

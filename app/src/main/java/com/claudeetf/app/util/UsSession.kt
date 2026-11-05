@@ -15,11 +15,25 @@ object UsSession {
     private val HHMM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
     // 2026–2027 美股全日休市（紐約日期）
-    private val holidays = setOf(
-        "2026-11-26", "2026-12-25",
-        "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
-        "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
-    ).map { LocalDate.parse(it) }.toSet()
+    val holidayNames: Map<LocalDate, String> = listOf(
+        "2026-11-26" to "感恩節", "2026-12-25" to "聖誕節",
+        "2027-01-01" to "元旦", "2027-01-18" to "馬丁路德金恩紀念日", "2027-02-15" to "總統日",
+        "2027-03-26" to "耶穌受難日", "2027-05-31" to "陣亡將士紀念日", "2027-06-18" to "六月節（補假）",
+        "2027-07-05" to "獨立紀念日（補假）", "2027-09-06" to "勞動節", "2027-11-25" to "感恩節",
+        "2027-12-24" to "聖誕節（補假）",
+    ).associate { LocalDate.parse(it.first) to it.second }
+    private val holidays = holidayNames.keys
+
+    /** FOMC 利率決議（第二天美東 14:00 公布）；聯準會公告日程 */
+    val fomcDecisionDays: List<LocalDate> = listOf(
+        "2026-12-09",
+        "2027-01-27", "2027-03-17", "2027-04-28", "2027-06-09",
+        "2027-07-28", "2027-09-15", "2027-10-27", "2027-12-08",
+    ).map { LocalDate.parse(it) }
+
+    /** 紐約某日某時 → 台灣時間 */
+    fun nyToTaipei(date: LocalDate, time: LocalTime): ZonedDateTime =
+        ZonedDateTime.of(date, time, NY).withZoneSameInstant(TPE)
 
     enum class Phase(val label: String) {
         PRE("盤前交易中"),
