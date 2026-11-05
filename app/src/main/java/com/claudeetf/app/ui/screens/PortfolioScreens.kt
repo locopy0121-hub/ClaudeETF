@@ -33,6 +33,8 @@ import com.claudeetf.app.data.AppState
 import com.claudeetf.app.data.Holding
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.SampleData
+import com.claudeetf.app.data.TaxKind
+import com.claudeetf.app.data.TaxRules
 import com.claudeetf.app.data.Trade
 import com.claudeetf.app.data.TradeType
 import com.claudeetf.app.ui.*
@@ -180,6 +182,7 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String) {
     var fx by remember { mutableStateOf(Fmt.num(AppState.usdTwd, 2)) }
     var feeText by remember { mutableStateOf("") }
     var feeEdited by remember { mutableStateOf(false) }
+    var ratioText by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
     val tType = TradeType.entries[type]
@@ -190,19 +193,22 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String) {
     val q = shares.toDoubleOrNull() ?: 0.0
     val p = price.toDoubleOrNull() ?: 0.0
     val amount = q * p
+    val taxKind = TaxRules.kindOf(sym)
+    val ratio = ratioText.toDoubleOrNull()?.div(100) ?: TaxRules.taxableRatio(sym)
+    val divBd = TaxRules.dividend(sym, amount, ratio)
     val autoFee = when (tType) {
         TradeType.BUY, TradeType.SELL ->
             if (isUs) Math.round(amount * 0.001 * 100) / 100.0
             else if (amount > 0) max(20.0, (amount * 0.001425).roundToLong().toDouble()) else 0.0
-        TradeType.DIVIDEND -> if (!isUs && amount >= 20000) (amount * 0.0211).roundToLong().toDouble() else 0.0
+        TradeType.DIVIDEND -> if (isUs) 0.0 else divBd.nhi
         TradeType.SPLIT -> 0.0
     }
-    val fee = if (feeEdited) feeText.toDoubleOrNull() ?: 0.0 else autoFee
+    val fee = if (feeEdited && tType != TradeType.DIVIDEND) feeText.toDoubleOrNull() ?: 0.0 else autoFee
     val tax = if (tType == TradeType.SELL && !isUs) (amount * (if (isEtf) 0.001 else 0.003)).roundToLong().toDouble() else 0.0
     val total = when (tType) {
         TradeType.BUY -> amount + fee
         TradeType.SELL -> amount - fee - tax
-        TradeType.DIVIDEND -> if (isUs) amount * 0.7 else amount - fee
+        TradeType.DIVIDEND -> divBd.net
         TradeType.SPLIT -> 0.0
     }
     val cur = if (isUs) "$" else "NT$"
@@ -252,7 +258,22 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String) {
                 }
             }
             if (isUs) item { Label("匯率預設台灣銀行即期，可修改") }
-            if (tType != TradeType.SPLIT) {
+            if (tType == TradeType.DIVIDEND) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Label("稅務類型：" + taxKind.label + (if (TaxRules.isAutoDetected(sym)) "（自動判斷）" else "（已設定）"))
+                        if (!isUs) {
+                            Field(
+                                "本期應稅比例 %（股利所得占配息）",
+                                if (ratioText.isEmpty()) Fmt.num(TaxRules.taxableRatio(sym) * 100, 0) else ratioText,
+                                { ratioText = it },
+                            )
+                        }
+                        Label(taxKind.note)
+                    }
+                }
+            }
+            if (tType == TradeType.BUY || tType == TradeType.SELL) {
                 item {
                     Column {
                     Field(
@@ -271,10 +292,14 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String) {
             if (tType != TradeType.SPLIT) {
                 item {
                     Card(padding = 14.dp) {
-                        KeyValue(if (tType == TradeType.DIVIDEND) "股息總額" else "成交金額", cur + Fmt.num(amount, dec))
-                        KeyValue("手續費", cur + Fmt.num(fee, dec))
-                        KeyValue("交易稅", if (isUs) "美股免" else cur + Fmt.num(tax, 0))
-                        if (tType == TradeType.DIVIDEND && isUs) KeyValue("預扣稅 30%", "−$" + Fmt.num(amount * 0.3, 2))
+                        if (tType == TradeType.DIVIDEND) {
+                            KeyValue("配息總額", cur + Fmt.num(amount, dec))
+                            divBd.lines.forEach { (k, v) -> KeyValue(k, v) }
+                        } else {
+                            KeyValue("成交金額", cur + Fmt.num(amount, dec))
+                            KeyValue("手續費", cur + Fmt.num(fee, dec))
+                            KeyValue("交易稅", if (isUs) "美股免" else cur + Fmt.num(tax, 0))
+                        }
                         Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
                         KeyValue(
                             when (tType) { TradeType.BUY -> "總成本"; else -> "實收金額" },
@@ -403,7 +428,9 @@ fun DividendScreen(nav: NavController) {
             item {
                 Card(padding = 14.dp) {
                     Text("稅務提醒", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Label("美股股息預扣 30%，App 以實收記帳。台股單筆股息達 NT$20,000 扣二代健保補充保費 2.11%。海外所得年度合計會提醒是否需申報。")
+                    Label("台股：只有「股利所得」計入綜所稅，且單次股利所得達 NT$20,000 才扣二代健保 2.11%。ETF 配息中的選擇權權利金、收益平準金、證券交易所得不扣；債券與海外 ETF 屬海外所得，適用最低稅負制。")
+                    Label("美股：配息預扣 30%，以實收記帳；不扣二代健保。")
+                    Label("每檔的稅務類型與應稅比例可在個股頁「股息」分頁調整。")
                 }
             }
         }

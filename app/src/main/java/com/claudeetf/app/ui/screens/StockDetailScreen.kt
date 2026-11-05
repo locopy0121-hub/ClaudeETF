@@ -31,6 +31,11 @@ import com.claudeetf.app.data.InfoItem
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.Quote
 import com.claudeetf.app.data.StockInfoRepo
+import com.claudeetf.app.data.TaxKind
+import com.claudeetf.app.data.TaxRules
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import com.claudeetf.app.data.remote.YahooExtra
 import com.claudeetf.app.data.remote.friendly
 import com.claudeetf.app.ui.*
@@ -304,6 +309,7 @@ private fun LazyListScope.financialsTab(q: Quote, fund: Load<Fundamentals>) {
 }
 
 private fun LazyListScope.dividendTab(q: Quote, divs: Load<DividendInfo>) {
+    item { TaxCard(q, (divs as? Load.Ok<DividendInfo>)?.value?.history?.firstOrNull()?.amount) }
     when (divs) {
         is Load.Loading -> loading("載入配息紀錄中…")
         is Load.Err -> showError(divs.message)
@@ -315,7 +321,6 @@ private fun LazyListScope.dividendTab(q: Quote, divs: Load<DividendInfo>) {
                     KeyValue("近 12 個月配息", if (d.ttm > 0) ccy + Fmt.num(d.ttm, 4).trimEnd('0').trimEnd('.') else "—")
                     KeyValue("現價殖利率", d.yieldPct?.let { Fmt.num(it, 2) + "%" } ?: "—")
                     KeyValue("近 5 年配息次數", d.history.size.toString())
-                    d.extra.forEach { KeyValue(it.label, it.value) }
                 }
             }
             if (d.history.isEmpty()) {
@@ -371,6 +376,87 @@ private fun LazyListScope.companyTab(fund: Load<Fundamentals>) {
                 item { SectionTitle("公司簡介") }
                 item { Text(s, color = C.Text2, fontSize = 13.sp, lineHeight = 20.sp) }
             }
+        }
+    }
+}
+
+/** 配息稅務：類型（可變更）、應稅比例、以持股試算 */
+@Composable
+private fun TaxCard(q: Quote, lastDiv: Double?) {
+    val kind = TaxRules.kindOf(q.symbol)
+    val auto = TaxRules.isAutoDetected(q.symbol)
+    val isTw = q.market == Market.TW
+    var expanded by remember { mutableStateOf(false) }
+    var ratioText by remember(q.symbol, kind) { mutableStateOf(Fmt.num(TaxRules.taxableRatio(q.symbol) * 100, 0)) }
+    val uri = LocalUriHandler.current
+    val holding = AppState.holdings.firstOrNull { it.symbol == q.symbol }
+
+    Card(padding = 14.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("配息稅務", Modifier.weight(1f), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            if (isTw) {
+                Text(
+                    if (expanded) "收合" else "變更類型", color = C.Primary, fontSize = 13.sp,
+                    modifier = Modifier.clickable { expanded = !expanded }.padding(8.dp),
+                )
+            }
+        }
+        KeyValue("類型", kind.label + if (auto) "（自動判斷）" else "（已設定）")
+        Label(kind.note)
+
+        if (expanded && isTw) {
+            TaxKind.entries.filter { it != TaxKind.US }.forEach { k ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .background(if (k == kind) C.Selected else C.Bg)
+                        .clickable { AppState.setTaxKind(q.symbol, k); expanded = false }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    Text(k.label, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+                    Label("預設應稅 " + Math.round(k.defaultTaxable * 100) + "%")
+                }
+            }
+            if (!auto) {
+                Text(
+                    "恢復自動判斷", color = C.Primary, fontSize = 13.sp,
+                    modifier = Modifier.clickable { AppState.setTaxKind(q.symbol, null); expanded = false }.padding(vertical = 8.dp),
+                )
+            }
+        }
+
+        if (isTw) {
+            OutlinedTextField(
+                value = ratioText,
+                onValueChange = {
+                    ratioText = it
+                    it.toDoubleOrNull()?.let { v -> AppState.setTaxRatio(q.symbol, v / 100) }
+                },
+                label = { Text("應稅比例 %（股利所得占配息）") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                colors = fieldColors(),
+            )
+            Label("依投信每期公告的「收益分配組成」中，股利所得所占比例填寫；記錄股息時會自動帶入。")
+            if (q.isEtf || q.symbol.startsWith("00")) {
+                Text(
+                    "查看證交所 ETF 配息組成 ›", color = C.Primary, fontSize = 13.sp,
+                    modifier = Modifier.clickable { runCatching { uri.openUri(TaxRules.compositionUrl(q.symbol)) } }
+                        .padding(vertical = 8.dp),
+                )
+            }
+        }
+
+        if (holding != null && lastDiv != null && lastDiv > 0) {
+            val gross = holding.shares * lastDiv
+            val bd = TaxRules.dividend(q.symbol, gross)
+            val ccy = if (isTw) "NT$" else "$"
+            val dec = if (isTw) 0 else 2
+            Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
+            Label("以最近一次配息 " + Fmt.num(lastDiv, 4).trimEnd('0').trimEnd('.') + " × 持有 " + Fmt.shares(holding.shares) + " 股試算")
+            KeyValue("配息總額", ccy + Fmt.num(gross, dec))
+            bd.lines.forEach { (k, v) -> KeyValue(k, v) }
+            KeyValue("實收", ccy + Fmt.num(bd.net, dec), C.Primary)
         }
     }
 }

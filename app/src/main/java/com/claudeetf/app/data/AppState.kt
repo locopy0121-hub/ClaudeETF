@@ -45,6 +45,10 @@ object AppState {
         private set
     var fxUpdatedAt by mutableLongStateOf(0L)
         private set
+    /** 每檔證券的稅務類型與應稅比例（使用者調整後的值） */
+    val taxKindOverride = mutableStateMapOf<String, TaxKind>()
+    val taxRatioOverride = mutableStateMapOf<String, Double>()
+
     /** 各市場最近一次更新結果，key：TW / US / FX */
     val sourceStatus = mutableStateMapOf<String, String>()
 
@@ -73,6 +77,19 @@ object AppState {
         finnhubKey = p.getString("finnhubKey", "") ?: ""
         fxSource = p.getString("fxSource", "手動輸入") ?: "手動輸入"
         fxUpdatedAt = p.getLong("fxUpdatedAt", 0L)
+
+        p.getString("taxKinds", null)?.let { json ->
+            runCatching {
+                val o = JSONObject(json)
+                o.keys().forEach { k -> runCatching { taxKindOverride[k] = TaxKind.valueOf(o.getString(k)) } }
+            }
+        }
+        p.getString("taxRatios", null)?.let { json ->
+            runCatching {
+                val o = JSONObject(json)
+                o.keys().forEach { k -> taxRatioOverride[k] = o.getDouble(k) }
+            }
+        }
 
         p.getString("quotes", null)?.let { json ->
             val saved = parseQuotes(json)
@@ -119,6 +136,8 @@ object AppState {
             .putString("fxSource", fxSource)
             .putLong("fxUpdatedAt", fxUpdatedAt)
             .putString("quotes", quotesJson())
+            .putString("taxKinds", JSONObject().apply { taxKindOverride.forEach { (k, v) -> put(k, v.name) } }.toString())
+            .putString("taxRatios", JSONObject().apply { taxRatioOverride.forEach { (k, v) -> put(k, v) } }.toString())
             .apply()
     }
 
@@ -235,6 +254,18 @@ object AppState {
     }
 
     fun persist() = save()
+
+    /** kind = null 代表恢復自動判斷 */
+    fun setTaxKind(symbol: String, kind: TaxKind?) {
+        if (kind == null) taxKindOverride.remove(symbol) else taxKindOverride[symbol] = kind
+        taxRatioOverride.remove(symbol) // 換類型時比例回到該類型預設
+        save()
+    }
+
+    fun setTaxRatio(symbol: String, ratio: Double?) {
+        if (ratio == null) taxRatioOverride.remove(symbol) else taxRatioOverride[symbol] = ratio.coerceIn(0.0, 1.0)
+        save()
+    }
 
     fun isWatched(symbol: String) = quote(symbol) != null
 
