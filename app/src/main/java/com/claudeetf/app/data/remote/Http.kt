@@ -30,6 +30,29 @@ object Http {
     }
 }
 
+/** 不因非 2xx 拋錯，並回傳 Set-Cookie（Yahoo 取得 crumb 用） */
+data class RawResponse(val code: Int, val body: String, val cookies: List<String>)
+
+fun Http.raw(url: String, headers: Map<String, String> = emptyMap(), timeoutMs: Int = 15_000): RawResponse {
+    val conn = URL(url).openConnection() as HttpURLConnection
+    try {
+        conn.requestMethod = "GET"
+        conn.connectTimeout = timeoutMs
+        conn.readTimeout = timeoutMs
+        headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val body = runCatching { stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: "" }.getOrDefault("")
+        val cookies = conn.headerFields.entries
+            .filter { it.key != null && it.key.equals("Set-Cookie", ignoreCase = true) }
+            .flatMap { it.value }
+            .map { it.substringBefore(";") }
+        return RawResponse(code, body, cookies)
+    } finally {
+        conn.disconnect()
+    }
+}
+
 /** 轉成給使用者看的錯誤訊息 */
 fun Throwable.friendly(): String = when (this) {
     is HttpException -> when (code) {
