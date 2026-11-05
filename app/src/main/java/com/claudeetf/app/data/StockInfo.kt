@@ -1,6 +1,10 @@
 package com.claudeetf.app.data
 
+import com.claudeetf.app.data.remote.FugleApi
+import com.claudeetf.app.data.remote.MoneyDjHoldings
+import com.claudeetf.app.data.remote.TwInstitutional
 import com.claudeetf.app.data.remote.TwOpenData
+import com.claudeetf.app.data.remote.snapshot
 import com.claudeetf.app.data.remote.YahooExtra
 import com.claudeetf.app.data.remote.fmt
 import com.claudeetf.app.data.remote.raw
@@ -188,5 +192,88 @@ object StockInfoRepo {
         }
         newsCache[q.symbol] = System.currentTimeMillis() to list
         list
+    }
+
+    // ---------------- 當日交易 ----------------
+
+    data class Trading(
+        val items: List<InfoItem>,
+        val bids: List<Pair<Double, Double>>,
+        val asks: List<Pair<Double, Double>>,
+        /** 內盤、外盤（張） */
+        val inOut: Pair<Double, Double>?,
+        val source: String,
+    )
+
+    private fun lots(v: Double?) = v?.let { "%,.0f 張".format(Locale.US, it) }
+    private fun money(v: Double?) = v?.let {
+        if (it >= 1e8) "%,.2f 億".format(Locale.US, it / 1e8) else "%,.0f 萬".format(Locale.US, it / 1e4)
+    }
+
+    suspend fun trading(q: Quote): Trading = withContext(Dispatchers.IO) {
+        if (q.market == Market.TW) {
+            val key = AppState.fugleKey
+            if (key.isNotBlank() && MarketData.isTwIntraday()) {
+                val snap = runCatching { FugleApi.snapshot(q.symbol, key) }.getOrNull()
+                if (snap != null) {
+                    val items = listOfNotNull(
+                        lots(snap.volumeLots)?.let { InfoItem("成交量", it) },
+                        money(snap.valueTwd)?.let { InfoItem("成交金額", it) },
+                        snap.transactions?.let { InfoItem("成交筆數", "%,.0f".format(Locale.US, it)) },
+                        snap.avgPrice?.let { InfoItem("均價", "%.2f".format(Locale.US, it)) },
+                        if (snap.isLimitUp) InfoItem("狀態", "漲停") else if (snap.isLimitDown) InfoItem("狀態", "跌停") else null,
+                    )
+                    val io = if (snap.atBidLots != null && snap.atAskLots != null) snap.atBidLots to snap.atAskLots else null
+                    return@withContext Trading(items, snap.bids, snap.asks, io, "富果即時")
+                }
+            }
+            val rec = MarketData.closeRecord(q.symbol)?.first
+            val items = listOfNotNull(
+                rec?.open?.let { InfoItem("開盤", "%.2f".format(Locale.US, it)) },
+                rec?.high?.let { InfoItem("最高", "%.2f".format(Locale.US, it)) },
+                rec?.low?.let { InfoItem("最低", "%.2f".format(Locale.US, it)) },
+                rec?.prevClose?.let { InfoItem("昨收", "%.2f".format(Locale.US, it)) },
+                lots(rec?.volume?.div(1000))?.let { InfoItem("成交量", it) },
+                money(rec?.value)?.let { InfoItem("成交金額", it) },
+                rec?.transactions?.let { InfoItem("成交筆數", "%,.0f".format(Locale.US, it)) },
+            )
+            if (items.isEmpty()) throw IllegalStateException("尚無 ${q.symbol} 的成交資料")
+            return@withContext Trading(items, emptyList(), emptyList(), null, "證交所／櫃買 收盤資料")
+        }
+        val h = YahooExtra.history(q.symbol, "1d")
+        val items = listOfNotNull(
+            h.opens.firstOrNull()?.let { InfoItem("開盤", "%.2f".format(Locale.US, it)) },
+            h.highs.maxOrNull()?.let { InfoItem("最高", "%.2f".format(Locale.US, it)) },
+            h.lows.minOrNull()?.let { InfoItem("最低", "%.2f".format(Locale.US, it)) },
+            h.prevClose?.let { InfoItem("昨收", "%.2f".format(Locale.US, it)) },
+            (h.dayVolume ?: h.volumes.sumOf { it.toDouble() }.takeIf { it > 0 })?.let { InfoItem("成交量", "%,.0f 股".format(Locale.US, it)) },
+            h.dayVolume?.let { v -> money(v * q.price)?.let { InfoItem("成交金額（估）", "$" + it) } },
+        )
+        Trading(items, emptyList(), emptyList(), null, "Yahoo Finance")
+    }
+
+    // ---------------- 籌碼 ----------------
+
+    sealed class Chips {
+        data class Tw(val days: List<TwInstitutional.Day>) : Chips()
+        data class Us(val ownership: YahooExtra.Ownership) : Chips()
+    }
+
+    suspend fun chips(q: Quote): Chips = withContext(Dispatchers.IO) {
+        if (q.market == Market.TW) Chips.Tw(TwInstitutional.recent(q.symbol, 5))
+        else Chips.Us(YahooExtra.ownership(q.symbol))
+    }
+
+    // ---------------- ETF 成分股 ----------------
+
+    suspend fun holdings(q: Quote): YahooExtra.EtfHoldings = withContext(Dispatchers.IO) {
+        val tw = q.market == Market.TW
+        val fromDj = if (tw) runCatching { MoneyDjHoldings.fetch(q.symbol) }.getOrNull() else null
+        val fromYahoo = runCatching { YahooExtra.etfHoldings(yahooSymbol(q)) }.getOrNull()
+        when {
+            fromDj != null -> fromDj.copy(sectors = fromYahoo?.sectors ?: emptyList())
+            fromYahoo != null -> fromYahoo
+            else -> throw IllegalStateException("查無 ${q.symbol} 的成分股資料")
+        }
     }
 }

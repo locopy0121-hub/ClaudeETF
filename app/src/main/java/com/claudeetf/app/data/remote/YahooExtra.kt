@@ -19,23 +19,48 @@ object YahooExtra {
 
     // ---------------- 走勢 ----------------
 
-    data class History(val times: List<Long>, val closes: List<Float>, val prevClose: Double?)
+    data class History(
+        val times: List<Long>,
+        val closes: List<Float>,
+        val prevClose: Double?,
+        val opens: List<Float> = emptyList(),
+        val highs: List<Float> = emptyList(),
+        val lows: List<Float> = emptyList(),
+        val volumes: List<Float> = emptyList(),
+        /** 當日成交量（Yahoo meta） */
+        val dayVolume: Double? = null,
+    )
 
     /** range：1d 5d 1mo 6mo 1y 5y */
+    /** range：1d 5d 1mo 3mo 6mo 1y 2y 5y；K 線看日線時多抓一段算均線 */
     fun history(symbol: String, range: String): History {
         val interval = when (range) {
             "1d" -> "5m"
             "5d" -> "15m"
-            "1mo", "6mo", "1y" -> "1d"
+            "1mo", "3mo", "6mo", "1y", "2y" -> "1d"
             else -> "1wk"
         }
         val body = Http.get("$Q1/v8/finance/chart/${enc(symbol)}?range=$range&interval=$interval", mapOf("User-Agent" to UA))
         val r = JSONObject(body).getJSONObject("chart").optJSONArray("result")?.optJSONObject(0)
             ?: throw HttpException(404, "查無 $symbol")
         val ts = r.optJSONArray("timestamp")
-        val closes = r.optJSONObject("indicators")?.optJSONArray("quote")?.optJSONObject(0)?.optJSONArray("close")
+        val qo = r.optJSONObject("indicators")?.optJSONArray("quote")?.optJSONObject(0)
+        val closes = qo?.optJSONArray("close")
+        val oA = qo?.optJSONArray("open")
+        val hA = qo?.optJSONArray("high")
+        val lA = qo?.optJSONArray("low")
+        val vA = qo?.optJSONArray("volume")
         val times = ArrayList<Long>()
         val values = ArrayList<Float>()
+        val opens = ArrayList<Float>()
+        val highs = ArrayList<Float>()
+        val lows = ArrayList<Float>()
+        val vols = ArrayList<Float>()
+        fun at(a: org.json.JSONArray?, i: Int, fallback: Double): Float {
+            if (a == null || i >= a.length() || a.isNull(i)) return fallback.toFloat()
+            val d = a.optDouble(i, Double.NaN)
+            return if (d.isNaN()) fallback.toFloat() else d.toFloat()
+        }
         if (ts != null && closes != null) {
             for (i in 0 until minOf(ts.length(), closes.length())) {
                 if (closes.isNull(i)) continue
@@ -43,6 +68,10 @@ object YahooExtra {
                 if (v.isNaN()) continue
                 times.add(ts.optLong(i) * 1000)
                 values.add(v.toFloat())
+                opens.add(at(oA, i, v))
+                highs.add(maxOf(at(hA, i, v), v.toFloat()))
+                lows.add(minOf(at(lA, i, v), v.toFloat()))
+                vols.add(at(vA, i, 0.0))
             }
         }
         val meta = r.optJSONObject("meta")
@@ -50,7 +79,8 @@ object YahooExtra {
             val p = it.optDouble("chartPreviousClose", Double.NaN)
             if (p.isNaN()) null else p
         }
-        return History(times, values, prev)
+        val dayVol = meta?.optDouble("regularMarketVolume", Double.NaN)?.takeIf { !it.isNaN() }
+        return History(times, values, prev, opens, highs, lows, vols, dayVol)
     }
 
     // ---------------- 配息 ----------------
@@ -101,6 +131,62 @@ object YahooExtra {
                 ?: throw HttpException(404, "查無 $symbol")
         }
         throw HttpException(401, "Yahoo 驗證失敗")
+    }
+
+    // ---------------- ETF 持股、機構持股 ----------------
+
+    data class Holding(val symbol: String, val name: String, val weightPct: Double)
+    data class EtfHoldings(val holdings: List<Holding>, val sectors: List<Pair<String, Double>>, val asOf: String?)
+
+    private val sectorNames = mapOf(
+        "technology" to "科技", "financial_services" to "金融", "healthcare" to "醫療保健",
+        "consumer_cyclical" to "非必需消費", "consumer_defensive" to "必需消費", "industrials" to "工業",
+        "communication_services" to "通訊服務", "energy" to "能源", "utilities" to "公用事業",
+        "basic_materials" to "原物料", "realestate" to "房地產",
+    )
+
+    fun etfHoldings(symbol: String): EtfHoldings? {
+        val th = summary(symbol, listOf("topHoldings")).optJSONObject("topHoldings") ?: return null
+        val arr = th.optJSONArray("holdings")
+        val list = ArrayList<Holding>()
+        if (arr != null) for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val w = o.raw("holdingPercent") ?: continue
+            list += Holding(o.optString("symbol"), o.optString("holdingName").ifBlank { o.optString("symbol") }, w * 100)
+        }
+        val sectors = ArrayList<Pair<String, Double>>()
+        th.optJSONArray("sectorWeightings")?.let { sw ->
+            for (i in 0 until sw.length()) {
+                val o = sw.optJSONObject(i) ?: continue
+                val k = o.keys().asSequence().firstOrNull() ?: continue
+                val v = o.raw(k) ?: continue
+                if (v > 0) sectors += (sectorNames[k] ?: k) to v * 100
+            }
+        }
+        if (list.isEmpty() && sectors.isEmpty()) return null
+        return EtfHoldings(list, sectors.sortedByDescending { it.second }, null)
+    }
+
+    data class Ownership(val breakdown: List<Pair<String, String>>, val top: List<Triple<String, String, String>>)
+
+    /** 美股機構／內部人持股 */
+    fun ownership(symbol: String): Ownership {
+        val s = summary(symbol, listOf("majorHoldersBreakdown", "institutionOwnership"))
+        val mb = s.optJSONObject("majorHoldersBreakdown")
+        val breakdown = listOfNotNull(
+            mb.fmt("institutionsPercentHeld")?.let { "機構持股比例" to it },
+            mb.fmt("insidersPercentHeld")?.let { "內部人持股比例" to it },
+            mb.fmt("institutionsFloatPercentHeld")?.let { "機構占流通股" to it },
+            mb.fmt("institutionsCount")?.let { "持股機構數" to it },
+        )
+        val top = ArrayList<Triple<String, String, String>>()
+        s.optJSONObject("institutionOwnership")?.optJSONArray("ownershipList")?.let { arr ->
+            for (i in 0 until minOf(arr.length(), 10)) {
+                val o = arr.optJSONObject(i) ?: continue
+                top += Triple(o.optString("organization"), o.fmt("pctHeld") ?: "—", o.fmt("pctChange") ?: "—")
+            }
+        }
+        return Ownership(breakdown, top)
     }
 
     // ---------------- 新聞 ----------------

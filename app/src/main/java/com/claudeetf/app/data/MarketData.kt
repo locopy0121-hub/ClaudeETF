@@ -123,6 +123,10 @@ object MarketData {
         )
     }
 
+    /** 盤後資料中的單一證券（含成交量），需在 IO 執行緒呼叫 */
+    fun closeRecord(symbol: String): Pair<RemoteQuote, QuoteSource>? = runCatching { closeData()[symbol] }.getOrNull()
+
+    @Synchronized
     private fun closeData(): Map<String, Pair<RemoteQuote, QuoteSource>> {
         val key = ZonedDateTime.now(TPE).toLocalDate().toString() + "-" + (ZonedDateTime.now(TPE).hour >= 14)
         if (key == closeCacheKey && closeCache.isNotEmpty()) return closeCache

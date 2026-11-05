@@ -57,8 +57,25 @@ private val TPE = ZoneId.of("Asia/Taipei")
 private fun date(ms: Long, pattern: String = "yyyy/MM/dd"): String =
     if (ms <= 0) "—" else Instant.ofEpochMilli(ms).atZone(TPE).format(DateTimeFormatter.ofPattern(pattern))
 
-private val ranges = listOf("1d" to "1日", "5d" to "5日", "1mo" to "1月", "6mo" to "6月", "1y" to "1年", "5y" to "5年")
-private val tabs = listOf("概覽", "財務", "股息", "新聞", "公司")
+/** 顯示區間：多抓一段歷史資料，讓均線、KD、MACD 從第一根就有值 */
+private data class RangeOpt(val label: String, val fetch: String, val days: Long?, val intraday: Boolean = false)
+
+private val ranges = listOf(
+    RangeOpt("1日", "1d", null, true),
+    RangeOpt("5日", "5d", null, true),
+    RangeOpt("1月", "6mo", 31),
+    RangeOpt("3月", "1y", 92),
+    RangeOpt("6月", "1y", 183),
+    RangeOpt("1年", "2y", 366),
+    RangeOpt("5年", "5y", null),
+)
+
+private enum class Tab(val label: String) { OVERVIEW("概覽"), CHIPS("籌碼"), FIN("財務"), HOLD("成分"), DIV("股息"), NEWS("新聞"), CO("公司") }
+
+private fun tabsFor(q: Quote): List<Tab> =
+    if (q.isEtf || (q.market == Market.TW && q.symbol.startsWith("00")))
+        listOf(Tab.OVERVIEW, Tab.CHIPS, Tab.HOLD, Tab.DIV, Tab.NEWS, Tab.CO)
+    else listOf(Tab.OVERVIEW, Tab.CHIPS, Tab.FIN, Tab.DIV, Tab.NEWS, Tab.CO)
 
 @Composable
 fun StockDetailScreen(nav: NavController, symbol: String) {
@@ -72,14 +89,19 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     }
     val session = rememberUsSession()
     var range by remember { mutableIntStateOf(0) }
-    var tab by remember { mutableIntStateOf(0) }
+    var tabIdx by remember { mutableIntStateOf(0) }
+    val tabs = remember(q.symbol) { tabsFor(q) }
+    val tab = tabs[tabIdx.coerceIn(0, tabs.lastIndex)]
+    var chartType by remember { mutableStateOf(ChartType.LINE) }
+    var mas by remember { mutableStateOf(setOf<Int>()) }
+    var sub by remember { mutableStateOf(SubChart.VOLUME) }
     val held = AppState.holdings.any { it.symbol == q.symbol }
 
     // 走勢
     var history by remember { mutableStateOf<Load<YahooExtra.History>>(Load.Loading) }
     LaunchedEffect(q.symbol, range) {
         history = Load.Loading
-        history = runCatching { StockInfoRepo.history(q, ranges[range].first) }
+        history = runCatching { StockInfoRepo.history(q, ranges[range].fetch) }
             .fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
     }
     // 基本面（概覽、財務、公司共用）
@@ -90,14 +112,31 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     // 股息、新聞：切到該分頁才載入
     var divs by remember { mutableStateOf<Load<DividendInfo>>(Load.Loading) }
     var news by remember { mutableStateOf<Load<List<YahooExtra.News>>>(Load.Loading) }
+    var trading by remember { mutableStateOf<Load<StockInfoRepo.Trading>>(Load.Loading) }
+    var chips by remember { mutableStateOf<Load<StockInfoRepo.Chips>>(Load.Loading) }
+    var holdings by remember { mutableStateOf<Load<YahooExtra.EtfHoldings>>(Load.Loading) }
     LaunchedEffect(q.symbol, tab) {
-        if (tab == 2 && divs !is Load.Ok) {
-            divs = Load.Loading
-            divs = runCatching { StockInfoRepo.dividends(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
-        }
-        if (tab == 3 && news !is Load.Ok) {
-            news = Load.Loading
-            news = runCatching { StockInfoRepo.news(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        when (tab) {
+            Tab.OVERVIEW -> if (trading !is Load.Ok) {
+                trading = runCatching { StockInfoRepo.trading(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            }
+            Tab.CHIPS -> if (chips !is Load.Ok) {
+                chips = Load.Loading
+                chips = runCatching { StockInfoRepo.chips(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            }
+            Tab.HOLD -> if (holdings !is Load.Ok) {
+                holdings = Load.Loading
+                holdings = runCatching { StockInfoRepo.holdings(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            }
+            Tab.DIV -> if (divs !is Load.Ok) {
+                divs = Load.Loading
+                divs = runCatching { StockInfoRepo.dividends(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            }
+            Tab.NEWS -> if (news !is Load.Ok) {
+                news = Load.Loading
+                news = runCatching { StockInfoRepo.news(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            }
+            else -> {}
         }
     }
 
@@ -118,15 +157,25 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { PriceHeader(q, session) }
-            item { Segmented(ranges.map { it.second }, range, { range = it }) }
-            item { ChartBlock(history, range) }
-            item { Segmented(tabs, tab, { tab = it }) }
+            item { Segmented(ranges.map { it.label }, range, { range = it }) }
+            item {
+                ChartControls(
+                    chartType, { chartType = it },
+                    mas, { m -> mas = if (m in mas) mas - m else mas + m },
+                    sub, { sub = it },
+                    ranges[range].intraday,
+                )
+            }
+            item { ChartBlock(history, range, q, chartType, mas, sub) }
+            item { Segmented(tabs.map { it.label }, tabIdx, { tabIdx = it }) }
             when (tab) {
-                0 -> overviewTab(q, fund)
-                1 -> financialsTab(q, fund)
-                2 -> dividendTab(q, divs)
-                3 -> newsTab(news)
-                else -> companyTab(fund)
+                Tab.OVERVIEW -> { tradingSection(q, trading); overviewTab(q, fund) }
+                Tab.CHIPS -> chipsTab(q, chips)
+                Tab.FIN -> financialsTab(q, fund)
+                Tab.HOLD -> holdingsTab(q, holdings)
+                Tab.DIV -> dividendTab(q, divs)
+                Tab.NEWS -> newsTab(news)
+                Tab.CO -> companyTab(fund)
             }
         }
         Row(
@@ -178,34 +227,29 @@ private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info
 }
 
 @Composable
-private fun ChartBlock(history: Load<YahooExtra.History>, range: Int) {
-    Column(
-        Modifier.fillMaxWidth().height(170.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        when (history) {
-            is Load.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Label("載入走勢中…") }
-            is Load.Err -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Label("走勢載入失敗：" + history.message) }
-            is Load.Ok -> {
-                val h = history.value
-                if (h.closes.size < 2) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Label("此區間沒有走勢資料") }
-                } else {
-                    val base = if (range == 0) (h.prevClose?.toFloat() ?: h.closes.first()) else h.closes.first()
-                    val chg = h.closes.last() - base
-                    val pct = if (base != 0f) chg / base * 100 else 0f
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Label("區間漲跌 ", Modifier.weight(1f))
-                        NumText(Fmt.signedPct(pct.toDouble()), 12.sp, Trend.fg(chg.toDouble()))
-                    }
-                    Sparkline(h.closes, Trend.fg(chg.toDouble()), Modifier.fillMaxWidth().weight(1f), fill = true)
-                    val pattern = if (range <= 1) "M/d HH:mm" else "yyyy/M/d"
-                    Row {
-                        Label(date(h.times.first(), pattern), Modifier.weight(1f))
-                        Label("高 " + Fmt.price(h.closes.max().toDouble()) + " · 低 " + Fmt.price(h.closes.min().toDouble()))
-                        Label(date(h.times.last(), pattern), Modifier.weight(1f).wrapContentWidth(Alignment.End))
-                    }
-                }
+private fun ChartBlock(
+    history: Load<YahooExtra.History>,
+    range: Int,
+    q: Quote,
+    type: ChartType,
+    mas: Set<Int>,
+    sub: SubChart,
+) {
+    when (history) {
+        is Load.Loading -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("載入走勢中…") }
+        is Load.Err -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("走勢載入失敗：" + history.message) }
+        is Load.Ok -> {
+            val h = history.value
+            if (h.closes.size < 2) {
+                Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("此區間沒有走勢資料") }
+            } else {
+                val opt = ranges[range]
+                val start = opt.days?.let { d ->
+                    val cutoff = System.currentTimeMillis() - d * 24 * 3600 * 1000
+                    h.times.indexOfFirst { it >= cutoff }.takeIf { it >= 0 }
+                } ?: 0
+                val base = if (range == 0) h.prevClose?.toFloat() else null
+                StockChart(h, start, type, mas, sub, base, opt.intraday)
             }
         }
     }
@@ -457,6 +501,235 @@ private fun TaxCard(q: Quote, lastDiv: Double?) {
             KeyValue("配息總額", ccy + Fmt.num(gross, dec))
             bd.lines.forEach { (k, v) -> KeyValue(k, v) }
             KeyValue("實收", ccy + Fmt.num(bd.net, dec), C.Primary)
+        }
+    }
+}
+
+// ---------------- 當日交易 ----------------
+
+private fun LazyListScope.tradingSection(q: Quote, t: Load<StockInfoRepo.Trading>) {
+    item { SectionTitle("當日交易", (t as? Load.Ok<StockInfoRepo.Trading>)?.value?.source) }
+    when (t) {
+        is Load.Loading -> loading("載入當日交易中…")
+        is Load.Err -> item { Label("當日交易：" + t.message) }
+        is Load.Ok -> {
+            val v = t.value
+            infoGrid(v.items)
+            v.inOut?.let { (inside, outside) -> item { InOutBar(inside, outside) } }
+            if (v.bids.isNotEmpty() || v.asks.isNotEmpty()) item { OrderBook(v.bids, v.asks) }
+            if (q.market == Market.TW && v.bids.isEmpty()) {
+                item { Label("填入富果金鑰後，盤中可看五檔報價與內外盤") }
+            }
+        }
+    }
+    item { SectionTitle("基本資料") }
+}
+
+@Composable
+private fun InOutBar(inside: Double, outside: Double) {
+    val total = (inside + outside).takeIf { it > 0 } ?: 1.0
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row {
+            Text("內盤 " + Fmt.num(inside) + " 張（" + Fmt.num(inside / total * 100, 1) + "%）", Modifier.weight(1f), color = Trend.fg(-1.0), fontSize = 12.sp)
+            Text("外盤 " + Fmt.num(outside) + " 張（" + Fmt.num(outside / total * 100, 1) + "%）", color = Trend.fg(1.0), fontSize = 12.sp)
+        }
+        StackBar(listOf((inside / total).toFloat() to Trend.fg(-1.0), (outside / total).toFloat() to Trend.fg(1.0)), 8.dp)
+    }
+}
+
+@Composable
+private fun OrderBook(bids: List<Pair<Double, Double>>, asks: List<Pair<Double, Double>>) {
+    val maxSize = (bids + asks).maxOfOrNull { it.second }?.takeIf { it > 0 } ?: 1.0
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).padding(10.dp)) {
+        Row {
+            Label("買量", Modifier.weight(1f)); Label("買價", Modifier.weight(1f).wrapContentWidth(Alignment.End))
+            HGap(12.dp)
+            Label("賣價", Modifier.weight(1f)); Label("賣量", Modifier.weight(1f).wrapContentWidth(Alignment.End))
+        }
+        for (k in 0 until 5) {
+            val b = bids.getOrNull(k)
+            val a = asks.getOrNull(k)
+            Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(2f)) {
+                    if (b != null) {
+                        Box(
+                            Modifier.align(Alignment.CenterEnd).fillMaxWidth((b.second / maxSize).toFloat().coerceIn(0f, 1f))
+                                .height(18.dp).background(Trend.pillBg(-1.0)),
+                        )
+                        Row(Modifier.fillMaxWidth()) {
+                            NumText(Fmt.num(b.second), 12.sp, modifier = Modifier.weight(1f))
+                            NumText(if (b.first == 0.0) "市價" else Fmt.price(b.first), 12.sp, Trend.fg(-1.0))
+                        }
+                    }
+                }
+                HGap(12.dp)
+                Box(Modifier.weight(2f)) {
+                    if (a != null) {
+                        Box(
+                            Modifier.align(Alignment.CenterStart).fillMaxWidth((a.second / maxSize).toFloat().coerceIn(0f, 1f))
+                                .height(18.dp).background(Trend.pillBg(1.0)),
+                        )
+                        Row(Modifier.fillMaxWidth()) {
+                            NumText(if (a.first == 0.0) "市價" else Fmt.price(a.first), 12.sp, Trend.fg(1.0), modifier = Modifier.weight(1f))
+                            NumText(Fmt.num(a.second), 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+        Label("單位：張 · 富果即時五檔")
+    }
+}
+
+// ---------------- 籌碼 ----------------
+
+private fun lotsText(shares: Long): String {
+    val lots = shares / 1000.0
+    val sign = if (lots > 0) "+" else if (lots < 0) "−" else ""
+    return sign + Fmt.num(kotlin.math.abs(lots))
+}
+
+private fun LazyListScope.chipsTab(q: Quote, chips: Load<StockInfoRepo.Chips>) {
+    when (chips) {
+        is Load.Loading -> loading("載入籌碼資料中…")
+        is Load.Err -> showError(chips.message)
+        is Load.Ok -> when (val c = chips.value) {
+            is StockInfoRepo.Chips.Tw -> {
+                if (c.days.isEmpty()) {
+                    item { Label("查無三大法人資料。目前支援上市股票與 ETF（證交所 T86 日報，每日約 16:00 後更新）；上櫃證券尚未支援。") }
+                    return
+                }
+                val d0 = c.days.first()
+                item {
+                    Card(padding = 14.dp) {
+                        Row {
+                            Text("三大法人買賣超", Modifier.weight(1f), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Label(d0.date.toString())
+                        }
+                        listOf("外資" to d0.foreign, "投信" to d0.trust, "自營商" to d0.dealer).forEach { (name, v) ->
+                            ChipBar(name, v, listOf(d0.foreign, d0.trust, d0.dealer).maxOf { kotlin.math.abs(it) })
+                        }
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
+                        KeyValue("合計", lotsText(d0.total) + " 張", Trend.fg(d0.total.toDouble()))
+                    }
+                }
+                if (c.days.size > 1) {
+                    item { SectionTitle("近 ${c.days.size} 個交易日", "單位：張") }
+                    item {
+                        Row(Modifier.fillMaxWidth()) {
+                            Label("日期", Modifier.weight(1.2f))
+                            listOf("外資", "投信", "自營", "合計").forEach { Label(it, Modifier.weight(1f).wrapContentWidth(Alignment.End)) }
+                        }
+                    }
+                    items(c.days) { d ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            NumText(d.date.monthValue.toString() + "/" + d.date.dayOfMonth, 12.sp, modifier = Modifier.weight(1.2f))
+                            listOf(d.foreign, d.trust, d.dealer, d.total).forEach { v ->
+                                NumText(lotsText(v), 12.sp, Trend.fg(v.toDouble()), modifier = Modifier.weight(1f).wrapContentWidth(Alignment.End))
+                            }
+                        }
+                    }
+                    item {
+                        Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                            Text("累計", Modifier.weight(1.2f), color = C.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            listOf(c.days.sumOf { it.foreign }, c.days.sumOf { it.trust }, c.days.sumOf { it.dealer }, c.days.sumOf { it.total }).forEach { v ->
+                                NumText(lotsText(v), 12.sp, Trend.fg(v.toDouble()), FontWeight.Bold, Modifier.weight(1f).wrapContentWidth(Alignment.End))
+                            }
+                        }
+                    }
+                }
+                item { Label("資料來源：證交所 三大法人買賣超日報（T86）", Modifier.padding(top = 6.dp)) }
+            }
+            is StockInfoRepo.Chips.Us -> {
+                val o = c.ownership
+                if (o.breakdown.isEmpty() && o.top.isEmpty()) {
+                    item { Label("暫無機構持股資料") }
+                    return
+                }
+                item { SectionTitle("持股結構") }
+                items(o.breakdown) { (k, v) -> KeyValue(k, v) }
+                if (o.top.isNotEmpty()) {
+                    item { SectionTitle("前十大機構", "持股比例 · 變動") }
+                    items(o.top) { (org, pct, chg) ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(org, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            NumText(pct, 12.sp, modifier = Modifier.width(64.dp).wrapContentWidth(Alignment.End))
+                            NumText(chg, 12.sp, C.Muted, modifier = Modifier.width(64.dp).wrapContentWidth(Alignment.End))
+                        }
+                    }
+                }
+                item { Label("資料來源：Yahoo Finance（每季申報）", Modifier.padding(top = 6.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChipBar(name: String, shares: Long, maxAbs: Long) {
+    val ratio = if (maxAbs > 0) kotlin.math.abs(shares).toFloat() / maxAbs else 0f
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(name, Modifier.width(52.dp), color = C.Text, fontSize = 13.sp)
+        Box(Modifier.weight(1f).height(10.dp)) {
+            Box(
+                Modifier.fillMaxWidth(ratio.coerceIn(0.02f, 1f)).fillMaxHeight()
+                    .clip(RoundedCornerShape(5.dp)).background(Trend.fg(shares.toDouble())),
+            )
+        }
+        NumText(lotsText(shares) + " 張", 12.sp, Trend.fg(shares.toDouble()), modifier = Modifier.width(96.dp).wrapContentWidth(Alignment.End))
+    }
+}
+
+// ---------------- ETF 成分股 ----------------
+
+private fun LazyListScope.holdingsTab(q: Quote, holdings: Load<YahooExtra.EtfHoldings>) {
+    when (holdings) {
+        is Load.Loading -> loading("載入成分股中…")
+        is Load.Err -> showError(holdings.message)
+        is Load.Ok -> {
+            val h = holdings.value
+            val top10 = h.holdings.take(10).sumOf { it.weightPct }
+            item {
+                Card(padding = 14.dp) {
+                    KeyValue("成分股數（已揭露）", h.holdings.size.toString())
+                    KeyValue("前十大合計", Fmt.num(top10, 2) + "%")
+                    h.asOf?.let { KeyValue("資料日期", it) }
+                }
+            }
+            if (h.holdings.isNotEmpty()) {
+                item { SectionTitle("持股明細", "權重") }
+                val maxW = h.holdings.maxOf { it.weightPct }.takeIf { it > 0 } ?: 1.0
+                items(h.holdings) { s ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(s.name, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (s.symbol.isNotBlank()) { NumText(s.symbol, 11.sp, C.Muted); HGap(8.dp) }
+                            NumText(Fmt.num(s.weightPct, 2) + "%", 13.sp)
+                        }
+                        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.Line)) {
+                            Box(Modifier.fillMaxWidth((s.weightPct / maxW).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(C.Primary))
+                        }
+                    }
+                }
+            }
+            if (h.sectors.isNotEmpty()) {
+                item { SectionTitle("產業權重") }
+                items(h.sectors) { (name, pct) ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(name, Modifier.width(96.dp), color = C.Text, fontSize = 12.sp)
+                        Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Line)) {
+                            Box(Modifier.fillMaxWidth((pct / 100).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(C.Us))
+                        }
+                        NumText(Fmt.num(pct, 1) + "%", 12.sp, modifier = Modifier.width(52.dp).wrapContentWidth(Alignment.End))
+                    }
+                }
+            }
+            item {
+                Label(
+                    "資料來源：" + (if (q.market == Market.TW) "MoneyDJ 持股明細、" else "") + "Yahoo Finance。" +
+                        (if (q.market == Market.TW) "主動式 ETF 持股每日可能變動，請以投信公告為準。" else ""),
+                    Modifier.padding(top = 6.dp),
+                )
+            }
         }
     }
 }

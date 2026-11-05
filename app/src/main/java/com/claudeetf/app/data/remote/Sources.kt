@@ -13,6 +13,10 @@ data class RemoteQuote(
     val open: Double?,
     val high: Double?,
     val low: Double?,
+    /** 成交量（股）、成交金額、成交筆數；沒有資料時為 null */
+    val volume: Double? = null,
+    val value: Double? = null,
+    val transactions: Double? = null,
 )
 
 private fun JSONObject.num(key: String): Double? {
@@ -55,6 +59,44 @@ object FugleApi {
     }
 }
 
+/** 富果盤中快照：五檔、內外盤、成交量（張） */
+data class FugleSnapshot(
+    val bids: List<Pair<Double, Double>>,
+    val asks: List<Pair<Double, Double>>,
+    val volumeLots: Double?,
+    val valueTwd: Double?,
+    val transactions: Double?,
+    val atBidLots: Double?,
+    val atAskLots: Double?,
+    val avgPrice: Double?,
+    val isLimitUp: Boolean,
+    val isLimitDown: Boolean,
+)
+
+fun FugleApi.snapshot(symbol: String, apiKey: String): FugleSnapshot {
+    val o = JSONObject(Http.get("https://api.fugle.tw/marketdata/v1.0/stock/intraday/quote/$symbol", mapOf("X-API-KEY" to apiKey)))
+    fun levels(key: String): List<Pair<Double, Double>> {
+        val arr = o.optJSONArray(key) ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val l = arr.optJSONObject(i) ?: return@mapNotNull null
+            l.optDouble("price", Double.NaN).takeIf { !it.isNaN() }?.let { it to l.optDouble("size", 0.0) }
+        }
+    }
+    val t = o.optJSONObject("total")
+    return FugleSnapshot(
+        bids = levels("bids"),
+        asks = levels("asks"),
+        volumeLots = t?.num("tradeVolume"),
+        valueTwd = t?.num("tradeValue"),
+        transactions = t?.num("transaction"),
+        atBidLots = t?.num("tradeVolumeAtBid"),
+        atAskLots = t?.num("tradeVolumeAtAsk"),
+        avgPrice = o.num("avgPrice"),
+        isLimitUp = o.optBoolean("isLimitUpPrice", false),
+        isLimitDown = o.optBoolean("isLimitDownPrice", false),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // 證交所 OpenAPI（盤後收盤行情，免金鑰）
 // GET https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL
@@ -78,6 +120,9 @@ object TwseApi {
                 open = parseNum(o.optString("OpeningPrice")),
                 high = parseNum(o.optString("HighestPrice")),
                 low = parseNum(o.optString("LowestPrice")),
+                volume = parseNum(o.optString("TradeVolume")),
+                value = parseNum(o.optString("TradeValue")),
+                transactions = parseNum(o.optString("Transaction")),
             )
         }
         return out
@@ -105,6 +150,9 @@ object TpexApi {
                 open = parseNum(o.optString("Open")),
                 high = parseNum(o.optString("High")),
                 low = parseNum(o.optString("Low")),
+                volume = parseNum(o.optString("TradingShares")),
+                value = parseNum(o.optString("TransactionAmount")),
+                transactions = parseNum(o.optString("TransactionNumber")),
             )
         }
         return out
