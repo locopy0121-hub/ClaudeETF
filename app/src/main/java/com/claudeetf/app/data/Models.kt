@@ -79,6 +79,9 @@ data class Trade(
     val account: Int = 0,
 )
 
+/** 自選群組 */
+data class WatchGroup(val id: Int, val name: String, val symbols: List<String>)
+
 /** 定期定額計畫：每月 day 日以 amount（原幣）買進 */
 data class DcaPlan(
     val id: Int,

@@ -44,6 +44,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val TRADES = "trades"
     const val DCA = "dca"
+    const val PNL = "pnl"
     const val REBALANCE = "rebalance"
     const val COMPARE = "compare"
 

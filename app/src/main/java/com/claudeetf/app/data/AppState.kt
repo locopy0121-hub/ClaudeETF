@@ -70,6 +70,7 @@ object AppState {
     val alerts = mutableStateListOf<AlertRule>()
     val accounts = mutableStateListOf<Account>()
     val dcaPlans = mutableStateListOf<DcaPlan>()
+    val groups = mutableStateListOf<WatchGroup>()
     /** 代號 → 目標配置 %（再平衡用） */
     val targets = mutableStateMapOf<String, Double>()
     /** 最近觸發的提醒（新到舊，最多 30 筆） */
@@ -173,6 +174,17 @@ object AppState {
                 }
             }
         }
+        groups.clear()
+        p.getString("groups", null)?.let { json ->
+            runCatching {
+                val arr = JSONArray(json)
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val syms = o.optJSONArray("s")
+                    groups.add(WatchGroup(o.getInt("id"), o.getString("n"), if (syms == null) emptyList() else (0 until syms.length()).map { syms.getString(it) }))
+                }
+            }
+        }
         targets.clear()
         p.getString("targets", null)?.let { json ->
             runCatching { val o = JSONObject(json); o.keys().forEach { k -> targets[k] = o.getDouble(k) } }
@@ -230,6 +242,9 @@ object AppState {
                     put(JSONObject().put("id", it.id).put("s", it.symbol).put("a", it.amount).put("d", it.day)
                         .put("acc", it.account).put("on", it.enabled).put("done", it.lastDone).put("ntf", it.lastNotified))
                 }
+            }.toString())
+            .putString("groups", JSONArray().apply {
+                groups.forEach { put(JSONObject().put("id", it.id).put("n", it.name).put("s", JSONArray(it.symbols))) }
             }.toString())
             .putString("targets", JSONObject().apply { targets.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("nav", JSONObject().apply { navHistory.forEach { (k, v) -> put(k, v) } }.toString())
@@ -559,6 +574,35 @@ object AppState {
     fun markDcaNotified(id: Int) {
         val i = dcaPlans.indexOfFirst { it.id == id }
         if (i >= 0) { dcaPlans[i] = dcaPlans[i].copy(lastNotified = month()); save() }
+    }
+
+    // ---------- 自選群組與排序 ----------
+
+    fun addGroup(name: String): Int {
+        val id = (groups.maxOfOrNull { it.id } ?: 0) + 1
+        groups.add(WatchGroup(id, name.trim().ifBlank { "群組 $id" }, emptyList()))
+        save()
+        return id
+    }
+
+    fun deleteGroup(id: Int) { if (groups.removeAll { it.id == id }) save() }
+
+    fun toggleInGroup(groupId: Int, symbol: String) {
+        val i = groups.indexOfFirst { it.id == groupId }
+        if (i < 0) return
+        val g = groups[i]
+        groups[i] = g.copy(symbols = if (symbol in g.symbols) g.symbols - symbol else g.symbols + symbol)
+        save()
+    }
+
+    /** 自訂排序：delta = -1 上移、+1 下移 */
+    fun moveQuote(symbol: String, delta: Int) {
+        val i = quotes.indexOfFirst { it.symbol == symbol }
+        val j = i + delta
+        if (i < 0 || j < 0 || j >= quotes.size) return
+        val q = quotes.removeAt(i)
+        quotes.add(j, q)
+        save()
     }
 
     fun setTarget(symbol: String, pct: Double?) {

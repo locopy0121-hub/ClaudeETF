@@ -107,7 +107,7 @@ private fun tabOf(route: String?): String? = when {
     route.startsWith(Routes.COMPARE) -> Routes.WATCH
     route.startsWith(Routes.TRADE) || route == Routes.TRADES || route == Routes.DCA || route == Routes.REBALANCE || route == Routes.DIVIDEND || route == Routes.ANALYSIS -> Routes.PORTFOLIO
     route == Routes.CALENDAR -> Routes.MARKET
-    route == Routes.ALERTS -> Routes.HOME
+    route == Routes.ALERTS || route == Routes.PNL -> Routes.HOME
     else -> route
 }
 
@@ -161,6 +161,7 @@ fun AppRoot() {
                 ),
             ) { AddTradeScreen(nav, it.arguments?.getString("symbol") ?: "", it.arguments?.getLong("id") ?: -1L) }
             composable(Routes.TRADES) { TradesScreen(nav) }
+            composable(Routes.PNL) { com.claudeetf.app.ui.screens.PnlCalendarScreen(nav) }
             composable(Routes.DCA) { com.claudeetf.app.ui.screens.DcaScreen(nav) }
             composable(Routes.REBALANCE) { com.claudeetf.app.ui.screens.RebalanceScreen(nav) }
             composable(

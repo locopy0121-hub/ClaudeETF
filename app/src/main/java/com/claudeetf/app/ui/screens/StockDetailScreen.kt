@@ -221,6 +221,23 @@ private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info
             }
         } else {
             Label(twStatus())
+            if (q.prevClose > 0) {
+                val etf = q.isEtf || q.symbol.startsWith("00")
+                val (up, down) = com.claudeetf.app.util.TwSession.limits(q.prevClose, etf)
+                val st = com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, etf)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Label("漲停 " + Fmt.price(up) + " · 跌停 " + Fmt.price(down) + " · 升降單位 " +
+                        Fmt.num(com.claudeetf.app.util.TwSession.tick(q.price, etf), 2))
+                    if (st != null) {
+                        HGap(8.dp)
+                        Text(
+                            st, color = C.OnPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Trend.fg(if (st == "漲停") 1.0 else -1.0))
+                                .padding(horizontal = 6.dp, vertical = 1.dp),
+                        )
+                    }
+                }
+            }
         }
         Label("報價：" + sourceText(q.source, q.updatedAt))
     }

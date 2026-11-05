@@ -115,6 +115,10 @@ fun HomeScreen(nav: NavController) {
                         Label("每天開啟 App 會自動記錄總資產，累積兩天後顯示走勢", Modifier.padding(vertical = 18.dp))
                     }
                     Segmented(listOf("1週", "1月", "3月", "1年", "全部"), range, { range = it }, background = C.Bg)
+                    Text(
+                        "損益日曆 ›", color = C.Primary, fontSize = 13.sp,
+                        modifier = Modifier.clickable { nav.navigate(Routes.PNL) }.padding(vertical = 6.dp),
+                    )
                 }
             }
             item {
