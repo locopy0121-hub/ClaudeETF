@@ -82,6 +82,13 @@ object AlertEngine {
         val today = LocalDate.now(TPE)
         val todayKey = today.toString()
         val now = System.currentTimeMillis()
+        // 定期定額扣款日：每月通知一次
+        val month = java.time.YearMonth.now(TPE).toString()
+        for (p in AppState.dueDca()) {
+            if (p.lastNotified == month) continue
+            AppState.markDcaNotified(p.id)
+            notify(context, 500 + p.id, "定期定額：${p.symbol}", "本月扣款日（每月 ${p.day} 日）已到，打開 App 一鍵記錄這筆買進。")
+        }
         for (a in AppState.alerts.toList()) {
             if (!a.enabled) continue
             val result: Pair<String, String>? = when (a.type) {

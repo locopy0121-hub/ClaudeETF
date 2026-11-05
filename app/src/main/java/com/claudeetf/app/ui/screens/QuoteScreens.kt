@@ -56,6 +56,11 @@ fun WatchlistScreen(nav: NavController) {
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("自選行情") {
+            Text(
+                "比較", color = C.Primary, fontSize = 14.sp,
+                modifier = Modifier.clickable { nav.navigate(Routes.compare(AppState.quotes.take(2).joinToString(",") { it.symbol })) }
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
+            )
             IconButton(onClick = { scope.launch { MarketData.refreshAll() } }, enabled = !AppState.refreshing) {
                 Icon(Icons.Filled.Refresh, contentDescription = "更新行情", tint = if (AppState.refreshing) C.Muted else C.Text)
             }

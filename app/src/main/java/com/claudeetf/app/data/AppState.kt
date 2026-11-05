@@ -69,6 +69,9 @@ object AppState {
     val trades = mutableStateListOf<Trade>()
     val alerts = mutableStateListOf<AlertRule>()
     val accounts = mutableStateListOf<Account>()
+    val dcaPlans = mutableStateListOf<DcaPlan>()
+    /** 代號 → 目標配置 %（再平衡用） */
+    val targets = mutableStateMapOf<String, Double>()
     /** 最近觸發的提醒（新到舊，最多 30 筆） */
     val alertHistory = mutableStateListOf<AlertHit>()
     val twIndices = mutableStateListOf<IndexQuote>().apply { addAll(SampleData.twIndices) }
@@ -155,6 +158,25 @@ object AppState {
                 }
             }
         }
+        dcaPlans.clear()
+        p.getString("dca", null)?.let { json ->
+            runCatching {
+                val arr = JSONArray(json)
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    dcaPlans.add(
+                        DcaPlan(
+                            o.getInt("id"), o.getString("s"), o.getDouble("a"), o.getInt("d"), o.optInt("acc", 0),
+                            o.optBoolean("on", true), o.optString("done"), o.optString("ntf"),
+                        )
+                    )
+                }
+            }
+        }
+        targets.clear()
+        p.getString("targets", null)?.let { json ->
+            runCatching { val o = JSONObject(json); o.keys().forEach { k -> targets[k] = o.getDouble(k) } }
+        }
         if (accounts.isEmpty()) {
             accounts.add(Account(1, "台股帳戶", Market.TW))
             accounts.add(Account(2, "美股帳戶", Market.US))
@@ -203,6 +225,13 @@ object AppState {
                         .put("min", it.minFee).put("r", it.usRate).put("umin", it.usMinFee))
                 }
             }.toString())
+            .putString("dca", JSONArray().apply {
+                dcaPlans.forEach {
+                    put(JSONObject().put("id", it.id).put("s", it.symbol).put("a", it.amount).put("d", it.day)
+                        .put("acc", it.account).put("on", it.enabled).put("done", it.lastDone).put("ntf", it.lastNotified))
+                }
+            }.toString())
+            .putString("targets", JSONObject().apply { targets.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("nav", JSONObject().apply { navHistory.forEach { (k, v) -> put(k, v) } }.toString())
             .apply()
     }
@@ -481,6 +510,61 @@ object AppState {
     fun deleteTrade(id: Long): String? = applyLedger(trades.filter { it.id != id })
 
     fun trade(id: Long): Trade? = trades.firstOrNull { it.id == id }
+
+    // ---------- 定期定額 ----------
+
+    private fun month() = java.time.YearMonth.now(java.time.ZoneId.of("Asia/Taipei")).toString()
+
+    fun saveDca(plan: DcaPlan) {
+        val i = dcaPlans.indexOfFirst { it.id == plan.id }
+        if (i >= 0) dcaPlans[i] = plan
+        else dcaPlans.add(plan.copy(id = (dcaPlans.maxOfOrNull { it.id } ?: 0) + 1, symbol = plan.symbol.trim().uppercase()))
+        if (!isWatched(plan.symbol)) addWatch(plan.symbol)
+        save()
+    }
+
+    fun deleteDca(id: Int) { if (dcaPlans.removeAll { it.id == id }) save() }
+
+    /** 本月已到扣款日、尚未記錄的計畫 */
+    fun dueDca(): List<DcaPlan> {
+        val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei"))
+        val m = month()
+        return dcaPlans.filter { it.enabled && it.lastDone != m && today.dayOfMonth >= minOf(it.day, today.lengthOfMonth()) }
+    }
+
+    /** 依現價算出股數並記錄買進；台股取整股、美股到小數 4 位 */
+    fun recordDca(plan: DcaPlan): String? {
+        val q = quote(plan.symbol) ?: return "找不到 ${plan.symbol} 的報價"
+        if (q.price <= 0) return "${plan.symbol} 尚未取得報價，請先更新行情"
+        val isUs = q.market == Market.US
+        val fee0 = feeFor(plan.account, q.market, plan.amount)
+        val budget = plan.amount - fee0
+        val shares = if (isUs) Math.floor(budget / q.price * 10000) / 10000 else Math.floor(budget / q.price)
+        if (shares <= 0) return "金額不足以買進 1 股"
+        val fee = feeFor(plan.account, q.market, shares * q.price)
+        val date = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei")).format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+        val err = addTrade(Trade(TradeType.BUY, plan.symbol, date, shares, q.price, if (isUs) usdTwd else 1.0, fee, 0.0, note = "定期定額", account = plan.account))
+        if (err != null) return err
+        val i = dcaPlans.indexOfFirst { it.id == plan.id }
+        if (i >= 0) dcaPlans[i] = dcaPlans[i].copy(lastDone = month())
+        save()
+        return null
+    }
+
+    fun skipDca(plan: DcaPlan) {
+        val i = dcaPlans.indexOfFirst { it.id == plan.id }
+        if (i >= 0) { dcaPlans[i] = dcaPlans[i].copy(lastDone = month()); save() }
+    }
+
+    fun markDcaNotified(id: Int) {
+        val i = dcaPlans.indexOfFirst { it.id == id }
+        if (i >= 0) { dcaPlans[i] = dcaPlans[i].copy(lastNotified = month()); save() }
+    }
+
+    fun setTarget(symbol: String, pct: Double?) {
+        if (pct == null || pct <= 0) targets.remove(symbol) else targets[symbol] = pct
+        save()
+    }
 
     // ---------- 帳戶 ----------
 

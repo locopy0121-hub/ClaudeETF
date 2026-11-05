@@ -12,6 +12,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Star
@@ -116,6 +118,16 @@ fun PortfolioScreen(nav: NavController) {
                     Shortcut("記一筆", Icons.Filled.Edit, Modifier.weight(1f)) { nav.navigate(Routes.trade()) }
                     Shortcut("股息", Icons.Filled.DateRange, Modifier.weight(1f)) { nav.navigate(Routes.DIVIDEND) }
                     Shortcut("績效分析", Icons.Filled.Star, Modifier.weight(1f)) { nav.navigate(Routes.ANALYSIS) }
+                }
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val due = AppState.dueDca().size
+                    Shortcut(if (due > 0) "定期定額（$due）" else "定期定額", Icons.Filled.Refresh, Modifier.weight(1f)) { nav.navigate(Routes.DCA) }
+                    Shortcut("再平衡", Icons.Filled.Settings, Modifier.weight(1f)) { nav.navigate(Routes.REBALANCE) }
+                    Shortcut("比較", Icons.Filled.Search, Modifier.weight(1f)) {
+                        nav.navigate(Routes.compare(AppState.holdings.take(3).joinToString(",") { it.symbol }))
+                    }
                 }
             }
             if (accChoices.size > 2) {

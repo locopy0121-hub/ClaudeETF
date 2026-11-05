@@ -79,6 +79,20 @@ data class Trade(
     val account: Int = 0,
 )
 
+/** 定期定額計畫：每月 day 日以 amount（原幣）買進 */
+data class DcaPlan(
+    val id: Int,
+    val symbol: String,
+    val amount: Double,
+    val day: Int,
+    val account: Int = 0,
+    val enabled: Boolean = true,
+    /** 已記錄的月份 yyyy-MM */
+    val lastDone: String = "",
+    /** 已通知的月份 yyyy-MM */
+    val lastNotified: String = "",
+)
+
 /** 券商帳戶與手續費設定 */
 data class Account(
     val id: Int,

@@ -43,6 +43,11 @@ object Routes {
     const val ALERTS = "alerts"
     const val SETTINGS = "settings"
     const val TRADES = "trades"
+    const val DCA = "dca"
+    const val REBALANCE = "rebalance"
+    const val COMPARE = "compare"
+
+    fun compare(symbols: String = "") = "$COMPARE?s=$symbols"
 
     fun stock(symbol: String) = "$STOCK/$symbol"
     fun trade(symbol: String = "", id: Long = -1L) = "$TRADE?symbol=$symbol&id=$id"
