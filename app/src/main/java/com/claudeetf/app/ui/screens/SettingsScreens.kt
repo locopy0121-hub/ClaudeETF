@@ -51,10 +51,10 @@ import com.claudeetf.app.ui.theme.C
 // ============================== 提醒中心 ==============================
 
 @Composable
-fun AlertsScreen(nav: NavController) {
+fun AlertsScreen(nav: NavController, initialSymbol: String = "") {
     val context = LocalContext.current
     var filter by remember { mutableIntStateOf(0) }
-    var adding by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(initialSymbol.isNotBlank()) }
     var granted by remember { mutableStateOf(AlertEngine.hasPermission(context)) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     val list = AppState.alerts.filter {
@@ -84,7 +84,7 @@ fun AlertsScreen(nav: NavController) {
                     }
                 }
             }
-            if (adding) item { AddAlertCard { adding = false } }
+            if (adding) item { AddAlertCard(initialSymbol) { adding = false } }
             item { Segmented(listOf("全部", "價格", "事件"), filter, { filter = it }) }
             if (list.isEmpty()) item { Label("沒有提醒，按右上角「＋ 新增」建立") }
             items(list, key = { it.id }) { a ->
@@ -138,10 +138,12 @@ fun AlertsScreen(nav: NavController) {
 }
 
 @Composable
-private fun AddAlertCard(onDone: () -> Unit) {
-    var symbol by remember { mutableStateOf("") }
+private fun AddAlertCard(initialSymbol: String = "", onDone: () -> Unit) {
+    var symbol by remember { mutableStateOf(initialSymbol) }
     var typeIdx by remember { mutableIntStateOf(0) }
-    var valueText by remember { mutableStateOf("") }
+    var valueText by remember {
+        mutableStateOf(AppState.quote(initialSymbol)?.price?.takeIf { it > 0 }?.let { Fmt.price(it).replace(",", "") } ?: "")
+    }
     var error by remember { mutableStateOf<String?>(null) }
     val types = AlertType.entries
     val type = types[typeIdx]

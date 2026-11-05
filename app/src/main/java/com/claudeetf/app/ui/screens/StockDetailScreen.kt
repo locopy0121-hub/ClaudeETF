@@ -147,7 +147,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                     Icon(Icons.Filled.Close, contentDescription = "移出自選", tint = C.Muted)
                 }
             }
-            IconButton(onClick = { nav.navigate(Routes.ALERTS) }) {
+            IconButton(onClick = { nav.navigate(Routes.alerts(q.symbol)) }) {
                 Icon(Icons.Filled.Notifications, contentDescription = "設定提醒", tint = C.Text)
             }
         }
@@ -185,7 +185,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             Box(
                 Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
                     .border(1.dp, C.Border, RoundedCornerShape(12.dp))
-                    .clickable { nav.navigate(Routes.ALERTS) },
+                    .clickable { nav.navigate(Routes.alerts(q.symbol)) },
                 contentAlignment = Alignment.Center,
             ) { Text("設提醒", color = C.Text, fontSize = 15.sp) }
             Box(

@@ -77,6 +77,9 @@ data class Trade(
     val note: String = "",
     /** 帳戶編號，0 = 未指定 */
     val account: Int = 0,
+    /** 附件檔名（App 內部儲存），標籤 */
+    val attachments: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
 )
 
 /** 自選群組 */

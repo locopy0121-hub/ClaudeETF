@@ -46,6 +46,9 @@ object Routes {
     const val DCA = "dca"
     const val PNL = "pnl"
     const val WELCOME = "welcome"
+    const val REPORT = "report"
+
+    fun alerts(symbol: String = "") = "$ALERTS?s=$symbol"
     const val SEARCH = "search"
     const val ERRORS = "errors"
     const val REBALANCE = "rebalance"

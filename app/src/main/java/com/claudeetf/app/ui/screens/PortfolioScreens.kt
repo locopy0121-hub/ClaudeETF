@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -239,6 +240,13 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
     var feeEdited by remember { mutableStateOf(editing != null && editing.type != TradeType.DIVIDEND) }
     var confirmDelete by remember { mutableStateOf(false) }
     var accountId by remember { mutableIntStateOf(editing?.account ?: 0) }
+    var note by remember { mutableStateOf(editing?.note ?: "") }
+    var tagsText by remember { mutableStateOf(editing?.tags?.joinToString("、") ?: "") }
+    var attachments by remember { mutableStateOf(editing?.attachments ?: emptyList()) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri -> if (uri != null) com.claudeetf.app.util.Attachments.import(ctx, uri)?.let { attachments = attachments + it } }
     var ratioText by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -397,6 +405,22 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
                     }
                 }
             }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Field("備註", note, { note = it }, keyboard = KeyboardType.Text)
+                    Field("標籤（用頓號或逗號分隔，例：存股、高股息）", tagsText, { tagsText = it }, keyboard = KeyboardType.Text)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        attachments.forEach { name -> AttachmentThumb(name) { attachments = attachments - name } }
+                        Box(
+                            Modifier.size(72.dp).clip(RoundedCornerShape(10.dp)).background(C.Card)
+                                .clickable { picker.launch("image/*") },
+                            contentAlignment = Alignment.Center,
+                        ) { Text("＋ 照片", color = C.Primary, fontSize = 12.sp) }
+                    }
+                    Label("可附上對帳單或成交回報截圖，照片只存在這支手機。")
+                }
+            }
             error?.let { msg -> item { Text(msg, color = C.Red, fontSize = 13.sp) } }
         }
         Box(
@@ -408,8 +432,9 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
                         if (isUs) fx.toDoubleOrNull() ?: AppState.usdTwd else 1.0,
                         fee, tax,
                     )
-                    val tt = t.copy(account = effAccount)
-                    val err = if (editing != null) AppState.updateTrade(tt.copy(id = editing.id, origin = editing.origin, note = editing.note))
+                    val tags = tagsText.split('、', ',', '，', ' ').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+                    val tt = t.copy(account = effAccount, note = note.trim(), tags = tags, attachments = attachments)
+                    val err = if (editing != null) AppState.updateTrade(tt.copy(id = editing.id, origin = editing.origin))
                     else AppState.addTrade(tt)
                     if (err == null) nav.popBackStack() else error = err
                 },
@@ -541,6 +566,8 @@ fun DividendScreen(nav: NavController) {
                     Label("台股：只有「股利所得」計入綜所稅，且單次股利所得達 NT$20,000 才扣二代健保 2.11%。ETF 配息中的選擇權權利金、收益平準金、證券交易所得不扣；債券與海外 ETF 屬海外所得，適用最低稅負制。")
                     Label("美股：配息預扣 30%，以實收記帳；不扣二代健保。")
                     Label("每檔的稅務類型與應稅比例可在個股頁「股息」分頁調整。")
+                    Text("查看年度報表（報稅參考） ›", color = C.Primary, fontSize = 13.sp,
+                        modifier = Modifier.clickable { nav.navigate(Routes.REPORT) }.padding(vertical = 6.dp))
                 }
             }
         }
@@ -714,5 +741,42 @@ private fun Legend(color: Color, text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(width = 14.dp, height = 3.dp).background(color)); HGap(5.dp)
         Text(text, color = C.Text2, fontSize = 11.sp, maxLines = 1)
+    }
+}
+
+/** 附件縮圖：點擊放大、右上角移除 */
+@Composable
+fun AttachmentThumb(name: String, onRemove: (() -> Unit)? = null) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val thumb = remember(name) { com.claudeetf.app.util.Attachments.load(ctx, name, 240)?.asImageBitmap() }
+    var open by remember { mutableStateOf(false) }
+    Box(Modifier.size(72.dp)) {
+        Box(
+            Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(C.Card2).clickable { open = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (thumb != null) androidx.compose.foundation.Image(
+                thumb, contentDescription = "附件", modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            ) else Label("遺失")
+        }
+        if (onRemove != null) {
+            Text(
+                "✕", color = C.OnPrimary, fontSize = 11.sp,
+                modifier = Modifier.align(Alignment.TopEnd).padding(3.dp).clip(RoundedCornerShape(9.dp))
+                    .background(C.Muted).clickable(onClick = onRemove).padding(horizontal = 5.dp, vertical = 1.dp),
+            )
+        }
+    }
+    if (open) {
+        val full = remember(name) { com.claudeetf.app.util.Attachments.load(ctx, name, 1600)?.asImageBitmap() }
+        androidx.compose.ui.window.Dialog(onDismissRequest = { open = false }) {
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).clickable { open = false }) {
+                if (full != null) androidx.compose.foundation.Image(
+                    full, contentDescription = "附件", modifier = Modifier.fillMaxWidth(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
+                )
+            }
+        }
     }
 }

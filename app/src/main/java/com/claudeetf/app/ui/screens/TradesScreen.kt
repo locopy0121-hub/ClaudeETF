@@ -2,6 +2,8 @@ package com.claudeetf.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,10 +37,13 @@ import com.claudeetf.app.util.Fmt
 fun TradesScreen(nav: NavController) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableIntStateOf(0) }
+    var tag by remember { mutableStateOf<String?>(null) }
+    val allTags = AppState.trades.flatMap { it.tags }.distinct().sorted()
     val types = listOf<TradeType?>(null) + TradeType.entries
     val list = AppState.trades.filter { t ->
         t.origin != TradeOrigin.LEGACY &&
             (filter == 0 || t.type == types[filter]) &&
+            (tag == null || tag in t.tags) &&
             (query.isBlank() || t.symbol.contains(query.trim(), true) ||
                 (AppState.quote(t.symbol)?.name?.contains(query.trim(), true) == true))
     }
@@ -48,6 +53,7 @@ fun TradesScreen(nav: NavController) {
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("交易紀錄", onBack = { nav.popBackStack() }) {
+            Text("年度報表", color = C.Primary, fontSize = 14.sp, modifier = Modifier.clickable { nav.navigate(Routes.REPORT) }.padding(horizontal = 8.dp, vertical = 12.dp))
             IconButton(onClick = { nav.navigate(Routes.trade()) }) {
                 Icon(Icons.Filled.Add, contentDescription = "新增交易", tint = C.Text)
             }
@@ -65,6 +71,20 @@ fun TradesScreen(nav: NavController) {
                 )
             }
             item { Segmented(types.map { it?.label ?: "全部" }, filter, { filter = it }) }
+            if (allTags.isNotEmpty()) {
+                item {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        (listOf<String?>(null) + allTags).forEach { tg ->
+                            val on = tg == tag
+                            Text(
+                                tg?.let { "#$it" } ?: "全部標籤", color = if (on) C.Text else C.Muted, fontSize = 12.sp,
+                                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Selected else C.Card)
+                                    .clickable { tag = tg }.padding(horizontal = 12.dp, vertical = 7.dp),
+                            )
+                        }
+                    }
+                }
+            }
             item {
                 Card(padding = 14.dp) {
                     KeyValue("筆數", list.size.toString())
@@ -133,6 +153,12 @@ private fun TradeRow(t: Trade, onClick: () -> Unit) {
                         else -> Fmt.shares(t.shares) + " 股 × " + ccy + Fmt.price(t.price)
                     },
             )
+            val extra = listOfNotNull(
+                t.tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" },
+                t.attachments.takeIf { it.isNotEmpty() }?.let { "附件 ${it.size}" },
+                t.note.takeIf { it.isNotBlank() && t.origin != TradeOrigin.OPENING },
+            )
+            if (extra.isNotEmpty()) Text(extra.joinToString(" · "), color = C.Primary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
             if (t.type != TradeType.SPLIT) NumText(mask(ccy + Fmt.num(amount, if (isUs) 2 else 0)), 14.sp)

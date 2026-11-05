@@ -778,6 +778,7 @@ object AppState {
                     .put("n", it.shares).put("p", it.price).put("x", it.fx)
                     .put("fee", it.fee).put("tax", it.tax)
                     .put("id", it.id).put("o", it.origin).put("note", it.note).put("acc", it.account)
+                    .put("att", JSONArray(it.attachments)).put("tags", JSONArray(it.tags))
             )
         }
     }.toString()
@@ -790,6 +791,8 @@ object AppState {
                 TradeType.valueOf(o.getString("t")), o.getString("s"), o.getString("d"),
                 o.getDouble("n"), o.getDouble("p"), o.getDouble("x"), o.getDouble("fee"), o.getDouble("tax"),
                 o.optLong("id", 0L), o.optString("o", ""), o.optString("note", ""), o.optInt("acc", 0),
+                o.optJSONArray("att")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+                o.optJSONArray("tags")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             )
         }
     }.getOrDefault(emptyList())
