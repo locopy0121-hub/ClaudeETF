@@ -100,12 +100,12 @@ object AppState {
 
     /** 使用者自行填入的 API 金鑰（自動儲存在本機） */
     var fugleKey by mutableStateOf("")
+        private set
 
     /** 台股盤中來源：fugle 僅用富果（預設）、twse 以證交所即時為主 */
     var twIntradaySource by mutableStateOf("fugle")
     fun updateTwIntradaySource(s: String) { twIntradaySource = s; save() }
     val twUseFugle: Boolean get() = twIntradaySource != "twse"
-        private set
     var finnhubKey by mutableStateOf("")
         private set
     var refreshing by mutableStateOf(false)
