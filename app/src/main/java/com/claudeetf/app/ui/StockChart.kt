@@ -100,6 +100,8 @@ fun StockChart(
     yBounds: Pair<Float, Float>? = null,
     /** 我的買賣點（依成交日期對到 K 棒） */
     marks: List<TradeMark> = emptyList(),
+    /** 用來把成交量換成「張」（台股）；null 時直接顯示股數 */
+    market: com.claudeetf.app.data.Market? = null,
 ) {
     val n = h.closes.size
     val from = start.coerceIn(0, maxOf(0, n - 2))
@@ -150,7 +152,12 @@ fun StockChart(
                 Mini("開", h.opens[i]); Mini("高", h.highs[i]); Mini("低", h.lows[i])
             }
             Mini("收", h.closes[i])
-            if (h.volumes.size == n) Label("量 " + Fmt.num(h.volumes[i].toDouble()))
+            if (h.volumes.size == n) {
+                fun vt(v: Double) = if (market != null) com.claudeetf.app.ui.screens.volumeText(v, market) else Fmt.num(v)
+                // 分時圖未選取時顯示當日總量（最後一根 13:30 常為 0）；選取某根時顯示該根的量
+                if (intraday && sel == null) Label("總量 " + vt((from until n).sumOf { h.volumes[it].toDouble() }))
+                else Label("量 " + vt(h.volumes[i].toDouble()))
+            }
         }
         markAt[i]?.let { ms ->
             Text(

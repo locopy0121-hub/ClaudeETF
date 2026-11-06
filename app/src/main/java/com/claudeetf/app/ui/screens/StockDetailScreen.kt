@@ -448,7 +448,7 @@ private fun ChartBlock(
                     runCatching { java.time.LocalDate.parse(t.date.replace('/', '-').let { d -> d.split('-').let { "%04d-%02d-%02d".format(it[0].toInt(), it[1].toInt(), it[2].toInt()) } }) }
                         .getOrNull()?.let { com.claudeetf.app.ui.TradeMark(it, t.price.toFloat(), t.type == com.claudeetf.app.data.TradeType.BUY, t.shares) }
                 }
-                StockChart(h, start, type, mas, sub, base, opt.intraday, levels, slots, bounds, marks)
+                StockChart(h, start, type, mas, sub, base, opt.intraday, levels, slots, bounds, marks, q.market)
                 if (myTrades.isNotEmpty() && !opt.intraday) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("● 買進", color = com.claudeetf.app.ui.MARK_BUY, fontSize = 11.sp); HGap(8.dp)
