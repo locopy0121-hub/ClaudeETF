@@ -238,7 +238,13 @@ fun SettingsScreen(nav: NavController) {
             item {
                 Card(padding = 14.dp) {
                     Text("台股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Label("盤中：填入富果金鑰後以 WebSocket 串流與交易所同步（每筆成交即時推送）；未填金鑰或超出訂閱上限的股票，改用證交所即時行情（約每 5 秒）。盤後使用證交所／櫃買收盤資料。")
+                    Label("盤中來源")
+                    Segmented(listOf("僅用富果（預設）", "證交所為主"), if (AppState.twUseFugle) 0 else 1,
+                        { AppState.updateTwIntradaySource(if (it == 0) "fugle" else "twse") }, background = C.Bg)
+                    Label(
+                        if (AppState.twUseFugle) "盤中一律只用富果：WebSocket 串流與交易所同步，超出訂閱上限的股票改用富果 REST 輪流更新，不混用證交所。未填金鑰時暫用證交所即時。盤後使用證交所／櫃買收盤資料。"
+                        else "盤中以證交所即時行情為主（約每 5 秒），不開富果串流；證交所沒有回應的股票，有金鑰時改用富果補上。盤後使用證交所／櫃買收盤資料。"
+                    )
                     KeyField(
                         label = "富果 Fugle API 金鑰",
                         initial = AppState.fugleKey,

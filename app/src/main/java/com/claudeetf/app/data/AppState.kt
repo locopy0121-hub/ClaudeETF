@@ -100,6 +100,11 @@ object AppState {
 
     /** 使用者自行填入的 API 金鑰（自動儲存在本機） */
     var fugleKey by mutableStateOf("")
+
+    /** 台股盤中來源：fugle 僅用富果（預設）、twse 以證交所即時為主 */
+    var twIntradaySource by mutableStateOf("fugle")
+    fun updateTwIntradaySource(s: String) { twIntradaySource = s; save() }
+    val twUseFugle: Boolean get() = twIntradaySource != "twse"
         private set
     var finnhubKey by mutableStateOf("")
         private set
@@ -241,6 +246,7 @@ object AppState {
         dividendUsGrossYtd = p.getFloat("divUs", 1_120.73f).toDouble()
         cashTwd = p.getFloat("cash", 164_000f).toDouble()
         fugleKey = p.getString("fugleKey", "") ?: ""
+        twIntradaySource = p.getString("twIntradaySource", "fugle") ?: "fugle"
         finnhubKey = p.getString("finnhubKey", "") ?: ""
         fxSource = p.getString("fxSource", "手動輸入") ?: "手動輸入"
         fxUpdatedAt = p.getLong("fxUpdatedAt", 0L)
@@ -396,6 +402,7 @@ object AppState {
             .putString("alertsV2", alertsJson())
             .putString("alertHistory", JSONArray().apply { alertHistory.take(60).forEach { put(JSONObject().put("t", it.time).put("x", it.text)) } }.toString())
             .putString("fugleKey", fugleKey)
+            .putString("twIntradaySource", twIntradaySource)
             .putString("finnhubKey", finnhubKey)
             .putString("fxSource", fxSource)
             .putLong("fxUpdatedAt", fxUpdatedAt)

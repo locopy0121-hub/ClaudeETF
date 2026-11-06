@@ -44,9 +44,10 @@ object MarketData {
 
     fun twSourcePlan(): String = when {
         !isTwIntraday() -> "證交所／櫃買收盤資料（盤後）"
-        AppState.fugleKey.isBlank() -> "證交所即時（約每 5 秒；填富果金鑰可與交易所同步）"
-        com.claudeetf.app.data.remote.FugleStream.connected -> "富果串流：與交易所同步"
-        else -> "富果即時＋證交所即時（串流連線中）"
+        !AppState.twUseFugle -> "盤中以證交所即時為主（約每 5 秒）" + if (AppState.fugleKey.isNotBlank()) "，失敗時改用富果" else ""
+        AppState.fugleKey.isBlank() -> "尚未填富果金鑰，暫用證交所即時（填入後盤中僅用富果）"
+        com.claudeetf.app.data.remote.FugleStream.connected -> "盤中僅用富果：串流與交易所同步"
+        else -> "盤中僅用富果：串流連線中，暫以富果 REST 輪流更新"
     }
 
     private fun clock(ms: Long): String =
@@ -76,6 +77,7 @@ object MarketData {
     // 富果免費方案約每分鐘 60 次：即時輪詢每 5 秒最多送 4 檔，其餘由證交所 MIS 補齊
     private const val FUGLE_PER_TICK = 4
     private var fugleCursor = 0
+    private var lastFugleIndexAt = 0L
 
     /**
      * 台股：盤中（08:30–13:35）富果優先、其餘或失敗改用證交所 MIS 即時；盤後用證交所／櫃買收盤資料。
@@ -92,17 +94,16 @@ object MarketData {
         var misError: String? = null
 
         if (intraday) {
-            // 0) 富果串流已同步的代號：由推播即時更新，不必輪詢
-            symbols.filter { com.claudeetf.app.data.remote.FugleStream.isStreaming(it) }.forEach { fugle += it }
-            // 1) 富果優先（串流未涵蓋的代號才用 REST）
-            val pending = symbols.filter { it !in fugle }
-            if (AppState.fugleKey.isNotBlank() && pending.isNotEmpty() && !com.claudeetf.app.data.remote.FugleStream.connected) {
-                val key = AppState.fugleKey
-                val symbols = pending
+            val key = AppState.fugleKey
+            val fugleOnly = AppState.twUseFugle && key.isNotBlank()
+
+            // 富果 REST：串流未涵蓋（尚未推播、超出訂閱上限、串流斷線）的代號輪流更新
+            suspend fun fugleRest(pending: List<String>) {
+                if (key.isBlank() || pending.isEmpty()) return
                 val batch = if (live) {
-                    val n = minOf(FUGLE_PER_TICK, symbols.size)
-                    (0 until n).map { symbols[(fugleCursor + it) % symbols.size] }.also { fugleCursor = (fugleCursor + n) % symbols.size }
-                } else symbols.take(40)
+                    val n = minOf(FUGLE_PER_TICK, pending.size)
+                    (0 until n).map { pending[(fugleCursor + it) % pending.size] }.also { fugleCursor = (fugleCursor + n) % pending.size }
+                } else pending.take(40)
                 val results = withContext(Dispatchers.IO) {
                     batch.map { s ->
                         val r = runCatching { FugleApi.quote(s, key) }
@@ -115,12 +116,13 @@ object MarketData {
                 }
                 fugleError = results.firstOrNull { it.second.isFailure }?.second?.exceptionOrNull()?.friendly()
             }
-            // 2) 其餘全部用證交所 MIS 即時（一次批次）
-            val rest = symbols.filter { it !in fugle }
-            if (rest.isNotEmpty()) {
-                val res = withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.TwseMisApi.quotes(rest) } }
+
+            // 證交所 MIS 即時（一次批次）
+            suspend fun misBatch(list: List<String>) {
+                if (list.isEmpty()) return
+                val res = withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.TwseMisApi.quotes(list) } }
                 res.getOrNull()?.forEach { (code, t) ->
-                    if (code in rest) {
+                    if (code in list) {
                         AppState.applyRemote(t.quote, QuoteSource.TWSE_LIVE, maxOf(t.time, now - 60_000), live = true)
                         if (t.hasTrade && t.tradeLots != null) {
                             val side = when {
@@ -135,12 +137,35 @@ object MarketData {
                 }
                 misError = res.exceptionOrNull()?.friendly()
             }
-            // 加權、櫃買指數即時
-            withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.TwseMisApi.fetch(listOf("tse_t00.tw", "otc_o00.tw")) } }
-                .getOrNull()?.forEach { (code, t) ->
-                    val sym = if (code == "t00") "^TWII" else if (code == "o00") "^TWOII" else null
-                    sym?.let { AppState.applyIndex(it, t.quote.price, t.quote.prevClose, now) }
+
+            if (fugleOnly) {
+                // 盤中一律僅用富果：串流同步的代號由推播更新，其餘用富果 REST，不混用證交所
+                symbols.filter { com.claudeetf.app.data.remote.FugleStream.isStreaming(it) }.forEach { fugle += it }
+                fugleRest(symbols.filter { it !in fugle })
+                // 輪詢中尚未輪到的代號維持富果上一筆資料，不以證交所覆蓋
+                symbols.filter { AppState.quote(it)?.source.let { src -> src == QuoteSource.FUGLE || src == QuoteSource.FUGLE_STREAM } }.forEach { fugle += it }
+                // 指數也用富果（加權 IX0001、櫃買 IX0043），每 30 秒一次
+                if (!live || now - lastFugleIndexAt > 30_000) {
+                    lastFugleIndexAt = now
+                    withContext(Dispatchers.IO) {
+                        listOf("IX0001" to "^TWII", "IX0043" to "^TWOII").mapNotNull { (code, sym) ->
+                            runCatching { FugleApi.quote(code, key) }.getOrNull()?.let { sym to it }
+                        }
+                    }.forEach { (sym, q) -> AppState.applyIndex(sym, q.price, q.prevClose, now) }
                 }
+            } else {
+                // 證交所為主（或尚未填富果金鑰）
+                misBatch(symbols)
+                if (!AppState.twUseFugle || key.isBlank()) {
+                    // 證交所沒有回應的代號，有金鑰時改用富果補
+                    fugleRest(symbols.filter { it !in mis })
+                }
+                withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.TwseMisApi.fetch(listOf("tse_t00.tw", "otc_o00.tw")) } }
+                    .getOrNull()?.forEach { (code, t) ->
+                        val sym = if (code == "t00") "^TWII" else if (code == "o00") "^TWOII" else null
+                        sym?.let { AppState.applyIndex(it, t.quote.price, t.quote.prevClose, now) }
+                    }
+            }
         }
 
         // 3) 盤後或即時來源都失敗：收盤資料

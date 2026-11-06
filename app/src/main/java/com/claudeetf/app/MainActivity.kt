@@ -147,7 +147,7 @@ class MainActivity : ComponentActivity() {
                     // 台股盤中有富果金鑰：保持 WebSocket 串流，與交易所同步
                     runCatching {
                         com.claudeetf.app.data.remote.FugleStream.ensure(
-                            MarketData.isTwIntraday(), AppState.fugleKey,
+                            MarketData.isTwIntraday() && AppState.twUseFugle, AppState.fugleKey,
                             AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol },
                         )
                     }
