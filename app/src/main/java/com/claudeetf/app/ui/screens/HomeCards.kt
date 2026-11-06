@@ -276,3 +276,42 @@ private fun PickRow(name: String, value: String, added: Boolean, onAdd: () -> Un
         Text(if (added) "已加入" else "＋ 加入", color = if (added) C.Muted else C.Primary, fontSize = 12.sp)
     }
 }
+
+/** 台指期近月（富果期貨），卡片顯示時以串流同步，並列出與加權指數的價差 */
+@Composable
+fun FuturesCard(nav: NavController) {
+    val fs = com.claudeetf.app.data.remote.FutStream
+    val key = AppState.fugleKey
+    DisposableEffect(key) {
+        fs.start(key)
+        onDispose { fs.stop() }
+    }
+    LaunchedEffect(key) {
+        if (key.isNotBlank()) runCatching { withContext(Dispatchers.IO) { fs.snapshot(key) } }
+            .onFailure { e -> fs.status = "台指期：" + (e.message ?: "無法取得") }
+    }
+    val q = fs.quote
+    val twii = AppState.twIndices.firstOrNull { it.symbol == "^TWII" }
+    Card(Modifier.clickable { nav.navigate(Routes.index("^TWII")) }) {
+        CardTitle("台指期近月", if (fs.live) "● 串流同步" else null)
+        if (key.isBlank()) { Label("需要富果金鑰（我的 › 行情資料來源）"); return@Card }
+        if (q == null) { Label(fs.status.ifBlank { "載入中…" }); return@Card }
+        Row(verticalAlignment = Alignment.Bottom) {
+            NumText(Fmt.num(q.price, 0), 24.sp, Trend.fg(q.change), weight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Column(horizontalAlignment = Alignment.End) {
+                NumText(Fmt.signed(q.change), 13.sp, Trend.fg(q.change))
+                ChangePill(q.changePct)
+            }
+        }
+        if (fs.spark.size >= 2) Sparkline(fs.spark, Trend.fg(q.change), Modifier.fillMaxWidth().height(56.dp), fill = true)
+        val basis = twii?.takeIf { it.value > 0 }?.let { q.price - it.value }
+        Label(
+            listOfNotNull(
+                q.symbol + if (q.afterHours) " 盤後" else " 一般盤",
+                q.volume?.let { "量 " + Fmt.num(it) + " 口" },
+                basis?.let { "價差 " + Fmt.signed(it) + if (it >= 0) "（正價差）" else "（逆價差）" },
+            ).joinToString(" · ")
+        )
+        Label(fs.status)
+    }
+}

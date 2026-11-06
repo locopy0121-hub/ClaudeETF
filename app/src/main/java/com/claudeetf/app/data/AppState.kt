@@ -78,9 +78,10 @@ object AppState {
     val allHomeCards = listOf("assets" to "總資產與走勢", "alloc" to "資產配置", "movers" to "今日持股漲跌",
         "session" to "美股交易時段", "index" to "主要指數", "source" to "資料來源", "goal" to "資產目標",
         "pnlsplit" to "今日損益（台股／美股）", "watch" to "自選前五檔", "holdings" to "持股前五大",
-        "keys" to "持股三關位置", "divcal" to "持股除息行事曆", "alerts" to "最近通知", "fx" to "匯率與總經")
+        "keys" to "持股三關位置", "divcal" to "持股除息行事曆", "alerts" to "最近通知", "fx" to "匯率與總經",
+        "fut" to "台指期近月")
     /** v0.1.45 新增的固定卡片：舊使用者預設隱藏，到設定勾選 */
-    private val newHomeCards = setOf("pnlsplit", "watch", "holdings", "keys", "divcal", "alerts", "fx")
+    private val newHomeCards = setOf("pnlsplit", "watch", "holdings", "keys", "divcal", "alerts", "fx", "fut")
 
     /** 自訂卡片：idx:代號（指數）、stk:代號（個股） */
     fun isCustomCard(id: String) = id.startsWith("idx:") || id.startsWith("stk:")
@@ -300,6 +301,12 @@ object AppState {
         if (!p.getBoolean("homeTwiiAdded", false)) {
             if ("idx:^TWII" !in homeOrder) homeOrder.add(0, "idx:^TWII")
             p.edit().putBoolean("homeTwiiAdded", true).apply()
+        }
+        // 一次性：台指期卡片放在加權指數下方
+        if (!p.getBoolean("homeFutAdded", false)) {
+            homeOrder.remove("fut"); homeHidden.remove("fut")
+            homeOrder.add(minOf(1, homeOrder.size), "fut")
+            p.edit().putBoolean("homeFutAdded", true).apply()
         }
         fontScale = p.getFloat("fontScale", 1f)
         watchColumn = p.getString("watchColumn", "spark") ?: "spark"
