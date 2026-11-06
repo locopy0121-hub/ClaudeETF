@@ -78,7 +78,7 @@ object InvestAnalysis {
     private fun momentumFactor(c: List<Float>): Factor? {
         if (c.size < 21) return null
         val rsi = Indicators.rsi(c, 14).lastOrNull()?.toDouble() ?: return null
-        val r20 = (c.last() / c[c.size - 21] - 1) * 100
+        val r20 = (c.last().toDouble() / c[c.size - 21] - 1) * 100
         val base = when {
             rsi >= 80 -> 35.0      // 過熱
             rsi >= 70 -> 55.0
