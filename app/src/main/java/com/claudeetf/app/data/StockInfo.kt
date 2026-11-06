@@ -50,6 +50,35 @@ object StockInfoRepo {
         YahooExtra.history(yahooSymbol(q), range)
     }
 
+    /**
+     * 三關價（盤中參考）：以前一交易日最高 H、最低 L 計算
+     * 上關 = L + (H − L) × 1.382、中關 = (H + L) ÷ 2、下關 = H − (H − L) × 1.382
+     */
+    data class KeyPrices(val upper: Double, val mid: Double, val lower: Double, val prevHigh: Double, val prevLow: Double, val basisDate: String)
+
+    private val keyCache = HashMap<String, Pair<Long, KeyPrices>>()
+
+    suspend fun keyPrices(q: Quote): KeyPrices? = withContext(Dispatchers.IO) {
+        keyCache[q.symbol]?.let { (t, k) -> if (System.currentTimeMillis() - t < 30 * 60_000) return@withContext k }
+        val h = YahooExtra.history(yahooSymbol(q), "1mo")
+        val zone = java.time.ZoneId.of(if (q.market == Market.TW) "Asia/Taipei" else "America/New_York")
+        fun day(i: Int) = java.time.Instant.ofEpochMilli(h.times[i]).atZone(zone).toLocalDate()
+        val valid = h.times.indices.filter { i ->
+            val hi = h.highs.getOrNull(i); val lo = h.lows.getOrNull(i)
+            hi != null && lo != null && !hi.isNaN() && !lo.isNaN() && hi > 0 && lo > 0
+        }
+        if (valid.isEmpty()) return@withContext null
+        val today = java.time.LocalDate.now(zone)
+        // 今天已有 K 棒（盤中或已收盤）→ 用前一根；尚未開盤 → 最後一根就是前一交易日
+        val k = if (day(valid.last()) == today) valid.getOrNull(valid.size - 2) else valid.last()
+        k ?: return@withContext null
+        val hi = h.highs[k].toDouble(); val lo = h.lows[k].toDouble()
+        val r = hi - lo
+        val kp = KeyPrices(lo + r * 1.382, (hi + lo) / 2, hi - r * 1.382, hi, lo, day(k).toString())
+        keyCache[q.symbol] = System.currentTimeMillis() to kp
+        kp
+    }
+
     suspend fun fundamentals(q: Quote): Fundamentals = withContext(Dispatchers.IO) {
         val key = q.symbol
         fundCache[key]?.let { (t, f) -> if (System.currentTimeMillis() - t < TTL) return@withContext f }

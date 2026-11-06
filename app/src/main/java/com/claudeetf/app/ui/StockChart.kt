@@ -90,10 +90,15 @@ fun StockChart(
     sub: SubChart,
     basePrice: Float?,
     intraday: Boolean,
+    /** 參考價位線（例如三關價），畫成虛線 */
+    levels: List<KeyLevel> = emptyList(),
+    /** 分時圖整個交易時段的 K 棒數；> 0 時 X 軸固定為全時段 */
+    slots: Int = 0,
 ) {
     val n = h.closes.size
     val from = start.coerceIn(0, maxOf(0, n - 2))
     val count = n - from
+    val span = maxOf(count, slots)
     var sel by remember(h, from) { mutableStateOf<Int?>(null) }
 
     val maLines = remember(h, mas) { mas.associateWith { Indicators.sma(h.closes, it) } }
@@ -141,15 +146,15 @@ fun StockChart(
         val gesture = Modifier
             .pointerInput(h, from) {
                 detectDragGestures(
-                    onDragStart = { o -> sel = indexAt(o.x, size.width.toFloat(), from, count) },
+                    onDragStart = { o -> sel = indexAt(o.x, size.width.toFloat(), from, span).coerceAtMost(n - 1) },
                     onDragEnd = { sel = null },
                     onDragCancel = { sel = null },
-                    onDrag = { change, _ -> sel = indexAt(change.position.x, size.width.toFloat(), from, count) },
+                    onDrag = { change, _ -> sel = indexAt(change.position.x, size.width.toFloat(), from, span).coerceAtMost(n - 1) },
                 )
             }
             .pointerInput(h, from) {
                 detectTapGestures(onTap = { o ->
-                    val idx = indexAt(o.x, size.width.toFloat(), from, count)
+                    val idx = indexAt(o.x, size.width.toFloat(), from, span).coerceAtMost(n - 1)
                     sel = if (sel == idx) null else idx
                 })
             }
@@ -165,11 +170,12 @@ fun StockChart(
                 maLines.values.forEach { l -> l.getOrNull(k)?.let { v -> if (v > hi) hi = v; if (v < lo) lo = v } }
             }
             if (basePrice != null) { if (basePrice > hi) hi = basePrice; if (basePrice < lo) lo = basePrice }
+            levels.forEach { l -> if (l.value > hi) hi = l.value; if (l.value < lo) lo = l.value }
             val pad = (hi - lo) * 0.06f + 0.0001f
             hi += pad; lo -= pad
             val w = size.width
             val ht = size.height
-            val step = w / count
+            val step = w / span
             fun x(k: Int) = (k - from) * step + step / 2
             fun y(v: Float) = ht - (v - lo) / (hi - lo) * ht
 
@@ -177,6 +183,9 @@ fun StockChart(
             for (g in 1..3) drawLine(C.Line, Offset(0f, ht * g / 4), Offset(w, ht * g / 4), 1f)
             basePrice?.let {
                 drawLine(C.Gray, Offset(0f, y(it)), Offset(w, y(it)), 1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
+            }
+            levels.forEach { l ->
+                drawLine(l.color, Offset(0f, y(l.value)), Offset(w, y(l.value)), 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f)))
             }
 
             if (type == ChartType.CANDLE && h.opens.size == n) {
@@ -214,7 +223,7 @@ fun StockChart(
             Canvas(Modifier.fillMaxWidth().height(70.dp).then(gesture)) {
                 val w = size.width
                 val ht = size.height
-                val step = w / count
+                val step = w / span
                 fun x(k: Int) = (k - from) * step + step / 2
                 drawLine(C.Line, Offset(0f, ht), Offset(w, ht), 1f)
                 when (sub) {
@@ -272,6 +281,9 @@ fun StockChart(
 private fun Mini(label: String, v: Float) {
     Text("$label " + Fmt.price(v.toDouble()), color = C.Text2, fontSize = 11.sp)
 }
+
+/** 圖上的參考價位 */
+data class KeyLevel(val label: String, val value: Float, val color: Color)
 
 private fun indexAt(px: Float, width: Float, from: Int, count: Int): Int {
     if (count <= 0 || width <= 0f) return from

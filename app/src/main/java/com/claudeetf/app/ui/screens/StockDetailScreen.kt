@@ -111,6 +111,10 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             runCatching { StockInfoRepo.history(q, ranges[range].fetch) }.onSuccess { history = Load.Ok(it) }
         }
     }
+    // 三關價（前一交易日高低）
+    LaunchedEffect(q.symbol) {
+        runCatching { StockInfoRepo.keyPrices(q) }.getOrNull()?.let { AppState.keyPrices[q.symbol] = it }
+    }
     // 基本面（概覽、財務、公司共用）
     var fund by remember { mutableStateOf<Load<Fundamentals>>(Load.Loading) }
     LaunchedEffect(q.symbol) {
@@ -177,7 +181,13 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                     ranges[range].intraday,
                 )
             }
-            item { ChartBlock(history, range, q, chartType, mas, sub) }
+            if (ranges[range].fetch == "1d") item { KeyLevelsBar(q, AppState.keyPrices[q.symbol]) }
+            item {
+                ChartBlock(
+                    history, range, q, chartType, mas, sub,
+                    levels = if (ranges[range].fetch == "1d" && AppState.showKeyLevels) AppState.keyPrices[q.symbol]?.let { KeyLevelsUi.lines(it) } ?: emptyList() else emptyList(),
+                )
+            }
             item { Segmented(tabs.map { it.label }, tabIdx, { tabIdx = it }) }
             when (tab) {
                 Tab.OVERVIEW -> {
@@ -286,6 +296,7 @@ private fun ChartBlock(
     type: ChartType,
     mas: Set<Int>,
     sub: SubChart,
+    levels: List<KeyLevel> = emptyList(),
 ) {
     when (history) {
         is Load.Loading -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("載入走勢中…") }
@@ -301,7 +312,9 @@ private fun ChartBlock(
                     h.times.indexOfFirst { it >= cutoff }.takeIf { it >= 0 }
                 } ?: 0
                 val base = if (range == 0) h.prevClose?.toFloat() else null
-                StockChart(h, start, type, mas, sub, base, opt.intraday)
+                // 1 日分時：X 軸固定為整個交易時段（台股 09:00–13:30、美股 09:30–16:00，5 分 K）
+                val slots = if (opt.fetch == "1d") (if (q.market == Market.TW) 55 else 79) else 0
+                StockChart(h, start, type, mas, sub, base, opt.intraday, levels, slots)
             }
         }
     }

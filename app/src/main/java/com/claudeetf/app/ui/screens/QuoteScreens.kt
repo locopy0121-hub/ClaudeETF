@@ -56,6 +56,10 @@ fun WatchlistScreen(nav: NavController) {
     var addMsg by remember { mutableStateOf<String?>(null) }
     val group = if (filter.startsWith("g")) AppState.groups.firstOrNull { "g" + it.id == filter } else null
     val sortNames = listOf("自訂", "漲幅", "跌幅", "代號", "價格", "成交量", "振幅")
+    // 三關欄位或卡片版面：背景補抓各檔三關價
+    LaunchedEffect(AppState.watchColumn, AppState.watchLayout, AppState.quotes.size) {
+        if (AppState.watchColumn == "keys" || AppState.watchLayout == "card") KeyLevelsUi.load(AppState.quotes.toList())
+    }
     val base = AppState.quotes.filter { q ->
         (editing && group != null) || when (filter) {
             "tw" -> q.market == Market.TW
@@ -164,6 +168,7 @@ fun WatchlistScreen(nav: NavController) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Label("欄位", Modifier.padding(end = 6.dp))
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChipText("卡片", AppState.watchLayout == "card") { AppState.updateWatchLayout(if (AppState.watchLayout == "card") "list" else "card") }
                         watchColumns.forEach { (id, n) -> FilterChipText(n, AppState.watchColumn == id) { AppState.updateWatchColumn(id) } }
                     }
                 }
@@ -183,7 +188,14 @@ fun WatchlistScreen(nav: NavController) {
                 }
                 item { Label("方塊越大代表今日漲跌幅越大；顏色代表方向", Modifier.padding(top = 6.dp)) }
             }
-            if (!heat || editing) items(list, key = { it.symbol }) { q ->
+            if (!heat && !editing && AppState.watchLayout == "card") {
+                items(list.chunked(2), key = { row -> row.joinToString(",") { it.symbol } }) { row ->
+                    Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { q -> QuoteCard(q, Modifier.weight(1f), onLongClick = { quick = q }) { nav.navigate(Routes.stock(q.symbol)) } }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            } else if (!heat || editing) items(list, key = { it.symbol }) { q ->
                 if (!editing) {
                     QuoteRow(q, onLongClick = { quick = q }) { nav.navigate(Routes.stock(q.symbol)) }
                 } else {
@@ -291,7 +303,7 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
 }
 
-val watchColumns = listOf("spark" to "走勢", "volume" to "成交量", "amp" to "振幅", "pe" to "本益比", "pnl" to "持股損益")
+val watchColumns = listOf("spark" to "走勢", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "pe" to "本益比", "pnl" to "持股損益")
 
 /** 當日振幅 %：(最高 − 最低) ÷ 昨收 */
 fun amplitude(q: Quote): Double? {
@@ -310,6 +322,17 @@ private fun WatchCell(q: Quote) {
         "volume" -> CellText(AppState.dayStats[q.symbol]?.volume?.let { volumeText(it, q.market) } ?: "—", "量", m)
         "amp" -> CellText(amplitude(q)?.let { Fmt.num(it, 2) + "%" } ?: "—", "振幅", m)
         "pe" -> CellText(q.stats?.pe?.takeIf { it.isNotBlank() } ?: "—", "本益比", m)
+        "keys" -> {
+            val k = AppState.keyPrices[q.symbol]
+            if (k == null) CellText("—", "三關", m)
+            else {
+                val (pos, color) = KeyLevelsUi.position(q.price, k)
+                Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                    Text(pos, color = color, fontSize = 11.sp, maxLines = 1, fontWeight = FontWeight.Bold)
+                    Text("上" + Fmt.price(k.upper) + " 下" + Fmt.price(k.lower), color = C.Muted, fontSize = 9.sp, maxLines = 1)
+                }
+            }
+        }
         "pnl" -> {
             val h = AppState.holdings.firstOrNull { it.symbol == q.symbol }
             if (h == null || q.price <= 0) CellText("—", "未持有", m)
@@ -443,5 +466,53 @@ fun LiveBanner() {
         )
         Spacer(Modifier.weight(1f))
         Label(listOfNotNull(if (MarketData.isTwIntraday()) "台股" else null, if (MarketData.usLive()) "美股" else null).joinToString("・"))
+    }
+}
+
+/** 卡片版面：名稱、代號、大字價格、漲跌，三關位置（有資料時） */
+@Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun QuoteCard(q: Quote, modifier: Modifier, onLongClick: () -> Unit, onClick: () -> Unit) {
+    var last by remember(q.symbol) { mutableStateOf(q.price) }
+    var flash by remember(q.symbol) { mutableIntStateOf(0) }
+    LaunchedEffect(q.price) {
+        if (last != 0.0 && q.price != last) {
+            flash = if (q.price > last) 1 else -1
+            last = q.price
+            kotlinx.coroutines.delay(700)
+            flash = 0
+        } else last = q.price
+    }
+    val color = Trend.fg(q.change)
+    Column(
+        modifier.clip(RoundedCornerShape(12.dp))
+            .background(if (flash == 0) C.Card else Trend.fg(flash.toDouble()).copy(alpha = 0.18f))
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(q.name, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            NumText(q.symbol, 11.sp, C.Muted)
+        }
+        NumText(
+            if (q.price > 0) Fmt.price(q.price) else "—", 26.sp, color, weight = FontWeight.Bold,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (q.change > 0) "▲" else if (q.change < 0) "▼" else "", color = color, fontSize = 11.sp)
+            HGap(4.dp)
+            NumText(Fmt.signed(q.change, 2), 12.sp, color, modifier = Modifier.weight(1f))
+            NumText(Fmt.pct(kotlin.math.abs(q.changePct)), 12.sp, color)
+        }
+        if (q.market == Market.TW) {
+            com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00"))?.let { st ->
+                Text(st, color = Trend.fg(if (st == "漲停") 1.0 else -1.0), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        AppState.keyPrices[q.symbol]?.let { k ->
+            val (pos, c) = KeyLevelsUi.position(q.price, k)
+            Text("三關：$pos", color = c, fontSize = 10.sp, maxLines = 1)
+        }
     }
 }

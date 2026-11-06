@@ -154,6 +154,14 @@ object AppState {
     var monthlyReport by mutableStateOf(true)
     fun updateMonthlyReport(on: Boolean) { monthlyReport = on; save() }
 
+    /** 三關價（代號 → 當日上中下關），個股走勢與自選欄位共用 */
+    val keyPrices = mutableStateMapOf<String, StockInfoRepo.KeyPrices>()
+    var showKeyLevels by mutableStateOf(true)
+    fun updateShowKeyLevels(on: Boolean) { showKeyLevels = on; save() }
+    /** 自選版面：list 清單、card 卡片 */
+    var watchLayout by mutableStateOf("list")
+    fun updateWatchLayout(l: String) { watchLayout = l; save() }
+
     /** 市場頁類股：false 方塊、true 依漲跌排行 */
     var sectorRanked by mutableStateOf(false)
 
@@ -256,6 +264,8 @@ object AppState {
         fugleKey = p.getString("fugleKey", "") ?: ""
         twIntradaySource = p.getString("twIntradaySource", "fugle") ?: "fugle"
         monthlyReport = p.getBoolean("monthlyReport", true)
+        showKeyLevels = p.getBoolean("showKeyLevels", true)
+        watchLayout = p.getString("watchLayout", "list") ?: "list"
         industries.clear()
         p.getString("industries", null)?.let { json ->
             runCatching { val o = JSONObject(json); o.keys().forEach { k -> industries[k] = o.getString(k) } }
@@ -417,6 +427,8 @@ object AppState {
             .putString("fugleKey", fugleKey)
             .putString("twIntradaySource", twIntradaySource)
             .putBoolean("monthlyReport", monthlyReport)
+            .putBoolean("showKeyLevels", showKeyLevels)
+            .putString("watchLayout", watchLayout)
             .putString("industries", JSONObject().apply { industries.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("finnhubKey", finnhubKey)
             .putString("fxSource", fxSource)
