@@ -57,11 +57,12 @@ fun WatchlistScreen(nav: NavController) {
     val group = if (filter.startsWith("g")) AppState.groups.firstOrNull { "g" + it.id == filter } else null
     val sortNames = listOf("自訂", "漲幅", "跌幅", "代號", "價格", "成交量", "振幅")
     // 三關欄位或卡片版面：背景補抓各檔三關價
-    LaunchedEffect(AppState.watchColumn, AppState.watchLayout, AppState.quotes.size) {
-        if (AppState.watchColumn == "keys" || AppState.watchLayout == "card") KeyLevelsUi.load(AppState.quotes.toList())
-        if (AppState.watchColumn == "div") com.claudeetf.app.data.WatchExtras.loadDividends(AppState.quotes.toList())
-        if (AppState.watchColumn == "inst") com.claudeetf.app.data.WatchExtras.loadInstitutional()
-        if (AppState.watchColumn in listOf("dt", "credit", "rev")) com.claudeetf.app.data.WatchExtras.loadTwDaily()
+    LaunchedEffect(AppState.watchColumn, AppState.watchColumn2, AppState.watchLayout, AppState.quotes.size) {
+        val cols = setOf(AppState.watchColumn, AppState.watchColumn2)
+        if ("keys" in cols || AppState.watchLayout == "card") KeyLevelsUi.load(AppState.quotes.toList())
+        if ("div" in cols) com.claudeetf.app.data.WatchExtras.loadDividends(AppState.quotes.toList())
+        if ("inst" in cols) com.claudeetf.app.data.WatchExtras.loadInstitutional()
+        if (cols.any { it in listOf("dt", "credit", "rev") }) com.claudeetf.app.data.WatchExtras.loadTwDaily()
     }
     val base = AppState.quotes.filter { q ->
         (editing && group != null) || when (filter) {
@@ -173,6 +174,15 @@ fun WatchlistScreen(nav: NavController) {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChipText("卡片", AppState.watchLayout == "card") { AppState.updateWatchLayout(if (AppState.watchLayout == "card") "list" else "card") }
                         watchColumns.forEach { (id, n) -> FilterChipText(n, AppState.watchColumn == id) { AppState.updateWatchColumn(id) } }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Label("第二欄", Modifier.padding(end = 6.dp))
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChipText("不顯示", AppState.watchColumn2.isEmpty()) { AppState.updateWatchColumn2("") }
+                        watchColumns.filter { it.first != AppState.watchColumn }.forEach { (id, n) ->
+                            FilterChipText(n, AppState.watchColumn2 == id) { AppState.updateWatchColumn2(id) }
+                        }
                     }
                 }
             }
@@ -288,7 +298,11 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
                 HGap(6.dp); Text(sourceText(q.source, q.updatedAt), color = C.Muted, fontSize = 10.sp, maxLines = 1)
             }
         }
-        WatchCell(q)
+        WatchCell(q, AppState.watchColumn)
+        if (AppState.watchColumn2.isNotEmpty() && AppState.watchColumn2 != AppState.watchColumn) {
+            HGap(6.dp)
+            WatchCell(q, AppState.watchColumn2)
+        }
         HGap(10.dp)
         Column(Modifier.widthIn(min = 96.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             NumText(if (q.price > 0) Fmt.price(q.price) else "—", 15.sp)
@@ -319,9 +333,9 @@ fun amplitude(q: Quote): Double? {
 
 /** 自選清單中間欄，依設定顯示不同資訊 */
 @Composable
-private fun WatchCell(q: Quote) {
+private fun WatchCell(q: Quote, col: String) {
     val m = Modifier.size(width = 72.dp, height = 30.dp)
-    when (AppState.watchColumn) {
+    when (col) {
         "volume" -> CellText(AppState.dayStats[q.symbol]?.volume?.let { volumeText(it, q.market) } ?: "—", "量", m)
         "amp" -> CellText(amplitude(q)?.let { Fmt.num(it, 2) + "%" } ?: "—", "振幅", m)
         "pe" -> CellText(q.stats?.pe?.takeIf { it.isNotBlank() } ?: "—", "本益比", m)
@@ -339,7 +353,7 @@ private fun WatchCell(q: Quote) {
         "dt", "credit", "rev" -> {
             val d = AppState.twDaily[q.symbol]
             if (q.market != Market.TW) CellText("—", "美股", m)
-            else when (AppState.watchColumn) {
+            else when (col) {
                 "dt" -> CellText(d?.dayTradePct?.let { Fmt.num(it, 1) + "%" } ?: "—", d?.dayTradeLots?.let { "當沖 " + Fmt.num(it) + " 張" } ?: "當沖比", m)
                 "credit" -> {
                     val mg = d?.margin

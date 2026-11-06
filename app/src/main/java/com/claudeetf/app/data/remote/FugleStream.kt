@@ -65,6 +65,28 @@ object FugleStream {
 
     val connected: Boolean get() = authed
 
+    /** 各代號串流狀態：(代號, 狀態文字, 是否同步中) */
+    fun symbolStates(symbols: List<String>): List<Triple<String, String, Boolean>> {
+        val now = System.currentTimeMillis()
+        val tpe = java.time.ZoneId.of("Asia/Taipei")
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+        return synchronized(subscribed) {
+            symbols.map { s ->
+                val last = synchronized(lastData) { lastData[s] }
+                when {
+                    !authed -> Triple(s, "串流未連線", false)
+                    s in subscribed && last != null && now - last < 10 * 60_000 ->
+                        Triple(s, "● 同步中 · 最後推播 " + java.time.Instant.ofEpochMilli(last).atZone(tpe).format(fmt), true)
+                    s in subscribed -> Triple(s, "已訂閱 · 等待第一筆推播", true)
+                    s == awaiting -> Triple(s, "訂閱中…", false)
+                    s in rejected -> Triple(s, "超出方案上限 · 以富果 REST 輪流更新", false)
+                    s in queue -> Triple(s, "排隊訂閱", false)
+                    else -> Triple(s, "未訂閱", false)
+                }
+            }
+        }
+    }
+
     /** 依目前狀態開始、更新訂閱或停止串流 */
     fun ensure(enabled: Boolean, apiKey: String, symbols: List<String>) {
         if (!enabled || apiKey.isBlank()) { stop(); return }

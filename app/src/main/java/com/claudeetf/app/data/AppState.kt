@@ -179,7 +179,10 @@ object AppState {
 
     /** 自選清單中間欄：spark 走勢、volume 成交量、amp 振幅、pe 本益比、pnl 持股損益 */
     var watchColumn by mutableStateOf("spark")
-    fun updateWatchColumn(c: String) { watchColumn = c; save() }
+    fun updateWatchColumn(c: String) { watchColumn = c; if (watchColumn2 == c) watchColumn2 = ""; save() }
+    /** 第二欄（空字串 = 不顯示） */
+    var watchColumn2 by mutableStateOf("")
+    fun updateWatchColumn2(c: String) { watchColumn2 = c; save() }
     val extended = mutableStateMapOf<String, ExtQuote>()
 
     /** 富果串流狀態文字 */
@@ -262,6 +265,7 @@ object AppState {
         p.getString("homeHidden", null)?.split(",")?.filter { it.isNotBlank() }?.let { homeHidden.addAll(it) }
         fontScale = p.getFloat("fontScale", 1f)
         watchColumn = p.getString("watchColumn", "spark") ?: "spark"
+        watchColumn2 = p.getString("watchColumn2", "") ?: ""
         goalAmount = p.getLong("goalAmount", 0L).toDouble()
         goalMonth = p.getString("goalMonth", "") ?: ""
         realizedTwdYtd = p.getFloat("realized", 56_800f).toDouble()
@@ -422,6 +426,7 @@ object AppState {
             .putString("homeHidden", homeHidden.joinToString(","))
             .putFloat("fontScale", fontScale)
             .putString("watchColumn", watchColumn)
+            .putString("watchColumn2", watchColumn2)
             .putLong("goalAmount", Math.round(goalAmount))
             .putString("goalMonth", goalMonth)
             .putFloat("realized", realizedTwdYtd.toFloat())

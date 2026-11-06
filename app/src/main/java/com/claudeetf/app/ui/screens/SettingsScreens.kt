@@ -282,6 +282,18 @@ fun SettingsScreen(nav: NavController) {
                         // 每 5 秒隨即時更新重繪
                         val tick = AppState.lastLiveAt
                         Label("連線統計：" + com.claudeetf.app.data.remote.FugleStream.stats() + if (tick < 0) "" else "")
+                        var showStates by remember { mutableStateOf(false) }
+                        Text(if (showStates) "收合各檔狀態" else "查看各檔串流狀態 ›", color = C.Primary, fontSize = 12.sp,
+                            modifier = Modifier.clickable { showStates = !showStates }.padding(vertical = 4.dp))
+                        if (showStates) {
+                            val syms = AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol }
+                            com.claudeetf.app.data.remote.FugleStream.symbolStates(syms).forEach { (s, st, ok) ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+                                    Text(s + " " + (AppState.quote(s)?.name ?: ""), Modifier.weight(1f), color = C.Text, fontSize = 12.sp, maxLines = 1)
+                                    Text(st, color = if (ok) C.Green else C.Muted, fontSize = 11.sp, maxLines = 1)
+                                }
+                            }
+                        }
                     }
                     AppState.sourceStatus["TW"]?.let { Label("最近更新：$it", color = C.Text2) }
                 }
