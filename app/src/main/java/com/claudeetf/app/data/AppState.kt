@@ -235,6 +235,10 @@ object AppState {
     /** 美股盤中更新頻率（毫秒）；0 = 即時（Finnhub 逐筆串流，沒有金鑰時改為每秒輪詢） */
     var usRefreshMs by mutableStateOf(5_000L)
     fun updateUsRefreshMs(v: Long) { usRefreshMs = v; save() }
+    /** 自選個股（卡片／清單）顯示格式 */
+    var watchStyle by mutableStateOf(WatchStyle())
+    fun updateWatchStyle(ws: WatchStyle) { watchStyle = ws; save() }
+
     /** 持股現價方格樣式 */
     var priceBoxShow by mutableStateOf(true)
     var priceBoxLabel by mutableStateOf(true)
@@ -432,6 +436,7 @@ object AppState {
         showLiveSignal = p.getBoolean("showLiveSignal", true)
         usRefreshMs = p.getLong("usRefreshMs", 5_000L)
         autoUpdateCheck = p.getBoolean("autoUpdateCheck", true)
+        watchStyle = WatchStyle.fromJson(p.getString("watchStyle", null))
         priceBoxShow = p.getBoolean("priceBoxShow", true)
         priceBoxLabel = p.getBoolean("priceBoxLabel", true)
         priceBoxFont = p.getString("priceBoxFont", "mono") ?: "mono"
@@ -635,6 +640,7 @@ object AppState {
             .putBoolean("showLiveSignal", showLiveSignal)
             .putLong("usRefreshMs", usRefreshMs)
             .putBoolean("autoUpdateCheck", autoUpdateCheck)
+            .putString("watchStyle", watchStyle.toJson())
             .putBoolean("priceBoxShow", priceBoxShow)
             .putBoolean("priceBoxLabel", priceBoxLabel)
             .putString("priceBoxFont", priceBoxFont)

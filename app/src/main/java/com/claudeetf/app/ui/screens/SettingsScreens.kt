@@ -456,6 +456,7 @@ fun SettingsScreen(nav: NavController) {
 
             item { FoldHeader("顯示", "主題、字級、配色、首頁卡片", "顯示" in openGroups) { if ("顯示" in openGroups) openGroups.remove("顯示") else openGroups.add("顯示") } }
             if ("顯示" in openGroups) {
+                item { WatchStyleSettings() }
                 item { PriceBoxSettings() }
                 item {
                     Card(padding = 14.dp) {
