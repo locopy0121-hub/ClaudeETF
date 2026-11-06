@@ -16,7 +16,8 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = runNumber
-        versionName = "0.2.$runNumber-dev"
+        // 顯示版本 0.2.修訂號（修訂號由 workflow 計算：建置編號 − 68），versionCode 仍用建置編號確保可覆蓋更新
+        versionName = "0.2." + (System.getenv("PATCH") ?: (runNumber - 68).coerceAtLeast(0).toString()) + "-dev"
     }
 
     // 固定簽章：每次建置的 APK 都能直接覆蓋安裝更新

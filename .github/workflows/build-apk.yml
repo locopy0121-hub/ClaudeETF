@@ -25,6 +25,10 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # 0.2 版的修訂號從 1 起算：第 69 次建置 = 0.2.1，之後每次 +1
+      - name: Version
+        run: echo "PATCH=$(( ${{ github.run_number }} - 68 ))" >> "$GITHUB_ENV"
+
       - name: Build release APK
         run: |
           chmod +x gradlew
@@ -33,24 +37,24 @@ jobs:
       - name: Rename APK
         id: apk
         run: |
-          NAME="ClaudeETF-v0.2.${{ github.run_number }}-dev.apk"
+          NAME="ClaudeETF-v0.2.${{ env.PATCH }}-dev.apk"
           cp app/build/outputs/apk/release/app-release.apk "$NAME"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ClaudeETF-v0.2.${{ github.run_number }}-dev
+          name: ClaudeETF-v0.2.${{ env.PATCH }}-dev
           path: ${{ steps.apk.outputs.name }}
 
       # 發布到 Releases，手機直接下載安裝（開發版標示為 pre-release）
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.2.${{ github.run_number }}-dev
-          name: ClaudeETF v0.2.${{ github.run_number }}（開發版）
+          tag_name: v0.2.${{ env.PATCH }}-dev
+          name: ClaudeETF v0.2.${{ env.PATCH }}（開發版）
           prerelease: true
           make_latest: false
           body: |
-            開發版建置 #${{ github.run_number }}
+            開發版 0.2.${{ env.PATCH }}（建置 #${{ github.run_number }}）
             commit: ${{ github.sha }}
             下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。
           files: ${{ steps.apk.outputs.name }}
