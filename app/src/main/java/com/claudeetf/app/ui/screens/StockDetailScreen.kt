@@ -233,6 +233,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                 ChartBlock(
                     liveMerge(history, range, q), range, q, chartType, mas, sub,
                     levels = if (ranges[range].fetch == "1d" && AppState.showKeyLevels) AppState.keyPrices[q.symbol]?.let { KeyLevelsUi.lines(it) } ?: emptyList() else emptyList(),
+                    onKline = { tabIdx = 0; ovSub = 2 },
                 )
             }
             item { Segmented(tabs.map { it.label }, tabIdx, { tabIdx = it }) }
@@ -255,9 +256,10 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                             }
                         }
                         1 -> { item { AnalysisCard(q) }; peersSection(nav, peers, peerExtras) }
-                        2 -> item { PriceBandCard(q) }
-                        3 -> { item { YearlyReturnsCard(q) }; item { NextDividendCard(q, compact = true) } }
-                        4 -> overviewMine(q)
+                        2 -> item { KlineAnalysisCard(q) }
+                        3 -> item { PriceBandCard(q) }
+                        4 -> { item { YearlyReturnsCard(q) }; item { NextDividendCard(q, compact = true) } }
+                        5 -> overviewMine(q)
                         else -> overviewBasic(q, fund)
                     }
                 }
@@ -413,6 +415,26 @@ private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info
     }
 }
 
+/** 走勢圖上方的 K 線形態摘要，點了跳到「概覽 › K線」 */
+@Composable
+private fun KlineSummaryStrip(q: Quote, onClick: () -> Unit) {
+    var r by remember(q.symbol) { mutableStateOf<com.claudeetf.app.data.KlineAnalysis.Result?>(null) }
+    LaunchedEffect(q.symbol) { r = runCatching { com.claudeetf.app.data.KlineAnalysis.load(q, false) }.getOrNull() }
+    val res = r ?: return
+    val c = when { res.dir.bullish -> Trend.up; res.dir.bearish -> Trend.down; else -> Trend.flat }
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 6.dp).clip(RoundedCornerShape(10.dp)).background(c.copy(alpha = 0.10f))
+            .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("K 線形態", color = C.Muted, fontSize = 11.sp); HGap(8.dp)
+        Text(res.dir.label + " " + res.strength, color = c, fontSize = 12.sp, fontWeight = FontWeight.Bold); HGap(8.dp)
+        Text(res.latest.firstOrNull()?.pat?.cn ?: "近 3 根無明顯形態", Modifier.weight(1f), color = C.Text2, fontSize = 12.sp, maxLines = 1,
+            overflow = TextOverflow.Ellipsis)
+        Text("分析 ›", color = C.Primary, fontSize = 12.sp)
+    }
+}
+
 @Composable
 private fun ChartBlock(
     history: Load<YahooExtra.History>,
@@ -422,7 +444,9 @@ private fun ChartBlock(
     mas: Set<Int>,
     sub: SubChart,
     levels: List<KeyLevel> = emptyList(),
+    onKline: () -> Unit = {},
 ) {
+    KlineSummaryStrip(q, onKline)
     when (history) {
         is Load.Loading -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("載入走勢中…") }
         is Load.Err -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("走勢載入失敗：" + history.message) }
@@ -559,7 +583,7 @@ private fun LazyListScope.infoList(items: List<InfoItem>) {
 }
 
 /** 概覽子分頁 */
-private val OVERVIEW_SUBS = listOf("行情", "分析", "光譜", "報酬", "我的", "基本")
+private val OVERVIEW_SUBS = listOf("行情", "分析", "K線", "光譜", "報酬", "我的", "基本")
 
 @Composable
 private fun OverviewSubTabs(sel: Int, onSelect: (Int) -> Unit) {
