@@ -310,3 +310,110 @@ fun UpcomingHoldingDividends(nav: androidx.navigation.NavController, limit: Int 
     }
     if (totalTwd > 0) Label("合計預估實收約 NT$" + mask(Fmt.num(totalTwd)) + "（已扣二代健保／美股預扣稅）", color = C.Text2)
 }
+
+/** 每年報酬（價格報酬，不含股息）：去年最後收盤 → 今年最後收盤；最早一年從上市首筆、今年為至今 */
+data class YearReturn(val year: Int, val pct: Double, val partial: Boolean)
+
+object YearlyReturns {
+    private val cache = HashMap<String, Pair<Long, List<YearReturn>>>()
+
+    fun compute(h: com.claudeetf.app.data.remote.YahooExtra.History, tz: java.time.ZoneId, currentPrice: Double?): List<YearReturn> {
+        val lastClose = sortedMapOf<Int, Double>()
+        var firstYear: Int? = null
+        var firstClose = 0.0
+        for (i in h.times.indices) {
+            val c = h.closes.getOrNull(i)?.toDouble() ?: continue
+            if (c.isNaN() || c <= 0) continue
+            val y = java.time.Instant.ofEpochMilli(h.times[i]).atZone(tz).year
+            if (firstYear == null) { firstYear = y; firstClose = c }
+            lastClose[y] = c
+        }
+        val thisYear = java.time.LocalDate.now(tz).year
+        currentPrice?.takeIf { it > 0 && lastClose.containsKey(thisYear) }?.let { lastClose[thisYear] = it }
+        val out = ArrayList<YearReturn>()
+        var prev: Double? = null
+        for ((y, c) in lastClose) {
+            val base = prev ?: firstClose
+            if (base > 0) out += YearReturn(y, (c / base - 1) * 100, partial = prev == null || y == thisYear)
+            prev = c
+        }
+        return out
+    }
+
+    suspend fun load(q: Quote): List<YearReturn> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        cache[q.symbol]?.let { (t, v) -> if (System.currentTimeMillis() - t < 30 * 60_000L) return@withContext v }
+        val h = com.claudeetf.app.data.remote.YahooExtra.history(com.claudeetf.app.data.StockInfoRepo.yahooSymbol(q), "max")
+        val tz = java.time.ZoneId.of(if (q.market == Market.TW) "Asia/Taipei" else "America/New_York")
+        compute(h, tz, q.price).also { cache[q.symbol] = System.currentTimeMillis() to it }
+    }
+}
+
+/** 個股概覽：歷年報酬格圖＋平均年報酬、年化報酬（CAGR）、上漲年數 */
+@Composable
+fun YearlyReturnsCard(q0: Quote) {
+    val q = AppState.quote(q0.symbol) ?: q0
+    var data by remember(q.symbol) { mutableStateOf<List<YearReturn>?>(null) }
+    var err by remember(q.symbol) { mutableStateOf<String?>(null) }
+    LaunchedEffect(q.symbol) {
+        runCatching { YearlyReturns.load(q) }.onSuccess { data = it }.onFailure { err = it.friendly() }
+    }
+    Card(padding = 14.dp) {
+        Text("歷年報酬", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        val d = data
+        if (d == null) { Label(err?.let { "無法載入：$it" } ?: "載入歷年走勢中…"); return@Card }
+        if (d.isEmpty()) { Label("沒有足夠的歷史資料"); return@Card }
+        val full = d.filter { !it.partial }
+        // 平均年報酬＝完整年度的算術平均；年化報酬＝完整年度的幾何平均（CAGR）
+        val mean = full.takeIf { it.isNotEmpty() }?.map { it.pct }?.average()
+        val cagr = full.takeIf { it.isNotEmpty() }?.let { ys ->
+            val g = ys.fold(1.0) { acc, y -> acc * (1 + y.pct / 100) }
+            (Math.pow(g, 1.0 / ys.size) - 1) * 100
+        }
+        val up = full.count { it.pct > 0 }
+        val best = full.maxByOrNull { it.pct }
+        val worst = full.minByOrNull { it.pct }
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 4.dp)) {
+            Column(Modifier.weight(1f)) {
+                Label("平均年報酬")
+                NumText(mean?.let { Fmt.pct(it) } ?: "—", 20.sp, Trend.fg(mean ?: 0.0), FontWeight.Bold)
+            }
+            Column(Modifier.weight(1f)) {
+                Label("年化報酬（CAGR）")
+                NumText(cagr?.let { Fmt.pct(it) } ?: "—", 20.sp, Trend.fg(cagr ?: 0.0), FontWeight.Bold)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            KeyValue("上漲年數", if (full.isEmpty()) "—" else "$up / ${full.size} 年", modifier = Modifier.weight(1f))
+            KeyValue("統計期間", if (full.isEmpty()) "—" else "${full.first().year}–${full.last().year}", modifier = Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            KeyValue("最佳年", best?.let { "${it.year} " + Fmt.pct(it.pct) } ?: "—", Trend.fg(1.0), Modifier.weight(1f))
+            KeyValue("最差年", worst?.let { "${it.year} " + Fmt.pct(it.pct) } ?: "—", Trend.fg(-1.0), Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
+        // 格圖：每列 5 年，依年份由舊到新
+        d.chunked(5).forEach { row ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { y ->
+                    val c = Trend.fg(y.pct)
+                    val strength = (kotlin.math.abs(y.pct) / 40.0).coerceIn(0.25, 1.0).toFloat()
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(8.dp))
+                                .background(c.copy(alpha = 0.25f + 0.6f * strength)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                (if (y.pct > 0) "+" else "") + Fmt.num(y.pct, 1) + "%", color = Color.White,
+                                fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                            )
+                        }
+                        Text(y.year.toString() + if (y.partial) "*" else "", color = C.Text2, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp))
+                    }
+                }
+                repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+        Label("* 不完整年度（上市首年或今年至今），不計入平均。數字為價格報酬，不含股息；資料來源 Yahoo Finance。", Modifier.padding(top = 6.dp))
+    }
+}
