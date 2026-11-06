@@ -50,6 +50,7 @@ object Routes {
     const val COST = "cost"
     const val DRIP = "drip"
     const val REVIEW = "review"
+    const val HEALTH = "health"
     const val FX = "fx"
 
     fun alerts(symbol: String = "") = "$ALERTS?s=$symbol"

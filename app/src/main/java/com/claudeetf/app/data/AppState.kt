@@ -316,7 +316,7 @@ object AppState {
             .putString("holdings", holdingsJson())
             .putString("trades", tradesJson())
             .putString("alertsV2", alertsJson())
-            .putString("alertHistory", JSONArray().apply { alertHistory.take(30).forEach { put(JSONObject().put("t", it.time).put("x", it.text)) } }.toString())
+            .putString("alertHistory", JSONArray().apply { alertHistory.take(60).forEach { put(JSONObject().put("t", it.time).put("x", it.text)) } }.toString())
             .putString("fugleKey", fugleKey)
             .putString("finnhubKey", finnhubKey)
             .putString("fxSource", fxSource)
@@ -542,8 +542,13 @@ object AppState {
     fun markFired(id: Int, key: String, text: String, now: Long) {
         val i = alerts.indexOfFirst { it.id == id }
         if (i >= 0) alerts[i] = alerts[i].copy(lastFired = key)
+        logNotice(text, now)
+    }
+
+    /** 通知紀錄（所有推播，最多 60 筆） */
+    fun logNotice(text: String, now: Long = System.currentTimeMillis()) {
         alertHistory.add(0, AlertHit(now, text))
-        while (alertHistory.size > 30) alertHistory.removeAt(alertHistory.lastIndex)
+        while (alertHistory.size > 60) alertHistory.removeAt(alertHistory.lastIndex)
         save()
     }
 

@@ -249,6 +249,7 @@ fun AppRoot() {
             composable(Routes.COST) { com.claudeetf.app.ui.screens.CostScreen(nav) }
             composable(Routes.DRIP) { com.claudeetf.app.ui.screens.DripScreen(nav) }
             composable(Routes.REVIEW) { com.claudeetf.app.ui.screens.ReviewScreen(nav) }
+            composable(Routes.HEALTH) { com.claudeetf.app.ui.screens.HealthScreen(nav) }
             composable(Routes.FX) { com.claudeetf.app.ui.screens.FxScreen(nav) }
             composable(Routes.SETTINGS) { SettingsScreen(nav) }
         }

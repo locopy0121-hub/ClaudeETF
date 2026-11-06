@@ -88,6 +88,7 @@ object AlertEngine {
             val fresh = com.claudeetf.app.data.CorporateActions.scan().filter { !AppState.actionNotified(it.key) }
             if (fresh.isNotEmpty()) {
                 AppState.markActionNotified(fresh.map { it.key })
+                fresh.forEach { AppState.logNotice("待記錄：" + it.text) }
                 notify(
                     context, 903,
                     if (fresh.size == 1) "有一筆股息／拆股待記錄" else "有 ${fresh.size} 筆股息／拆股待記錄",
@@ -101,6 +102,7 @@ object AlertEngine {
             if (p.lastNotified == month) continue
             AppState.markDcaNotified(p.id)
             notify(context, 500 + p.id, "定期定額：${p.symbol}", "本月扣款日（每月 ${p.day} 日）已到，打開 App 一鍵記錄這筆買進。")
+            AppState.logNotice("定期定額：${p.symbol} 本月扣款日已到")
         }
         for (a in AppState.alerts.toList()) {
             if (!a.enabled) continue
@@ -180,6 +182,7 @@ object AlertEngine {
                 "表現最好 ${best.symbol} ${Fmt.signedPct(best.changePct)}；最弱 ${worst.symbol} ${Fmt.signedPct(worst.changePct)}"
             AppState.markSummarySent(key)
             notify(context, if (market == com.claudeetf.app.data.Market.TW) 901 else 902, title, text)
+            AppState.logNotice(title + "：" + text.replace("\n", "；"))
         }
         // 台股：平日 13:45 之後
         if (weekday && now.toLocalTime() >= java.time.LocalTime.of(13, 45)) {

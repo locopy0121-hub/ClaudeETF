@@ -132,9 +132,9 @@ fun AlertsScreen(nav: NavController, initialSymbol: String = "") {
                     )
                 }
             }
-            item { SectionTitle("最近觸發") }
-            if (AppState.alertHistory.isEmpty()) item { Label("尚無觸發紀錄") }
-            items(AppState.alertHistory.take(15)) { h ->
+            item { SectionTitle("通知紀錄", "最近 ${AppState.alertHistory.size} 筆") }
+            if (AppState.alertHistory.isEmpty()) item { Label("尚無通知紀錄") }
+            items(AppState.alertHistory.toList()) { h ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
                     NumText(Fmt.time(h.time), 12.sp, C.Muted, modifier = Modifier.width(80.dp))
                     Text(h.text, Modifier.weight(1f), color = C.Text2, fontSize = 13.sp)
@@ -298,6 +298,10 @@ fun SettingsScreen(nav: NavController) {
             }
 
             item { Group("帳本") }
+            item {
+                val n = remember(AppState.trades.size) { com.claudeetf.app.ui.screens.HealthCheck.run() }
+                SettingRow("資料健檢", if (n.isEmpty()) "正常 ›" else "${n.size} 個項目 ›") { nav.navigate(Routes.HEALTH) }
+            }
             item { LedgerCard() }
 
             item { Group("備份與匯入") }

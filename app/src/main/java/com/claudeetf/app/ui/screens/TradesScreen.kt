@@ -107,6 +107,10 @@ fun TradesScreen(nav: NavController) {
                 }
             }
             item { Label("點一筆交易可以編輯或刪除；修改後持股、現金與損益會自動重算。", Modifier.padding(top = 4.dp)) }
+            item {
+                Text("資料健檢：找出異常或重複的交易 ›", color = C.Primary, fontSize = 13.sp,
+                    modifier = Modifier.clickable { nav.navigate(Routes.HEALTH) }.padding(vertical = 6.dp))
+            }
         }
     }
 }

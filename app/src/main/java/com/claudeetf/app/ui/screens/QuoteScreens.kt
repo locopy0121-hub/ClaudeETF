@@ -3,6 +3,7 @@ package com.claudeetf.app.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -44,6 +45,8 @@ fun WatchlistScreen(nav: NavController) {
     var filter by remember { mutableStateOf("all") } // all / tw / us / etf / g<id>
     var sort by remember { mutableIntStateOf(0) }
     var heat by remember { mutableStateOf(false) }
+    var quick by remember { mutableStateOf<Quote?>(null) }
+    quick?.let { qq -> QuickTradeDialog(qq) { quick = null } }
     var editing by remember { mutableStateOf(false) }
     var newGroup by remember { mutableStateOf<String?>(null) }
     var searching by remember { mutableStateOf(false) }
@@ -173,7 +176,7 @@ fun WatchlistScreen(nav: NavController) {
             }
             if (!heat || editing) items(list, key = { it.symbol }) { q ->
                 if (!editing) {
-                    QuoteRow(q) { nav.navigate(Routes.stock(q.symbol)) }
+                    QuoteRow(q, onLongClick = { quick = q }) { nav.navigate(Routes.stock(q.symbol)) }
                 } else {
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (group != null) {
@@ -197,7 +200,7 @@ fun WatchlistScreen(nav: NavController) {
             }
             item {
                 Label(
-                    "美股價格以 USD 顯示；點進個股可看台幣換算",
+                    "美股價格以 USD 顯示；長按個股可快速記帳",
                     Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
             }
@@ -229,11 +232,12 @@ private fun StatusChip(market: Market, text: String, modifier: Modifier) {
 }
 
 @Composable
-fun QuoteRow(q: Quote, onClick: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -276,3 +280,69 @@ fun fieldColors() = OutlinedTextFieldDefaults.colors(
     focusedLabelColor = C.Primary,
     unfocusedLabelColor = C.Muted,
 )
+
+/** 長按自選跳出的快速買賣：現價、今天、預設帳戶與手續費自動帶入 */
+@Composable
+private fun QuickTradeDialog(q: Quote, onDismiss: () -> Unit) {
+    val us = q.market == Market.US
+    var sell by remember { mutableStateOf(false) }
+    var shares by remember { mutableStateOf(if (us) "1" else "1000") }
+    var price by remember { mutableStateOf(if (q.price > 0) Fmt.price(q.price).replace(",", "") else "") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val acc = AppState.accountsFor(q.market).firstOrNull()
+    val n = shares.toDoubleOrNull() ?: 0.0
+    val p = price.toDoubleOrNull() ?: 0.0
+    val amount = n * p
+    val fee = AppState.feeFor(acc?.id ?: 0, q.market, amount)
+    val etf = q.isEtf || q.symbol.startsWith("00")
+    val tax = if (sell && !us) Math.round(amount * (if (etf) 0.001 else 0.003)).toDouble() else 0.0
+    val held = AppState.holdings.firstOrNull { it.symbol == q.symbol }?.shares ?: 0.0
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.Card,
+        title = { Text("快速記帳：${q.symbol} ${q.name}", color = C.Text, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Segmented(listOf("買進", "賣出"), if (sell) 1 else 0, { sell = it == 1; error = null }, background = C.Bg)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(shares, { shares = it; error = null }, label = { Text("股數") }, singleLine = true,
+                        modifier = Modifier.weight(1f), colors = fieldColors(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                    OutlinedTextField(price, { price = it; error = null }, label = { Text("價格") }, singleLine = true,
+                        modifier = Modifier.weight(1f), colors = fieldColors(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                }
+                if (!us) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("1 張" to 1000.0, "5 張" to 5000.0, "全部" to held).forEach { (label, v) ->
+                            if (v > 0) Text(label, color = C.Primary, fontSize = 12.sp,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(C.Bg)
+                                    .clickable { shares = Fmt.shares(v).replace(",", "") }.padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                    }
+                }
+                Label((acc?.name ?: "未設定帳戶") + " · 手續費 " + Fmt.num(fee, if (us) 2 else 0) +
+                    (if (tax > 0) " · 交易稅 " + Fmt.num(tax) else "") + " · 持有 " + Fmt.shares(held) + " 股")
+                Label((if (us) "$" else "NT$") + Fmt.num(if (sell) amount - fee - tax else amount + fee, if (us) 2 else 0) +
+                    (if (sell) " 入帳" else " 支出"))
+                error?.let { Text(it, color = C.Red, fontSize = 12.sp) }
+            }
+        },
+        confirmButton = {
+            Text("儲存", color = C.Primary, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable {
+                    val date = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+                    val err = AppState.addTrade(
+                        com.claudeetf.app.data.Trade(
+                            if (sell) com.claudeetf.app.data.TradeType.SELL else com.claudeetf.app.data.TradeType.BUY,
+                            q.symbol, date, n, p, if (us) AppState.usdTwd else 1.0, fee, tax, account = acc?.id ?: 0,
+                        )
+                    )
+                    if (err == null) onDismiss() else error = err
+                }.padding(12.dp))
+        },
+        dismissButton = {
+            Text("取消", color = C.Muted, fontSize = 15.sp, modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp))
+        },
+    )
+}
