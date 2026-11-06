@@ -270,7 +270,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                 Tab.HOLD -> holdingsTab(q, holdings)
                 Tab.DIV -> dividendTab(q, divs)
                 Tab.NEWS -> newsTab(news)
-                Tab.CO -> companyTab(fund)
+                Tab.CO -> companyTab(q, fund)
                 Tab.TAPE -> tapeTab(q)
             }
         }
@@ -823,13 +823,13 @@ private fun NewsRow(n: YahooExtra.News) {
     NewsItem(n) { open = true }
 }
 
-private fun LazyListScope.companyTab(fund: Load<Fundamentals>) {
+private fun LazyListScope.companyTab(q: Quote, fund: Load<Fundamentals>) {
     when (fund) {
         is Load.Loading -> loading("載入公司資料中…")
         is Load.Err -> showError(fund.message)
         is Load.Ok -> {
             val f = fund.value
-            f.header?.let { h -> item { CompanyHeaderCard(h) } }
+            f.header?.let { h -> item { CompanyHeaderCard(h, q) } }
             if (f.profile.isEmpty() && f.summary == null && f.header == null) item { Label("暫無公司資料") }
             infoList(f.profile)
             f.summary?.let { s ->
@@ -840,22 +840,72 @@ private fun LazyListScope.companyTab(fund: Load<Fundamentals>) {
     }
 }
 
-/** 公司分頁表頭：發行公司／投信與最新資本額（ETF 為基金規模） */
+/**
+ * 公司分頁表頭：發行公司／投信與最新股本、市值。
+ * 台股（含 ETF）以集保股權分散表的總股數（ETF 為受益權單位數）× 現價計算市值，
+ * 個股股本取證交所／櫃買實收資本額；ETF 股本＝單位數 × 面額 10 元。Yahoo 淨資產僅作參考（常延遲）。
+ */
 @Composable
-private fun CompanyHeaderCard(h: com.claudeetf.app.data.CompanyHeader) {
+private fun CompanyHeaderCard(h: com.claudeetf.app.data.CompanyHeader, q0: Quote) {
+    val q = AppState.quote(q0.symbol) ?: q0
+    var tdcc by remember(q.symbol) { mutableStateOf<com.claudeetf.app.data.remote.TdccOpenData.Holders?>(null) }
+    var tdccLoading by remember(q.symbol) { mutableStateOf(h.kind != "US") }
+    LaunchedEffect(q.symbol) {
+        if (h.kind != "US") { tdcc = runCatching { com.claudeetf.app.data.remote.TdccOpenData.of(q.symbol) }.getOrNull(); tdccLoading = false }
+    }
+    fun yi(v: Double) = Fmt.num(v / 1e8, 2) + " 億"
+    // 股數：ETF 用集保單位數；個股優先用實收資本額 ÷ 10，沒有再用集保
+    val shares: Double? = when (h.kind) {
+        "ETF" -> tdcc?.shares
+        // 面額不是 10 元的公司（如部分 KY 股），資本額 ÷ 10 會失真：與集保股數差 2 倍以上時改用集保
+        "TW" -> h.capital?.let { c -> val t = tdcc?.shares; if (t != null && t > 0 && (c / 10 / t > 2 || t / (c / 10) > 2)) t else c / 10 } ?: tdcc?.shares
+        else -> null
+    }
+    val capital: Double? = if (h.kind == "TW") h.capital ?: tdcc?.shares?.let { it * 10 } else shares?.let { it * 10 }
+    val mcap: Double? = shares?.let { it * q.price }?.takeIf { q.price > 0 }
+    val years = h.listed?.let { d ->
+        runCatching { java.time.LocalDate.parse(d.replace('/', '-').take(10)) }.getOrNull()
+    }?.let { java.time.Period.between(it, java.time.LocalDate.now()).let { p -> p.years + p.months / 12.0 } }
+
     Card(padding = 14.dp) {
         Label(h.role)
         Text(h.name, color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp)
-        Row(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Label(h.capitalLabel + "（最新）")
-                NumText(h.capitalText, 22.sp, C.Primary, FontWeight.Bold)
+        if (h.kind == "US") {
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(12.dp)) {
+                Column { Label(h.capitalLabel + "（最新）"); NumText(h.capitalText, 22.sp, C.Primary, FontWeight.Bold) }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Label(if (h.kind == "ETF") "股本（單位數 × 10）" else "股本（實收資本額）")
+                    NumText(capital?.let { yi(it) } ?: if (tdccLoading) "載入中…" else "—", 20.sp, C.Primary, FontWeight.Bold)
+                }
+                Column(Modifier.weight(1f)) {
+                    Label(if (h.kind == "ETF") "市值（規模）" else "市值")
+                    NumText(mcap?.let { yi(it) } ?: if (tdccLoading) "載入中…" else "—", 20.sp, C.Text, FontWeight.Bold)
+                }
+            }
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                shares?.let { KeyValue(if (h.kind == "ETF") "受益權單位數" else "發行股數", Fmt.num(it / 1e8, 2) + " 億" + if (h.kind == "ETF") "單位" else "股") }
+                mcap?.let { KeyValue("市值計算", Fmt.num(shares!! / 1e8, 2) + " 億 × " + Fmt.price(q.price)) }
+                tdcc?.let { t -> if (t.people > 0) KeyValue(if (h.kind == "ETF") "受益人數" else "股東人數", Fmt.num(t.people.toDouble()) + " 人") }
+                years?.let { KeyValue(if (h.kind == "ETF") "成立年數" else "掛牌年數", if (it < 1) "未滿 1 年" else Fmt.num(it, 1) + " 年") }
+                if (h.kind == "ETF") h.yahooAum?.let { KeyValue("淨資產（Yahoo，可能延遲）", yi(it), C.Muted) }
             }
         }
-        if (h.tags.isNotEmpty()) Row(Modifier.padding(top = 8.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)) { h.tags.forEach { EtfChip(it, C.Text2) } }
-        Label(h.note, Modifier.padding(top = 6.dp))
+        val tags = h.tags.filter { it.isNotBlank() && it != "null" }
+        if (tags.isNotEmpty()) Row(Modifier.padding(top = 8.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) { tags.forEach { EtfChip(it, C.Text2) } }
+        Label(
+            when (h.kind) {
+                "US" -> h.note
+                else -> "股數：" + (if (h.kind == "TW" && h.capital != null) "證交所／櫃買實收資本額 ÷ 面額 10 元" else "集保結算所股權分散表") +
+                    (tdcc?.date?.takeIf { it.length == 8 }?.let { "（集保 " + it.substring(0, 4) + "/" + it.substring(4, 6) + "/" + it.substring(6) + "）" } ?: "") +
+                    "；市值＝股數 × 現價"
+            },
+            Modifier.padding(top = 6.dp),
+        )
     }
 }
 

@@ -760,6 +760,9 @@ object AppState {
     }
 
     /** 把遠端報價合併進清單（保留 ETF 標記與基本面） */
+    /** 異常報價計數：symbol → (價格, 連續次數) */
+    private val oddTicks = HashMap<String, Pair<Double, Int>>()
+
     fun applyRemote(
         rq: RemoteQuote,
         source: QuoteSource,
@@ -772,6 +775,16 @@ object AppState {
         val i = quotes.indexOfFirst { it.symbol.equals(rq.symbol, ignoreCase = true) }
         if (i < 0) return
         val old = quotes[i]
+        // 異常報價防護：盤中一筆價格同時偏離上一筆與昨收 60% 以上，視為錯誤資料先略過；連續 3 次相同才採用
+        if (live && old.price > 0 && rq.price > 0 && old.updatedAt > 0 && now - old.updatedAt < 86_400_000L) {
+            val jump = kotlin.math.abs(rq.price / old.price - 1)
+            val vsPrev = if (rq.prevClose > 0) kotlin.math.abs(rq.price / rq.prevClose - 1) else jump
+            if (jump > 0.6 && vsPrev > 0.6) {
+                val n = (oddTicks[old.symbol]?.takeIf { it.first == rq.price }?.second ?: 0) + 1
+                oddTicks[old.symbol] = rq.price to n
+                if (n < 3) return
+            } else oddTicks.remove(old.symbol)
+        }
         // 沒有逐筆走勢時，用 昨收→開盤→低/高→高/低→現價 畫出當日輪廓
         val up = rq.price >= rq.prevClose
         val spark = listOfNotNull(

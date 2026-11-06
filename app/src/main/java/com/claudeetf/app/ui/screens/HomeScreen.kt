@@ -106,8 +106,13 @@ fun HomeScreen(nav: NavController) {
                 when (card) {
                     "assets" -> {
                     item {
-                        Card {
-                            Label("總資產（TWD）")
+                        var audit by remember { mutableStateOf(false) }
+                        if (audit) AssetAuditDialog(nav) { audit = false }
+                        Card(Modifier.clickable { audit = true }) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Label("總資產（TWD）", Modifier.weight(1f))
+                                Label("核對 ›")
+                            }
                             NumText(mask(Fmt.num(total)), 32.sp, weight = FontWeight.Bold)
                             // 總資產＝持股總市值（與持股頁同一算法）＋現金
                             Label("持股市值 " + mask(Fmt.num(mv)) + " ＋ 現金 " + mask(Fmt.num(AppState.cashTwd)))

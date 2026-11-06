@@ -78,6 +78,10 @@ object AlertEngine {
     /** 測試通知 */
     fun test(context: Context) = notify(context, 0, "提醒測試", "通知功能正常，觸發條件時會這樣通知你。")
 
+    /** 更新安裝完成：通知使用者點擊開啟 */
+    fun notifyUpdated(context: Context, version: String) =
+        notify(context, 909, "ClaudeETF 已更新至 v$version", "點此開啟 App，查看這版更新內容。")
+
     /** 背景發現新版本：發一次系統通知，點了開 App 跳出更新視窗 */
     suspend fun checkAppUpdate(context: Context) {
         if (!AppState.autoUpdateCheck) return

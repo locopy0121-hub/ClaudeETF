@@ -232,10 +232,82 @@ object AppUpdater {
         }
     }
 
-    private fun install(context: Context, file: File) {
+    /**
+     * 安裝：優先用 PackageInstaller 工作階段。
+     * Android 12 以上設定「不需使用者確認」：App 自己是安裝來源時（第一次線上更新之後），
+     * 系統直接在背景完成更新，不再跳出安裝畫面；第一次仍會跳一次確認。
+     * 工作階段失敗時改用傳統的系統安裝畫面。
+     */
+    private suspend fun install(context: Context, file: File) {
+        val ok = runCatching { installSession(context, file) }.isSuccess
+        if (!ok) installViaIntent(context, file)
+    }
+
+    private suspend fun installSession(context: Context, file: File) = withContext(Dispatchers.IO) {
+        val pi = context.packageManager.packageInstaller
+        val params = android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        params.setAppPackageName(context.packageName)
+        params.setSize(file.length())
+        if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        if (Build.VERSION.SDK_INT >= 34) params.setPackageSource(android.content.pm.PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE)
+        val id = pi.createSession(params)
+        pi.openSession(id).use { session ->
+            session.openWrite("base.apk", 0, file.length()).use { out ->
+                file.inputStream().use { it.copyTo(out, 64 * 1024) }
+                session.fsync(out)
+            }
+            val intent = Intent(context, UpdateReceiver::class.java).setAction("com.claudeetf.app.INSTALL_RESULT")
+            val flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) android.app.PendingIntent.FLAG_MUTABLE else 0)
+            val sender = android.app.PendingIntent.getBroadcast(context, id, intent, flags)
+            session.commit(sender.intentSender)
+        }
+        withContext(Dispatchers.Main) { message = "安裝中…完成後 App 會重新啟動" }
+    }
+
+    fun installViaIntent(context: Context, file: File) {
         val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
         val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(i)
+    }
+
+    /** 安裝結果（UpdateReceiver 回報） */
+    fun onInstallStatus(context: Context, status: Int, msg: String?, confirm: Intent?) {
+        when (status) {
+            android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                // 第一次（或系統要求）需要使用者確認
+                confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let { runCatching { context.startActivity(it) } }
+            }
+            android.content.pm.PackageInstaller.STATUS_SUCCESS -> message = "更新完成"
+            else -> {
+                message = "更新失敗：" + (msg ?: "代碼 $status")
+                // 工作階段安裝失敗：改用系統安裝畫面
+                File(context.cacheDir, "updates").listFiles()?.firstOrNull { it.name.endsWith(".apk") }?.let { installViaIntent(context, it) }
+            }
+        }
+    }
+}
+
+/** PackageInstaller 工作階段的結果 */
+class UpdateReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val status = intent.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -999)
+        val msg = intent.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE)
+        @Suppress("DEPRECATION")
+        val confirm = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+            else intent.getParcelableExtra(Intent.EXTRA_INTENT)
+        AppUpdater.onInstallStatus(context, status, msg, confirm)
+    }
+}
+
+/**
+ * 更新安裝完成（App 被系統替換後）：Android 不允許背景自動開啟畫面，
+ * 改發通知「已更新至 vX，點此開啟」。
+ */
+class PackageReplacedReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        val v = AppUpdater.currentVersion(context)
+        runCatching { com.claudeetf.app.alerts.AlertEngine.notifyUpdated(context, v) }
     }
 }

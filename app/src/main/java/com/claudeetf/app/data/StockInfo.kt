@@ -38,6 +38,14 @@ data class CompanyHeader(
     val capitalText: String,
     val note: String,
     val tags: List<String> = emptyList(),
+    /** ETF、TW（台股個股）、US */
+    val kind: String = "TW",
+    /** 實收資本額（元），台股個股 */
+    val capital: Double? = null,
+    /** Yahoo 淨資產（ETF），可能延遲 */
+    val yahooAum: Double? = null,
+    /** 上市（櫃）日期 yyyy/MM/dd */
+    val listed: String? = null,
 )
 
 data class DividendInfo(
@@ -250,9 +258,10 @@ object StockInfoRepo {
                 val inception = ks?.optJSONObject("fundInceptionDate")?.optString("fmt")?.ifBlank { null }
                 CompanyHeader(
                     "發行投信", issuer ?: "—", "基金規模", aum?.let { yi(it, ccy) } ?: "—",
-                    (if (aum != null) "最新淨資產，資料來源 Yahoo Finance" else "暫無基金規模資料"),
+                    (if (aum != null) "Yahoo 淨資產（可能延遲）" else "暫無基金規模資料"),
                     listOfNotNull(inception?.let { "成立 $it" }, exp?.let { "費用率 " + "%.2f%%".format(Locale.US, it * 100) },
-                        fp?.optString("categoryName")?.ifBlank { null }),
+                        fp?.optString("categoryName")?.takeIf { it.isNotBlank() && it != "null" }),
+                    kind = if (tw) "ETF" else "US", yahooAum = aum, listed = inception,
                 )
             } else null
         } else if (twCo != null) {
@@ -260,6 +269,8 @@ object StockInfoRepo {
                 "發行公司", twCo.name ?: q.name, "實收資本額", twCo.capital?.let { yi(it, "TWD") } ?: "—",
                 twCo.market + "公司 · 資料來源 " + (if (twCo.market == "上櫃") "櫃買中心" else "證交所") + " OpenAPI（最新公告）",
                 listOfNotNull(twCo.capital?.let { "發行約 " + "%,.2f".format(Locale.US, it / 10 / 1e8) + " 億股" }),
+                kind = "TW", capital = twCo.capital,
+                listed = twCo.fields.firstOrNull { it.first.startsWith("上市日期") || it.first.startsWith("上櫃日期") }?.second,
             )
         } else if (pr != null || ap != null) {
             val mc = raw(sd, "marketCap") ?: raw(pr, "marketCap")
@@ -271,7 +282,9 @@ object StockInfoRepo {
         // ETF 補上發行投信、基金類別
         if (isEtf && profile.none { it.label == "發行投信" }) {
             header?.takeIf { it.name != "—" }?.let { profile.add(0, InfoItem("發行投信", it.name)) }
-            fp?.optString("legalType")?.ifBlank { null }?.let { profile += InfoItem("基金類型", it) }
+            fp?.optString("legalType")?.takeIf { it.isNotBlank() && it != "null" }?.let {
+                profile += InfoItem("基金類型", if (it.contains("Exchange Traded", true)) "ETF（指數股票型基金）" else it)
+            }
         }
 
         return Fundamentals(overview, financials, quarterly, yearly, profile, summary, analyst, header)
