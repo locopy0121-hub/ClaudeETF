@@ -42,6 +42,7 @@ object Routes {
     const val ANALYSIS = "analysis"
     const val ALERTS = "alerts"
     const val SETTINGS = "settings"
+    const val CHAT = "chat"
     const val TRADES = "trades"
     const val DCA = "dca"
     const val PNL = "pnl"

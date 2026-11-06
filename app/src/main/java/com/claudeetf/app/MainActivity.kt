@@ -125,6 +125,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         com.claudeetf.app.util.CrashLog.install(applicationContext)
         AppState.init(applicationContext)
+        com.claudeetf.app.chat.ChatPrefs.init(applicationContext)
         watchNetwork()
         AppState.systemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -371,6 +372,7 @@ fun AppRoot() {
             ) { com.claudeetf.app.ui.screens.IndexScreen(nav, java.net.URLDecoder.decode(it.arguments?.getString("sym") ?: "", "UTF-8")) }
             composable(Routes.FX) { com.claudeetf.app.ui.screens.FxScreen(nav) }
             composable(Routes.SETTINGS) { SettingsScreen(nav) }
+            composable(Routes.CHAT) { com.claudeetf.app.ui.screens.ChatScreen(nav) }
         }
         }
         }

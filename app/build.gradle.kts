@@ -16,7 +16,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = runNumber
-        versionName = "0.1.$runNumber-dev"
+        versionName = "0.2.$runNumber-dev"
     }
 
     // 固定簽章：每次建置的 APK 都能直接覆蓋安裝更新
@@ -66,4 +66,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // 群聊 P2P：Google Nearby Connections（藍牙／Wi-Fi 直連，無伺服器）
+    implementation("com.google.android.gms:play-services-nearby:19.3.0")
 }

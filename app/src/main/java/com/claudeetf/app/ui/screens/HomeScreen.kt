@@ -87,6 +87,13 @@ fun HomeScreen(nav: NavController) {
             IconButton(onClick = { AppState.hideAmounts = !AppState.hideAmounts }) {
                 Icon(Icons.Filled.Lock, contentDescription = "隱藏金額", tint = if (AppState.hideAmounts) C.Primary else C.Text)
             }
+            if (com.claudeetf.app.chat.ChatPrefs.enabled) {
+                val n = com.claudeetf.app.chat.ChatEngine.unread
+                Text(
+                    "💬" + if (n > 0) " $n" else "", color = if (n > 0) C.Primary else C.Text, fontSize = 18.sp,
+                    modifier = Modifier.clickable { nav.navigate(Routes.CHAT) }.padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
             IconButton(onClick = { nav.navigate(Routes.ALERTS) }) {
                 Icon(Icons.Filled.Notifications, contentDescription = "提醒中心", tint = C.Text)
             }

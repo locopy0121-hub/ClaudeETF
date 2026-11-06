@@ -251,7 +251,7 @@ fun SettingsScreen(nav: NavController) {
             save = { it.toList() }, restore = { it.toMutableStateList() },
         ),
     ) { mutableStateListOf<String>() }
-    val allGroups = listOf("行情資料來源", "新聞來源", "帳本", "備份與匯入", "安全", "顯示", "帳戶與手續費", "提醒", "關於")
+    val allGroups = listOf("群聊", "行情資料來源", "新聞來源", "帳本", "備份與匯入", "安全", "顯示", "帳戶與手續費", "提醒", "關於")
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("我的")
@@ -272,6 +272,10 @@ fun SettingsScreen(nav: NavController) {
                 }
             }
 
+            item { FoldHeader("群聊", if (!com.claudeetf.app.chat.ChatPrefs.enabled) "未開啟" else com.claudeetf.app.chat.ChatPrefs.userName + " · 群聊 " + com.claudeetf.app.chat.ChatPrefs.groupId.ifBlank { "未設定" }, "群聊" in openGroups) { if ("群聊" in openGroups) openGroups.remove("群聊") else openGroups.add("群聊") } }
+            if ("群聊" in openGroups) {
+                item { ChatSettingsCard(nav) }
+            }
             item { FoldHeader("行情資料來源", "台股盤中 " + (if (AppState.twUseFugle) "富果" else "證交所") + " · 期貨 " + mapOf("auto" to "自動", "fugle" to "富果", "taifex" to "期交所", "off" to "關閉")[AppState.futSource], "行情資料來源" in openGroups) { if ("行情資料來源" in openGroups) openGroups.remove("行情資料來源") else openGroups.add("行情資料來源") } }
             if ("行情資料來源" in openGroups) {
                 item {
