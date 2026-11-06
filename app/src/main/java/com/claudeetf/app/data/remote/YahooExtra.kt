@@ -29,6 +29,8 @@ object YahooExtra {
         val volumes: List<Float> = emptyList(),
         /** 當日成交量（Yahoo meta） */
         val dayVolume: Double? = null,
+        /** 還原權值收盤（含息、拆分調整），與 closes 等長；沒有時為空 */
+        val adjCloses: List<Float> = emptyList(),
     )
 
     /** range：1d 5d 1mo 6mo 1y 5y */
@@ -51,6 +53,8 @@ object YahooExtra {
         val hA = qo?.optJSONArray("high")
         val lA = qo?.optJSONArray("low")
         val vA = qo?.optJSONArray("volume")
+        val adjA = r.optJSONObject("indicators")?.optJSONArray("adjclose")?.optJSONObject(0)?.optJSONArray("adjclose")
+        val adjs = ArrayList<Float>()
         val times = ArrayList<Long>()
         val values = ArrayList<Float>()
         val opens = ArrayList<Float>()
@@ -73,6 +77,7 @@ object YahooExtra {
                 highs.add(maxOf(at(hA, i, v), v.toFloat()))
                 lows.add(minOf(at(lA, i, v), v.toFloat()))
                 vols.add(at(vA, i, 0.0))
+                if (adjA != null) adjs.add(at(adjA, i, Double.NaN))
             }
         }
         val meta = r.optJSONObject("meta")
@@ -81,7 +86,7 @@ object YahooExtra {
             if (p.isNaN()) null else p
         }
         val dayVol = meta?.optDouble("regularMarketVolume", Double.NaN)?.takeIf { !it.isNaN() }
-        return History(times, values, prev, opens, highs, lows, vols, dayVol)
+        return History(times, values, prev, opens, highs, lows, vols, dayVol, adjs.takeIf { it.size == values.size } ?: emptyList())
     }
 
     // ---------------- 配息 ----------------

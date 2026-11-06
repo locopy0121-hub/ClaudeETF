@@ -315,21 +315,41 @@ fun UpcomingHoldingDividends(nav: androidx.navigation.NavController, limit: Int 
 data class YearReturn(val year: Int, val pct: Double, val partial: Boolean)
 
 object YearlyReturns {
-    private val cache = HashMap<String, Pair<Long, List<YearReturn>>>()
+    data class Data(val total: List<YearReturn>, val price: List<YearReturn>, val firstDate: java.time.LocalDate?, val fixedSplits: Int)
+    private val cache = HashMap<String, Pair<Long, Data>>()
 
-    fun compute(h: com.claudeetf.app.data.remote.YahooExtra.History, tz: java.time.ZoneId, currentPrice: Double?): List<YearReturn> {
+    /**
+     * 修正 Yahoo 歷史資料中「拆分（分割）只調整了部分期間」的斷層：
+     * 台股單日漲跌限制 10%，週線不可能一週跌到剩 45% 以下或漲到 2.2 倍以上，
+     * 遇到這種跳動視為未調整的拆分，把之前的價格乘上同一比例接起來。
+     */
+    private fun fixSplits(v: MutableList<Double>, tw: Boolean): Int {
+        var fixed = 0
+        for (i in v.size - 1 downTo 1) {
+            val a = v[i - 1]; val b = v[i]
+            if (a <= 0 || b <= 0) continue
+            val r = b / a
+            val jump = if (tw) (r < 0.45 || r > 2.2) else (r < 0.35 || r > 3.0)
+            if (jump) {
+                for (k in 0 until i) v[k] = v[k] * r
+                fixed++
+            }
+        }
+        return fixed
+    }
+
+    private fun yearly(times: List<Long>, values: List<Double>, tz: java.time.ZoneId, last: Double?): List<YearReturn> {
         val lastClose = sortedMapOf<Int, Double>()
-        var firstYear: Int? = null
         var firstClose = 0.0
-        for (i in h.times.indices) {
-            val c = h.closes.getOrNull(i)?.toDouble() ?: continue
+        for (i in times.indices) {
+            val c = values[i]
             if (c.isNaN() || c <= 0) continue
-            val y = java.time.Instant.ofEpochMilli(h.times[i]).atZone(tz).year
-            if (firstYear == null) { firstYear = y; firstClose = c }
+            val y = java.time.Instant.ofEpochMilli(times[i]).atZone(tz).year
+            if (lastClose.isEmpty()) firstClose = c
             lastClose[y] = c
         }
         val thisYear = java.time.LocalDate.now(tz).year
-        currentPrice?.takeIf { it > 0 && lastClose.containsKey(thisYear) }?.let { lastClose[thisYear] = it }
+        if (last != null && last > 0 && lastClose.containsKey(thisYear)) lastClose[thisYear] = last
         val out = ArrayList<YearReturn>()
         var prev: Double? = null
         for ((y, c) in lastClose) {
@@ -340,11 +360,26 @@ object YearlyReturns {
         return out
     }
 
-    suspend fun load(q: Quote): List<YearReturn> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    fun compute(h: com.claudeetf.app.data.remote.YahooExtra.History, tz: java.time.ZoneId, currentPrice: Double?, tw: Boolean): Data {
+        val ok = h.closes.indices.filter { !h.closes[it].isNaN() && h.closes[it] > 0 }
+        val times = ok.map { h.times[it] }
+        val price = ok.map { h.closes[it].toDouble() }.toMutableList()
+        val splits = fixSplits(price, tw)
+        val adj = if (h.adjCloses.size == h.closes.size) ok.map { h.adjCloses[it].toDouble() }.toMutableList() else null
+        adj?.let { fixSplits(it, tw) }
+        // 今年最後一格用目前行情：含息序列依「目前價／最後收盤」等比例延伸
+        val lastP = price.lastOrNull()
+        val ratio = if (currentPrice != null && currentPrice > 0 && lastP != null && lastP > 0) currentPrice / h.closes[ok.last()] else null
+        val priceYears = yearly(times, price, tz, ratio?.let { lastP!! * it })
+        val totalYears = adj?.takeIf { it.none { v -> v.isNaN() } }?.let { a -> yearly(times, a, tz, ratio?.let { a.last() * it }) } ?: priceYears
+        return Data(totalYears, priceYears, times.firstOrNull()?.let { java.time.Instant.ofEpochMilli(it).atZone(tz).toLocalDate() }, splits)
+    }
+
+    suspend fun load(q: Quote): Data = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         cache[q.symbol]?.let { (t, v) -> if (System.currentTimeMillis() - t < 30 * 60_000L) return@withContext v }
         val h = com.claudeetf.app.data.remote.YahooExtra.history(com.claudeetf.app.data.StockInfoRepo.yahooSymbol(q), "max")
         val tz = java.time.ZoneId.of(if (q.market == Market.TW) "Asia/Taipei" else "America/New_York")
-        compute(h, tz, q.price).also { cache[q.symbol] = System.currentTimeMillis() to it }
+        compute(h, tz, q.price, q.market == Market.TW).also { cache[q.symbol] = System.currentTimeMillis() to it }
     }
 }
 
@@ -352,14 +387,23 @@ object YearlyReturns {
 @Composable
 fun YearlyReturnsCard(q0: Quote) {
     val q = AppState.quote(q0.symbol) ?: q0
-    var data by remember(q.symbol) { mutableStateOf<List<YearReturn>?>(null) }
+    var all by remember(q.symbol) { mutableStateOf<YearlyReturns.Data?>(null) }
+    var withDiv by remember { mutableStateOf(true) }
     var err by remember(q.symbol) { mutableStateOf<String?>(null) }
     LaunchedEffect(q.symbol) {
-        runCatching { YearlyReturns.load(q) }.onSuccess { data = it }.onFailure { err = it.friendly() }
+        runCatching { YearlyReturns.load(q) }.onSuccess { all = it }.onFailure { err = it.friendly() }
     }
     Card(padding = 14.dp) {
-        Text("歷年報酬", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        val d = data
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("歷年報酬", Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            listOf(true to "含息", false to "不含息").forEach { (v, n) ->
+                val on = withDiv == v
+                Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
+                        .clickable { withDiv = v }.padding(horizontal = 10.dp, vertical = 4.dp))
+            }
+        }
+        val d = all?.let { if (withDiv) it.total else it.price }
         if (d == null) { Label(err?.let { "無法載入：$it" } ?: "載入歷年走勢中…"); return@Card }
         if (d.isEmpty()) { Label("沒有足夠的歷史資料"); return@Card }
         val full = d.filter { !it.partial }
@@ -414,6 +458,12 @@ fun YearlyReturnsCard(q0: Quote) {
                 repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
-        Label("* 不完整年度（上市首年或今年至今），不計入平均。數字為價格報酬，不含股息；資料來源 Yahoo Finance。", Modifier.padding(top = 6.dp))
+        Label(
+            "* 不完整年度（資料首年或今年至今），不計入平均。" +
+                (if (withDiv) "含息＝還原權值報酬（股息再投入）。" else "不含息＝只看股價漲跌。") +
+                "資料來源 Yahoo Finance，資料起始 " + (all?.firstDate?.toString() ?: "—") + "（可能晚於實際上市日）" +
+                (if ((all?.fixedSplits ?: 0) > 0) "；已修正 ${all?.fixedSplits} 處分割造成的資料斷層。" else "。"),
+            Modifier.padding(top = 6.dp),
+        )
     }
 }
