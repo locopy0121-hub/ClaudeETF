@@ -126,6 +126,19 @@ object TwOpenData {
         "36" to "數位雲端", "37" to "運動休閒", "38" to "居家生活",
     )
 
+    /** 全部上市公司：代號 → 產業名稱 */
+    fun industries(): Map<String, String> {
+        val arr = dataset("/opendata/t187ap03_L")
+        val out = HashMap<String, String>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val c = o.find("公司代號") ?: continue
+            val ind = o.find("產業別") ?: continue
+            out[c] = industryCodes[ind.padStart(2, '0')] ?: ind
+        }
+        return out
+    }
+
     fun company(code: String): Company? {
         val o = dataset("/opendata/t187ap03_L").rowFor(code) ?: return null
         val out = ArrayList<Pair<String, String>>()

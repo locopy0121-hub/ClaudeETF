@@ -83,6 +83,7 @@ object AlertEngine {
         val todayKey = today.toString()
         val now = System.currentTimeMillis()
         dailySummaries(context, today)
+        monthlyReport(context, today)
         // 每週備份提醒：有持股、超過 7 天沒備份，每週最多一次
         if (AppState.holdings.isNotEmpty() && System.currentTimeMillis() - AppState.lastBackupAt > 7L * 86_400_000) {
             val week = today.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR)
@@ -121,7 +122,7 @@ object AlertEngine {
             val result: Pair<String, String>? = when (a.type) {
                 AlertType.US_OPEN -> usOpen(a, todayKey)
                 AlertType.EARNINGS, AlertType.EXDIV -> event(a, today)
-                AlertType.RAPID -> null // 由 checkRapid 即時偵測
+                AlertType.RAPID, AlertType.BIG_TRADE -> null // 由 checkRapid 即時偵測
                 else -> price(a, todayKey, today)
             }
             if (result != null) {
@@ -130,6 +131,40 @@ object AlertEngine {
                 notify(context, a.id, a.title, text)
             }
         }
+    }
+
+    /** 每月 1 日 09:00 後推播上月投資月報（每月一次） */
+    private fun monthlyReport(context: Context, today: LocalDate) {
+        if (!AppState.monthlyReport || AppState.holdings.isEmpty() && AppState.trades.isEmpty()) return
+        if (today.dayOfMonth > 3 || java.time.LocalTime.now(TPE).hour < 9) return
+        val last = java.time.YearMonth.from(today).minusMonths(1)
+        val key = "MR-$last"
+        if (AppState.summarySent(key)) return
+        AppState.markSummarySent(key)
+        val text = monthlyText(last)
+        notify(context, 905, "${last.monthValue} 月投資月報", text)
+        AppState.logNotice("${last.year}/${last.monthValue} 月報：" + text.replace("\n", " · "))
+    }
+
+    /** 月報內容：總資產變化、已實現損益、股息、交易筆數 */
+    fun monthlyText(m: java.time.YearMonth): String {
+        val prefix = listOf("%d/%02d".format(m.year, m.monthValue), "%d-%02d".format(m.year, m.monthValue))
+        val inMonth = AppState.trades.filter { t -> prefix.any { t.date.startsWith(it) } && t.origin != com.claudeetf.app.data.TradeOrigin.LEGACY }
+        val realized = inMonth.sumOf { AppState.realizedById[it.id] ?: 0.0 }
+        val dividends = inMonth.sumOf { AppState.dividendById[it.id] ?: 0.0 }
+        val buys = inMonth.count { it.type == com.claudeetf.app.data.TradeType.BUY }
+        val sells = inMonth.count { it.type == com.claudeetf.app.data.TradeType.SELL }
+        val nav = AppState.navSeries(null)
+        val start = nav.lastOrNull { it.first < m.atDay(1).toString() }?.second ?: nav.firstOrNull { it.first.startsWith(m.toString()) }?.second
+        val end = nav.lastOrNull { it.first <= m.atEndOfMonth().toString() }?.second
+        val lines = ArrayList<String>()
+        if (start != null && end != null && start > 0) {
+            val d = end - start
+            lines += "總資產 ${Fmt.num(end)}（${Fmt.signed(d)}，${Fmt.signedPct(d / start * 100)}）"
+        }
+        lines += "已實現損益 ${Fmt.signed(realized)} · 股息實收 ${Fmt.num(dividends)}"
+        lines += "交易：買進 $buys 筆、賣出 $sells 筆"
+        return lines.joinToString("\n")
     }
 
     private fun usOpen(a: AlertRule, todayKey: String): Pair<String, String>? {
@@ -232,6 +267,31 @@ object AlertEngine {
                 notify(context, 2000 + (sym.hashCode() and 0xfff), "${q.symbol} $dir", text)
             }
         }
+        checkBigTrades(context, now)
+    }
+
+    /** 逐筆大單：自上次檢查後出現的單筆成交張數 ≥ 門檻 */
+    private val bigSeen = HashMap<Int, Long>()
+
+    private fun checkBigTrades(context: Context, now: Long) {
+        for (a in AppState.alerts.toList()) {
+            if (!a.enabled || a.type != AlertType.BIG_TRADE || a.value <= 0) continue
+            val since = bigSeen[a.id] ?: (now - 60_000)
+            bigSeen[a.id] = now
+            val targets = if (a.symbol.isBlank()) AppState.holdings.map { it.symbol }.filter { AppState.quote(it)?.market == com.claudeetf.app.data.Market.TW }
+            else listOf(a.symbol)
+            for (sym in targets) {
+                val hit = AppState.tape[sym].orEmpty().filter { it.time > since - 15_000 && it.lots >= a.value }.maxByOrNull { it.lots } ?: continue
+                val marks = a.lastFired.split(";").filter { it.contains("@") }.associate { it.substringBefore("@") to (it.substringAfter("@").toLongOrNull() ?: 0L) }
+                if (now - (marks[sym] ?: 0L) < 10 * 60_000) continue
+                val key = (marks + (sym to now)).filter { now - it.value < 60 * 60_000 }.entries.joinToString(";") { it.key + "@" + it.value }
+                val q = AppState.quote(sym)
+                val side = when (hit.side) { 1 -> "外盤"; -1 -> "內盤"; else -> "" }
+                val text = "$sym ${q?.name ?: ""} 單筆${side}成交 ${Fmt.num(hit.lots)} 張 @ ${Fmt.price(hit.price)}（今日 ${q?.let { Fmt.signedPct(it.changePct) } ?: "—"}）"
+                AppState.markFired(a.id, key, text, now)
+                notify(context, 3000 + (sym.hashCode() and 0xfff), "$sym 大單成交", text)
+            }
+        }
     }
 
     // ---------------- 背景排程 ----------------
@@ -248,7 +308,7 @@ object AlertEngine {
 class AlertWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         AppState.init(applicationContext)
-        val summaries = AppState.dailySummary && AppState.holdings.isNotEmpty()
+        val summaries = (AppState.dailySummary || AppState.monthlyReport) && AppState.holdings.isNotEmpty()
         if (AppState.alerts.none { it.enabled } && !summaries && AppState.dcaPlans.none { it.enabled }) return Result.success()
         runCatching {
             val TW = com.claudeetf.app.data.Market.TW

@@ -132,6 +132,27 @@ fun AlertsScreen(nav: NavController, initialSymbol: String = "") {
                     )
                 }
             }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("每月投資月報", color = C.Text, fontSize = 14.sp)
+                        Label("每月 1 日推播上月總資產變化、已實現損益、股息與交易筆數")
+                        val last = java.time.YearMonth.now(java.time.ZoneId.of("Asia/Taipei")).minusMonths(1)
+                        var preview by remember { mutableStateOf<String?>(null) }
+                        Text(if (preview == null) "預覽上月月報" else "收合", color = C.Primary, fontSize = 12.sp,
+                            modifier = Modifier.clickable { preview = if (preview == null) AlertEngine.monthlyText(last) else null }.padding(vertical = 4.dp))
+                        preview?.let { Text(it, color = C.Text2, fontSize = 12.sp, lineHeight = 18.sp) }
+                    }
+                    Switch(
+                        checked = AppState.monthlyReport, onCheckedChange = { AppState.updateMonthlyReport(it) },
+                        colors = SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary,
+                            uncheckedTrackColor = C.Border, uncheckedThumbColor = C.Muted, uncheckedBorderColor = C.Border),
+                    )
+                }
+            }
             item { SectionTitle("通知紀錄", "最近 ${AppState.alertHistory.size} 筆") }
             if (AppState.alertHistory.isEmpty()) item { Label("尚無通知紀錄") }
             items(AppState.alertHistory.toList()) { h ->
@@ -179,7 +200,7 @@ private fun AddAlertCard(initialSymbol: String = "", onDone: () -> Unit) {
         if (type != AlertType.US_OPEN) {
             OutlinedTextField(
                 value = symbol, onValueChange = { symbol = it; error = null },
-                label = { Text(if (type == AlertType.RAPID) "股票代號（留空＝全部持股）" else "股票代號（例如 2330、AAPL）") }, singleLine = true,
+                label = { Text(if (type == AlertType.RAPID || type == AlertType.BIG_TRADE) "股票代號（留空＝全部持股）" else "股票代號（例如 2330、AAPL）") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth(), colors = fieldColors(),
             )
             OutlinedTextField(
@@ -198,7 +219,7 @@ private fun AddAlertCard(initialSymbol: String = "", onDone: () -> Unit) {
             val v = valueText.toDoubleOrNull()
             when {
                 type == AlertType.US_OPEN -> { AppState.addAlert("", type, 0.0); onDone() }
-                type == AlertType.RAPID && sym.isEmpty() && v != null && v > 0 -> { AppState.addAlert("", type, v); onDone() }
+                (type == AlertType.RAPID || type == AlertType.BIG_TRADE) && sym.isEmpty() && v != null && v > 0 -> { AppState.addAlert("", type, v); onDone() }
                 sym.isEmpty() -> error = "請輸入股票代號"
                 v == null || v < 0 -> error = "請輸入數值"
                 else -> {

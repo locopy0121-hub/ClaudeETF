@@ -157,6 +157,7 @@ enum class AlertType(val label: String, val isPrice: Boolean, val unit: String) 
     EXDIV("除息前", false, "天"),
     US_OPEN("美股開盤", false, ""),
     RAPID("5 分鐘急漲急跌", true, "%"),
+    BIG_TRADE("逐筆大單", true, "張"),
 }
 
 data class AlertRule(
@@ -176,6 +177,7 @@ data class AlertRule(
         get() = when (type) {
             AlertType.US_OPEN -> "美股開盤推播"
             AlertType.RAPID -> (if (symbol.isBlank()) "全部持股" else symbol) + " 5 分鐘內漲跌 ≥ ${trimNum(value)}%"
+            AlertType.BIG_TRADE -> (if (symbol.isBlank()) "全部台股持股" else symbol) + " 單筆成交 ≥ ${trimNum(value)} 張"
             AlertType.PRICE_ABOVE, AlertType.PRICE_BELOW -> "$symbol ${type.label} ${trimNum(value)}"
             AlertType.CHANGE_UP, AlertType.CHANGE_DOWN -> "$symbol ${type.label} ${trimNum(value)}%"
             AlertType.EARNINGS, AlertType.EXDIV -> "$symbol ${type.label} ${trimNum(value)} 天"
@@ -185,6 +187,7 @@ data class AlertRule(
         get() = when (type) {
             AlertType.US_OPEN -> "開盤後推播一次，自動依夏令／冬令調整"
             AlertType.RAPID -> "盤中即時偵測（App 開著時），同一檔 30 分鐘內不重複"
+            AlertType.BIG_TRADE -> "依逐筆成交即時偵測（App 開著時），同一檔 10 分鐘內不重複"
             AlertType.EARNINGS -> "依 Yahoo 公布的財報日"
             AlertType.EXDIV -> "依 Yahoo 公布的除息日"
             else -> "盤中與背景更新時檢查，每天最多通知一次"

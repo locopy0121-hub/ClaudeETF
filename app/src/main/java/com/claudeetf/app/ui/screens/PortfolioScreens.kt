@@ -672,6 +672,7 @@ fun AnalysisScreen(nav: NavController) {
     val cost = AppState.totalCostTwd()
     val xirr = remember(AppState.trades.size) { Analytics.xirr() }
     var bt by remember { mutableStateOf<Load<Analytics.Backtest>>(Load.Loading) }
+    LaunchedEffect(allocBy) { if (allocBy == 3) runCatching { com.claudeetf.app.data.IndustryRepo.ensure() } }
     LaunchedEffect(reload) {
         bt = Load.Loading
         bt = runCatching { Analytics.backtest(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
@@ -683,6 +684,8 @@ fun AnalysisScreen(nav: NavController) {
             "台股" to AppState.totalMarketValueTwd(Market.TW) / mv * 100,
             "美股" to AppState.totalMarketValueTwd(Market.US) / mv * 100,
         )
+        3 -> AppState.holdings.groupBy { com.claudeetf.app.data.IndustryRepo.of(it.symbol) }
+            .map { (k, v) -> k to v.sumOf { AppState.marketValueTwd(it) } / mv * 100 }
         else -> AppState.holdings.map { (AppState.quote(it.symbol)?.name ?: it.symbol) to AppState.marketValueTwd(it) / mv * 100 }
     }.sortedByDescending { it.second }
 
@@ -775,7 +778,7 @@ fun AnalysisScreen(nav: NavController) {
             item {
                 Card(padding = 14.dp) {
                     Text("配置", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Segmented(listOf("類型", "市場", "個股"), allocBy, { allocBy = it }, background = C.Bg)
+                    Segmented(listOf("類型", "市場", "個股", "產業"), allocBy, { allocBy = it }, background = C.Bg)
                     if (alloc.isEmpty()) Label("目前沒有持股")
                     alloc.forEach { (name, pct) ->
                         Row(verticalAlignment = Alignment.CenterVertically) {

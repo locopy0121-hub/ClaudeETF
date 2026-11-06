@@ -146,6 +146,14 @@ object AppState {
         tape[symbol] = (listOf(t) + old).take(200)
     }
 
+    /** 持股產業（代號 → 產業），存在本機 */
+    val industries = mutableStateMapOf<String, String>()
+    fun putIndustries(m: Map<String, String>) { if (m.isEmpty()) return; industries.putAll(m); save() }
+
+    /** 每月 1 日推播上月投資月報；lastMonthlyReport 記錄已推播的月份 */
+    var monthlyReport by mutableStateOf(true)
+    fun updateMonthlyReport(on: Boolean) { monthlyReport = on; save() }
+
     /** 市場頁類股：false 方塊、true 依漲跌排行 */
     var sectorRanked by mutableStateOf(false)
 
@@ -247,6 +255,11 @@ object AppState {
         cashTwd = p.getFloat("cash", 164_000f).toDouble()
         fugleKey = p.getString("fugleKey", "") ?: ""
         twIntradaySource = p.getString("twIntradaySource", "fugle") ?: "fugle"
+        monthlyReport = p.getBoolean("monthlyReport", true)
+        industries.clear()
+        p.getString("industries", null)?.let { json ->
+            runCatching { val o = JSONObject(json); o.keys().forEach { k -> industries[k] = o.getString(k) } }
+        }
         finnhubKey = p.getString("finnhubKey", "") ?: ""
         fxSource = p.getString("fxSource", "手動輸入") ?: "手動輸入"
         fxUpdatedAt = p.getLong("fxUpdatedAt", 0L)
@@ -403,6 +416,8 @@ object AppState {
             .putString("alertHistory", JSONArray().apply { alertHistory.take(60).forEach { put(JSONObject().put("t", it.time).put("x", it.text)) } }.toString())
             .putString("fugleKey", fugleKey)
             .putString("twIntradaySource", twIntradaySource)
+            .putBoolean("monthlyReport", monthlyReport)
+            .putString("industries", JSONObject().apply { industries.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("finnhubKey", finnhubKey)
             .putString("fxSource", fxSource)
             .putLong("fxUpdatedAt", fxUpdatedAt)
