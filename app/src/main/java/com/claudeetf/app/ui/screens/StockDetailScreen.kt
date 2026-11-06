@@ -2,6 +2,7 @@ package com.claudeetf.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -454,7 +455,7 @@ private fun LiveSignalStrip(q: Quote, onClick: () -> Unit) {
             if (live) {
                 // 閃爍紅點表示即時
                 val blink by androidx.compose.animation.core.rememberInfiniteTransition(label = "live").animateFloat(
-                    0.25f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(800),
+                    0.25f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween<Float>(800),
                         androidx.compose.animation.core.RepeatMode.Reverse), label = "a")
                 Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Red.copy(alpha = blink)))
                 HGap(6.dp)
