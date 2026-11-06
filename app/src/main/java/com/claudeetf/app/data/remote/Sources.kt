@@ -284,7 +284,9 @@ object YahooApi {
 // 上市、上櫃代號不同前綴：同時送 tse_ 與 otc_，交易所只會回傳存在的那一個。
 // ---------------------------------------------------------------------------
 object TwseMisApi {
-    data class Tick(val quote: RemoteQuote, val time: Long, val isOtc: Boolean)
+    /** tradeLots：當盤成交張數；bid、ask：最佳買賣價（判斷內外盤） */
+    data class Tick(val quote: RemoteQuote, val time: Long, val isOtc: Boolean,
+                    val tradeLots: Double? = null, val bid: Double? = null, val ask: Double? = null, val hasTrade: Boolean = false)
 
     private fun first(s: String?): Double? =
         s?.split("_")?.firstOrNull { it.isNotBlank() }?.toDoubleOrNull()?.takeIf { it > 0 }
@@ -323,6 +325,10 @@ object TwseMisApi {
                     ),
                     o.optString("tlong").toLongOrNull() ?: System.currentTimeMillis(),
                     o.optString("ex") == "otc",
+                    tradeLots = num(o.optString("tv")),
+                    bid = first(o.optString("b")),
+                    ask = first(o.optString("a")),
+                    hasTrade = num(o.optString("z")) != null,
                 )
             }
         }

@@ -168,10 +168,17 @@ private fun LazyListScope.boardSection(
             val b = board.value
             if (b.sectors.isNotEmpty()) {
                 item { SectionTitle(if (us) "類股熱力圖" else "類股漲跌", if (us) "S&P 500 類股 ETF" else "證交所類股指數") }
-                items(b.sectors.chunked(4)) { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        row.forEach { SectorTile(it, Modifier.weight(1f)) }
-                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                item { Segmented(listOf("方塊", "排行"), if (AppState.sectorRanked) 1 else 0, { AppState.sectorRanked = it == 1 }) }
+                if (AppState.sectorRanked) {
+                    val sorted = b.sectors.sortedByDescending { it.changePct }
+                    val maxAbs = sorted.maxOf { abs(it.changePct) }.takeIf { it > 0 } ?: 1.0
+                    items(sorted) { m -> SectorRankRow(m, maxAbs) }
+                } else {
+                    items(b.sectors.chunked(4)) { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            row.forEach { SectorTile(it, Modifier.weight(1f)) }
+                            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 }
             }
@@ -316,5 +323,21 @@ private fun EventRow(e: CalendarEvent) {
         }
         HGap(6.dp)
         Text(e.kind.label, color = C.Muted, fontSize = 11.sp)
+    }
+}
+
+/** 類股排行列：以長條長度表示漲跌幅大小 */
+@Composable
+private fun SectorRankRow(m: SectorMove, maxAbs: Double) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(m.name, Modifier.width(96.dp), color = C.Text, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Box(Modifier.weight(1f).height(10.dp)) {
+            Box(
+                Modifier.fillMaxHeight().fillMaxWidth((abs(m.changePct) / maxAbs).toFloat().coerceIn(0.02f, 1f))
+                    .clip(RoundedCornerShape(3.dp)).background(Trend.fg(m.changePct)),
+            )
+        }
+        HGap(6.dp)
+        NumText(Fmt.signedPct(m.changePct), 12.sp, Trend.fg(m.changePct), modifier = Modifier.width(64.dp))
     }
 }

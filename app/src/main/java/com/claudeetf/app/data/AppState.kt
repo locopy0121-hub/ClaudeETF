@@ -76,7 +76,7 @@ object AppState {
 
     /** 首頁卡片順序與隱藏 */
     val allHomeCards = listOf("assets" to "總資產與走勢", "alloc" to "資產配置", "movers" to "今日持股漲跌",
-        "session" to "美股交易時段", "index" to "主要指數", "source" to "資料來源")
+        "session" to "美股交易時段", "index" to "主要指數", "source" to "資料來源", "goal" to "資產目標")
     val homeOrder = mutableStateListOf<String>()
     val homeHidden = mutableStateListOf<String>()
 
@@ -128,6 +128,26 @@ object AppState {
     /** 當日高低與成交量（股），自選欄位與小工具使用 */
     data class DayStat(val high: Double?, val low: Double?, val volume: Double?, val at: Long)
     val dayStats = mutableStateMapOf<String, DayStat>()
+
+    /** 逐筆成交明細（最新在前，每檔最多 200 筆，跨日清空） */
+    val tape = mutableStateMapOf<String, List<TapeTick>>()
+    fun recordTape(symbol: String, t: TapeTick) {
+        if (t.lots <= 0 || t.price <= 0) return
+        val tpe = java.time.ZoneId.of("Asia/Taipei")
+        val day = { ms: Long -> java.time.Instant.ofEpochMilli(ms).atZone(tpe).toLocalDate() }
+        val old = tape[symbol].orEmpty().let { l -> if (l.isNotEmpty() && day(l.first().time) != day(t.time)) emptyList() else l }
+        if (old.any { it.time == t.time && it.price == t.price && it.lots == t.lots }) return
+        if (old.isNotEmpty() && t.time < old.first().time) return
+        tape[symbol] = (listOf(t) + old).take(200)
+    }
+
+    /** 市場頁類股：false 方塊、true 依漲跌排行 */
+    var sectorRanked by mutableStateOf(false)
+
+    /** 資產目標（TWD，0 = 未設定）與目標年月 yyyy-MM */
+    var goalAmount by mutableDoubleStateOf(0.0)
+    var goalMonth by mutableStateOf("")
+    fun updateGoal(amount: Double, month: String) { goalAmount = amount; goalMonth = month; save() }
 
     /** 自選清單中間欄：spark 走勢、volume 成交量、amp 振幅、pe 本益比、pnl 持股損益 */
     var watchColumn by mutableStateOf("spark")
@@ -214,6 +234,8 @@ object AppState {
         p.getString("homeHidden", null)?.split(",")?.filter { it.isNotBlank() }?.let { homeHidden.addAll(it) }
         fontScale = p.getFloat("fontScale", 1f)
         watchColumn = p.getString("watchColumn", "spark") ?: "spark"
+        goalAmount = p.getLong("goalAmount", 0L).toDouble()
+        goalMonth = p.getString("goalMonth", "") ?: ""
         realizedTwdYtd = p.getFloat("realized", 56_800f).toDouble()
         dividendTwYtd = p.getFloat("divTw", 61_300f).toDouble()
         dividendUsGrossYtd = p.getFloat("divUs", 1_120.73f).toDouble()
@@ -363,6 +385,8 @@ object AppState {
             .putString("homeHidden", homeHidden.joinToString(","))
             .putFloat("fontScale", fontScale)
             .putString("watchColumn", watchColumn)
+            .putLong("goalAmount", Math.round(goalAmount))
+            .putString("goalMonth", goalMonth)
             .putFloat("realized", realizedTwdYtd.toFloat())
             .putFloat("divTw", dividendTwYtd.toFloat())
             .putFloat("divUs", dividendUsGrossYtd.toFloat())

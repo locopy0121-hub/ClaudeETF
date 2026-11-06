@@ -122,6 +122,14 @@ object MarketData {
                 res.getOrNull()?.forEach { (code, t) ->
                     if (code in rest) {
                         AppState.applyRemote(t.quote, QuoteSource.TWSE_LIVE, maxOf(t.time, now - 60_000), live = true)
+                        if (t.hasTrade && t.tradeLots != null) {
+                            val side = when {
+                                t.ask != null && t.quote.price >= t.ask -> 1
+                                t.bid != null && t.quote.price <= t.bid -> -1
+                                else -> 0
+                            }
+                            AppState.recordTape(code, com.claudeetf.app.data.TapeTick(t.time, t.quote.price, t.tradeLots, side))
+                        }
                         mis += code
                     }
                 }

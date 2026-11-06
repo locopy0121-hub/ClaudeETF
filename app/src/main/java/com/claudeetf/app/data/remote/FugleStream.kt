@@ -194,7 +194,22 @@ object FugleStream {
                     t?.optDouble("tradeVolumeAtAsk", Double.NaN)?.takeIf { !it.isNaN() },
                     n("avgPrice"),
                 )
+                // 最新一筆成交 → 逐筆明細
+                val tape = d.optJSONObject("lastTrade")?.let { lt ->
+                    val p = lt.optDouble("price", Double.NaN).takeIf { !it.isNaN() } ?: return@let null
+                    val size = lt.optDouble("size", Double.NaN).takeIf { !it.isNaN() } ?: return@let null
+                    val tm = lt.optLong("time", 0L).let { if (it > 100_000_000_000_000L) it / 1000 else it }.takeIf { it > 0 } ?: updated
+                    val bid = lt.optDouble("bid", Double.NaN).takeIf { !it.isNaN() && it > 0 }
+                    val ask = lt.optDouble("ask", Double.NaN).takeIf { !it.isNaN() && it > 0 }
+                    val side = when {
+                        ask != null && p >= ask -> 1
+                        bid != null && p <= bid -> -1
+                        else -> 0
+                    }
+                    com.claudeetf.app.data.TapeTick(tm, p, size, side)
+                }
                 main.post {
+                    tape?.let { AppState.recordTape(sym, it) }
                     books[sym] = book
                     totals[sym] = tot
                     AppState.applyRemote(rq, QuoteSource.FUGLE_STREAM, minOf(updated, System.currentTimeMillis()), live = true)

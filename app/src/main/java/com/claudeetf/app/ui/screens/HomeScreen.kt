@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -174,7 +175,7 @@ fun HomeScreen(nav: NavController) {
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Card)
                                 .clickable { nav.navigate(Routes.SETTINGS) }.padding(12.dp),
                         ) {
-                            if (MarketData.anyMarketLive()) Label("● 盤中即時更新（每 5 秒）", color = C.Green)
+                            if (MarketData.anyMarketLive()) Label(if (com.claudeetf.app.data.remote.FugleStream.connected) "● 盤中即時：台股富果串流同步、美股每 5 秒" else "● 盤中即時更新（每 5 秒）", color = C.Green)
                     Label("台股：" + MarketData.twSourcePlan())
                             Label("美股：" + (AppState.sourceStatus["US"] ?: "Yahoo Finance"))
                             Label("匯率：" + AppState.fxSource + (if (AppState.fxUpdatedAt > 0) " " + Fmt.time(AppState.fxUpdatedAt) else ""))
@@ -182,6 +183,7 @@ fun HomeScreen(nav: NavController) {
                     }
                     }
                     "movers" -> item { HoldingMovers(nav) }
+                    "goal" -> item { GoalCard() }
                     "index" -> {
                     val idx = listOf(AppState.twIndices[0]) + AppState.usIndices.filter {
                         it.name in listOf("S&P 500", "Nasdaq", "費城半導體")
@@ -249,4 +251,104 @@ private fun HoldingMovers(nav: NavController) {
             }
         }
     }
+}
+
+/** 資產目標：進度、剩餘金額、每月需增加金額與依過去走勢推估的達成時間 */
+@Composable
+private fun GoalCard() {
+    var editing by remember { mutableStateOf(false) }
+    val goal = AppState.goalAmount
+    val total = AppState.totalAssetsTwd()
+    Card {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("資產目標", Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(if (goal > 0) "編輯" else "設定", color = C.Primary, fontSize = 13.sp,
+                modifier = Modifier.clickable { editing = true }.padding(4.dp))
+        }
+        if (goal <= 0) {
+            Label("設定想達成的總資產與期限，追蹤進度與每月需要增加的金額")
+        } else {
+            val ratio = (total / goal).coerceIn(0.0, 1.0)
+            val remain = (goal - total).coerceAtLeast(0.0)
+            NumText(mask(Fmt.num(total)) + " / " + mask(Fmt.num(goal)), 15.sp, weight = FontWeight.Bold)
+            StackBar(listOf(ratio.toFloat() to C.Primary, (1 - ratio).toFloat() to C.Card2))
+            Row {
+                Label("已達成 " + Fmt.num(total / goal * 100, 1) + "%", Modifier.weight(1f), color = C.Primary)
+                Label(if (remain > 0) "尚差 " + mask(Fmt.num(remain)) else "🎉 已達成目標")
+            }
+            val tpe = java.time.ZoneId.of("Asia/Taipei")
+            val now = java.time.LocalDate.now(tpe)
+            val target = runCatching { java.time.YearMonth.parse(AppState.goalMonth) }.getOrNull()
+            if (remain > 0 && target != null) {
+                val months = java.time.temporal.ChronoUnit.MONTHS.between(java.time.YearMonth.from(now), target)
+                if (months > 0) Label("距 ${target.year}/${target.monthValue} 還有 $months 個月，每月需增加 " + mask(Fmt.num(remain / months)))
+                else Label("已超過目標期限 ${target.year}/${target.monthValue}", color = C.Red)
+            }
+            // 依總資產紀錄（至少 30 天）的平均每日變化推估
+            val series = AppState.navSeries(null)
+            if (remain > 0 && series.size >= 2) {
+                val d0 = java.time.LocalDate.parse(series.first().first)
+                val d1 = java.time.LocalDate.parse(series.last().first)
+                val days = java.time.temporal.ChronoUnit.DAYS.between(d0, d1)
+                if (days >= 30) {
+                    val perDay = (series.last().second - series.first().second) / days
+                    if (perDay > 0) {
+                        val eta = now.plusDays(Math.ceil(remain / perDay).toLong().coerceAtMost(365L * 80))
+                        Label("依過去 $days 天走勢（每月約 +" + mask(Fmt.num(perDay * 30)) + "），預估 ${eta.year}/${eta.monthValue} 達成")
+                    } else Label("過去 $days 天總資產沒有成長，暫時無法推估達成時間")
+                }
+            }
+        }
+    }
+    if (editing) GoalDialog { editing = false }
+}
+
+@Composable
+private fun GoalDialog(onDismiss: () -> Unit) {
+    var amount by remember { mutableStateOf(if (AppState.goalAmount > 0) Math.round(AppState.goalAmount).toString() else "") }
+    var month by remember { mutableStateOf(AppState.goalMonth) }
+    var error by remember { mutableStateOf<String?>(null) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.Card,
+        title = { Text("資產目標", color = C.Text, fontSize = 16.sp) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedTextField(amount, { amount = it.filter { c -> c.isDigit() }; error = null },
+                    label = { Text("目標總資產（TWD）") }, singleLine = true, colors = fieldColors(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                androidx.compose.material3.OutlinedTextField(month, { month = it; error = null },
+                    label = { Text("目標年月（例 2030-12，可空白）") }, singleLine = true, colors = fieldColors())
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(1_000_000L, 5_000_000L, 10_000_000L, 30_000_000L).forEach { v ->
+                        Text(Fmt.num(v / 10_000.0) + " 萬", color = C.Primary, fontSize = 12.sp,
+                            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(C.Bg)
+                                .clickable { amount = v.toString() }.padding(horizontal = 8.dp, vertical = 6.dp))
+                    }
+                }
+                error?.let { Text(it, color = C.Red, fontSize = 12.sp) }
+            }
+        },
+        confirmButton = {
+            Text("儲存", color = C.Primary, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable {
+                    val a = amount.toDoubleOrNull() ?: 0.0
+                    val m = month.trim().replace("/", "-").let { t ->
+                        if (t.isEmpty()) "" else runCatching { java.time.YearMonth.parse(if (t.length == 6) t.substring(0, 5) + "0" + t.substring(5) else t).toString() }.getOrNull()
+                    }
+                    when {
+                        a <= 0 -> error = "請輸入目標金額"
+                        m == null -> error = "年月格式請用 2030-12"
+                        else -> { AppState.updateGoal(a, m); onDismiss() }
+                    }
+                }.padding(12.dp))
+        },
+        dismissButton = {
+            Row {
+                if (AppState.goalAmount > 0) Text("清除", color = C.Red, fontSize = 15.sp,
+                    modifier = Modifier.clickable { AppState.updateGoal(0.0, ""); onDismiss() }.padding(12.dp))
+                Text("取消", color = C.Muted, fontSize = 15.sp, modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp))
+            }
+        },
+    )
 }

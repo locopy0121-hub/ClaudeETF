@@ -198,6 +198,9 @@ data class AlertRule(
 
 data class AlertHit(val time: Long, val text: String)
 
+/** 逐筆成交：時間（毫秒）、價格、張數、內外盤（1 外盤、-1 內盤、0 不明） */
+data class TapeTick(val time: Long, val price: Double, val lots: Double, val side: Int)
+
 data class UpcomingDividend(
     val dateTop: String,
     val dateMain: String,

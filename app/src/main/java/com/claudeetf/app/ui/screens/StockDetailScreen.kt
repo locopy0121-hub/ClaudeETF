@@ -182,6 +182,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             when (tab) {
                 Tab.OVERVIEW -> {
                     tradingSection(q, trading)
+                    if (q.market == Market.TW && AppState.tape[q.symbol].orEmpty().isNotEmpty()) item { TapeCard(q) }
                     (history as? Load.Ok<YahooExtra.History>)?.value?.let { h ->
                         val opt = ranges[range]
                         val start = opt.days?.let { d ->
@@ -190,6 +191,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                         } ?: 0
                         item { VolumeProfileCard(q, h, start, opt.label) }
                     }
+                    item { SectionTitle("基本資料") }
                     overviewTab(q, fund); peersSection(nav, peers)
                 }
                 Tab.CHIPS -> chipsTab(q, chips)
@@ -565,7 +567,6 @@ private fun LazyListScope.tradingSection(q: Quote, t: Load<StockInfoRepo.Trading
     if (q.market == Market.TW && com.claudeetf.app.data.remote.FugleStream.books.containsKey(q.symbol)) {
         item { SectionTitle("當日交易", "● 富果串流同步") }
         item { StreamTrading(q) }
-        item { SectionTitle("基本資料") }
         return
     }
     item { SectionTitle("當日交易", (t as? Load.Ok<StockInfoRepo.Trading>)?.value?.source) }
@@ -582,7 +583,6 @@ private fun LazyListScope.tradingSection(q: Quote, t: Load<StockInfoRepo.Trading
             }
         }
     }
-    item { SectionTitle("基本資料") }
 }
 
 @Composable
@@ -949,5 +949,45 @@ private fun StreamTrading(q: Quote) {
         }
         if (tot?.atBid != null && tot.atAsk != null) InOutBar(tot.atBid, tot.atAsk)
         if (book != null && (book.first.isNotEmpty() || book.second.isNotEmpty())) OrderBook(book.first, book.second)
+    }
+}
+
+/** 逐筆成交明細：富果串流或證交所即時（每次輪詢的最新一筆） */
+@Composable
+private fun TapeCard(q: Quote) {
+    val list = AppState.tape[q.symbol].orEmpty()
+    var expanded by remember(q.symbol) { mutableStateOf(false) }
+    val shown = if (expanded) list.take(60) else list.take(12)
+    val streaming = com.claudeetf.app.data.remote.FugleStream.isStreaming(q.symbol)
+    val tpe = java.time.ZoneId.of("Asia/Taipei")
+    val fmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
+    Card(padding = 12.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("逐筆成交", Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Label(if (streaming) "● 富果串流" else "證交所即時（約每 5 秒）")
+        }
+        Row {
+            Label("時間", Modifier.weight(1f)); Label("價格", Modifier.weight(1f)); Label("張數", Modifier.weight(0.8f)); Label("內外", Modifier.weight(0.5f))
+        }
+        shown.forEach { t ->
+            val color = Trend.fg(t.price - q.prevClose)
+            Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                NumText(java.time.Instant.ofEpochMilli(t.time).atZone(tpe).format(fmt), 12.sp, C.Text2, modifier = Modifier.weight(1f))
+                NumText(Fmt.price(t.price), 12.sp, color, modifier = Modifier.weight(1f))
+                NumText(Fmt.num(t.lots), 12.sp, if (t.lots >= 50) C.Primary else C.Text, weight = if (t.lots >= 50) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(0.8f))
+                Text(
+                    when (t.side) { 1 -> "外"; -1 -> "內"; else -> "—" },
+                    Modifier.weight(0.5f), fontSize = 12.sp,
+                    color = when (t.side) { 1 -> Trend.fg(1.0); -1 -> Trend.fg(-1.0); else -> C.Muted },
+                )
+            }
+        }
+        val outer = list.filter { it.side == 1 }.sumOf { it.lots }
+        val inner = list.filter { it.side == -1 }.sumOf { it.lots }
+        Label("近 ${list.size} 筆：外盤 ${Fmt.num(outer)} 張 · 內盤 ${Fmt.num(inner)} 張 · 50 張以上為大單")
+        if (list.size > 12) {
+            Text(if (expanded) "收合" else "顯示更多", color = C.Primary, fontSize = 13.sp,
+                modifier = Modifier.clickable { expanded = !expanded }.padding(vertical = 4.dp))
+        }
     }
 }
