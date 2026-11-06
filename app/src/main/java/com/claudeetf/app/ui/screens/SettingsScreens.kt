@@ -456,6 +456,7 @@ fun SettingsScreen(nav: NavController) {
 
             item { FoldHeader("顯示", "主題、字級、配色、首頁卡片", "顯示" in openGroups) { if ("顯示" in openGroups) openGroups.remove("顯示") else openGroups.add("顯示") } }
             if ("顯示" in openGroups) {
+                item { PriceBoxSettings() }
                 item {
                     Card(padding = 14.dp) {
                         Text("主題", color = C.Text, fontSize = 14.sp)
@@ -694,6 +695,51 @@ private fun ColorPickerDialog(title: String, initial: androidx.compose.ui.graphi
             }
         },
     )
+}
+
+/** 持股現價方格：字型、粗細、字級、即時／收盤文字，附即時預覽 */
+@Composable
+private fun PriceBoxSettings() {
+    Card(padding = 14.dp) {
+        Text("持股現價方格", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        OptToggle("顯示現價方格", AppState.priceBoxShow) { AppState.updatePriceBox(show = it) }
+        if (!AppState.priceBoxShow) return@Card
+        // 預覽：拿第一檔持股，沒有持股就用示意價格
+        val sample = AppState.holdings.firstNotNullOfOrNull { h -> AppState.quote(h.symbol)?.takeIf { it.price > 0 } }
+            ?: com.claudeetf.app.data.Quote("0050", "元大台灣50", com.claudeetf.app.data.Market.TW, 92.50, 97.15)
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("預覽 " + sample.symbol, Modifier.weight(1f), color = C.Muted, fontSize = 12.sp)
+            LivePriceBox(sample, sample.market == com.claudeetf.app.data.Market.US)
+        }
+        OptToggle("顯示「即時／收盤」文字", AppState.priceBoxLabel) { AppState.updatePriceBox(label = it) }
+        Text("字型", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        ChipRow(listOf("mono" to "等寬", "sans" to "一般", "serif" to "襯線", "cond" to "窄體"), AppState.priceBoxFont) { AppState.updatePriceBox(font = it) }
+        Text("粗細", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        ChipRow(listOf(300 to "細", 400 to "標準", 500 to "中等", 700 to "粗", 900 to "特粗"), AppState.priceBoxWeight) { AppState.updatePriceBox(weight = it) }
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("字級", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+            Text("－", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { AppState.updatePriceBox(size = AppState.priceBoxSize - 1) }.padding(horizontal = 12.dp))
+            Text("${AppState.priceBoxSize} sp", color = C.Text, fontSize = 13.sp)
+            Text("＋", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { AppState.updatePriceBox(size = AppState.priceBoxSize + 1) }.padding(horizontal = 12.dp))
+        }
+        androidx.compose.material3.Slider(AppState.priceBoxSize.toFloat(), { AppState.updatePriceBox(size = it.toInt()) }, valueRange = 10f..22f, steps = 11)
+        Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable {
+            AppState.updatePriceBox(show = true, label = true, font = "mono", weight = 700, size = 13)
+        }.padding(vertical = 4.dp))
+    }
+}
+
+@Composable
+private fun <T> ChipRow(opts: List<Pair<T, String>>, sel: T, onPick: (T) -> Unit) {
+    Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        opts.forEach { (v, n) ->
+            val on = v == sel
+            Text(n, color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Primary else C.Bg)
+                    .clickable { onPick(v) }.padding(horizontal = 12.dp, vertical = 7.dp))
+        }
+    }
 }
 
 /** 美股更新頻率：即時（Finnhub 逐筆串流）、1／2／3／5／10 秒 */

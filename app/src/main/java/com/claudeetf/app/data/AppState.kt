@@ -235,6 +235,18 @@ object AppState {
     /** 美股盤中更新頻率（毫秒）；0 = 即時（Finnhub 逐筆串流，沒有金鑰時改為每秒輪詢） */
     var usRefreshMs by mutableStateOf(5_000L)
     fun updateUsRefreshMs(v: Long) { usRefreshMs = v; save() }
+    /** 持股現價方格樣式 */
+    var priceBoxShow by mutableStateOf(true)
+    var priceBoxLabel by mutableStateOf(true)
+    /** mono 等寬、sans 一般、serif 襯線、cond 窄體 */
+    var priceBoxFont by mutableStateOf("mono")
+    /** 300 細、400 標準、500 中等、700 粗、900 特粗 */
+    var priceBoxWeight by mutableIntStateOf(700)
+    var priceBoxSize by mutableIntStateOf(13)
+    fun updatePriceBox(show: Boolean = priceBoxShow, label: Boolean = priceBoxLabel, font: String = priceBoxFont, weight: Int = priceBoxWeight, size: Int = priceBoxSize) {
+        priceBoxShow = show; priceBoxLabel = label; priceBoxFont = font; priceBoxWeight = weight; priceBoxSize = size.coerceIn(10, 22); save()
+    }
+
     /** 開啟 App 時自動檢查線上更新 */
     var autoUpdateCheck by mutableStateOf(true)
     fun updateAutoUpdateCheck(on: Boolean) { autoUpdateCheck = on; save() }
@@ -420,6 +432,11 @@ object AppState {
         showLiveSignal = p.getBoolean("showLiveSignal", true)
         usRefreshMs = p.getLong("usRefreshMs", 5_000L)
         autoUpdateCheck = p.getBoolean("autoUpdateCheck", true)
+        priceBoxShow = p.getBoolean("priceBoxShow", true)
+        priceBoxLabel = p.getBoolean("priceBoxLabel", true)
+        priceBoxFont = p.getString("priceBoxFont", "mono") ?: "mono"
+        priceBoxWeight = p.getInt("priceBoxWeight", 700)
+        priceBoxSize = p.getInt("priceBoxSize", 13)
         showCardEntry = p.getBoolean("showCardEntry", true)
         showFinalSignal = p.getBoolean("showFinalSignal", true)
         investBudget = p.getFloat("investBudget", 0f).toDouble()
@@ -618,6 +635,11 @@ object AppState {
             .putBoolean("showLiveSignal", showLiveSignal)
             .putLong("usRefreshMs", usRefreshMs)
             .putBoolean("autoUpdateCheck", autoUpdateCheck)
+            .putBoolean("priceBoxShow", priceBoxShow)
+            .putBoolean("priceBoxLabel", priceBoxLabel)
+            .putString("priceBoxFont", priceBoxFont)
+            .putInt("priceBoxWeight", priceBoxWeight)
+            .putInt("priceBoxSize", priceBoxSize)
             .putBoolean("showCardEntry", showCardEntry)
             .putBoolean("showFinalSignal", showFinalSignal)
             .putFloat("investBudget", investBudget.toFloat())

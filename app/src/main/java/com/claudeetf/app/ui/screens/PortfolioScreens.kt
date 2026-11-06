@@ -331,9 +331,16 @@ private fun GroupHeader(market: Market, count: Int, total: String) {
     }
 }
 
+fun priceBoxFamily(key: String): androidx.compose.ui.text.font.FontFamily = when (key) {
+    "sans" -> androidx.compose.ui.text.font.FontFamily.SansSerif
+    "serif" -> androidx.compose.ui.text.font.FontFamily.Serif
+    "cond" -> androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.NORMAL))
+    else -> androidx.compose.ui.text.font.FontFamily.Monospace
+}
+
 /** 持股列的即時現價小方格：依漲跌上色，價格跳動時閃爍，盤中顯示即時燈號 */
 @Composable
-private fun LivePriceBox(q: com.claudeetf.app.data.Quote, isUs: Boolean) {
+fun LivePriceBox(q: com.claudeetf.app.data.Quote, isUs: Boolean) {
     var last by remember(q.symbol) { mutableStateOf(q.price) }
     var flash by remember(q.symbol) { mutableIntStateOf(0) }
     LaunchedEffect(q.price) {
@@ -354,8 +361,11 @@ private fun LivePriceBox(q: com.claudeetf.app.data.Quote, isUs: Boolean) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (live) { Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(C.Red)); HGap(4.dp) }
-        Text(if (live) "即時 " else "收盤 ", color = C.Muted, fontSize = 10.sp)
-        NumText((if (isUs) "$" else "") + Fmt.price(q.price), 13.sp, c, FontWeight.Bold)
+        if (AppState.priceBoxLabel) Text(if (live) "即時 " else "收盤 ", color = C.Muted, fontSize = 10.sp)
+        Text(
+            (if (isUs) "$" else "") + Fmt.price(q.price), color = c, maxLines = 1,
+            fontSize = AppState.priceBoxSize.sp, fontWeight = FontWeight(AppState.priceBoxWeight), fontFamily = priceBoxFamily(AppState.priceBoxFont),
+        )
     }
 }
 
@@ -393,7 +403,7 @@ private fun HoldingRow(h: Holding, inTwd: Boolean, onClick: () -> Unit) {
             q?.let { EntryTagFor(it, holder = true, modifier = Modifier.padding(top = 2.dp)) }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            if (q != null && q.price > 0) LivePriceBox(q, isUs)
+            if (q != null && q.price > 0 && AppState.priceBoxShow) LivePriceBox(q, isUs)
             NumText(mask(mvText), 14.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 NumText(mask(plText), 12.sp, Trend.fg(plOrig)); HGap(6.dp)
