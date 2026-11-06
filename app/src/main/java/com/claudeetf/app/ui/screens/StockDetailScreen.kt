@@ -458,6 +458,8 @@ private fun LazyListScope.overviewTab(q: Quote, fund: Load<Fundamentals>) {
             }
         }
     }
+    item { AnalysisCard(q) }
+    item { NextDividendCard(q, compact = true) }
     if (holding != null) item { LotsCard(q) }
     item { MarksCard(q) }
     item { NoteCard(q) }
@@ -520,6 +522,7 @@ private fun LazyListScope.financialsTab(q: Quote, fund: Load<Fundamentals>) {
 }
 
 private fun LazyListScope.dividendTab(q: Quote, divs: Load<DividendInfo>) {
+    item { NextDividendCard(q) }
     item { TaxCard(q, (divs as? Load.Ok<DividendInfo>)?.value?.history?.firstOrNull()?.amount) }
     when (divs) {
         is Load.Loading -> loading("載入配息紀錄中…")

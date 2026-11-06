@@ -303,6 +303,34 @@ object AlertEngine {
         }
     }
 
+    /**
+     * 持股除權息提醒：最後買進日當天、除息日前一天各通知一次（每檔每天一次）。
+     * 記錄在提醒中心的通知紀錄，重開 App 不重複。
+     */
+    fun checkDividendDays(context: Context) {
+        val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei"))
+        val md = java.time.format.DateTimeFormatter.ofPattern("M/d")
+        for (h in AppState.holdings.toList()) {
+            val p = AppState.divPlans[h.symbol] ?: continue
+            val q = AppState.quote(h.symbol)
+            val title = when {
+                p.lastBuy == today -> "${h.symbol} 今天是最後買進日"
+                p.exDate == today.plusDays(1) || (p.exDate.isAfter(today) && p.lastBuy.isBefore(today)) -> "${h.symbol} ${p.exDate.format(md)} ${p.type}"
+                p.exDate == today -> "${h.symbol} 今天${p.type}"
+                else -> null
+            } ?: continue
+            val est = com.claudeetf.app.data.DividendCalendar.estimate(p)
+            val text = "${q?.name ?: h.symbol}：${p.type}日 ${p.exDate.format(md)}、最後買進日 ${p.lastBuy.format(md)}" +
+                (p.cash?.let { "，每股 " + Fmt.num(it, 4).trimEnd('0').trimEnd('.') + if (p.announced) "" else "（估）" } ?: "") +
+                (est?.takeIf { it.gross > 0 }?.let { "，持有 ${Fmt.shares(h.shares)} 股預估實收 " + Fmt.num(it.net, if (q?.market == com.claudeetf.app.data.Market.US) 2 else 0) } ?: "") +
+                (p.payDate?.let { "，發放日 " + it.format(md) } ?: "")
+            if (AppState.alertHistory.any { it.text.startsWith(title) && java.time.Instant.ofEpochMilli(it.time).atZone(java.time.ZoneId.of("Asia/Taipei")).toLocalDate() == today }) continue
+            val now = System.currentTimeMillis()
+            AppState.logNotice("$title｜$text", now)
+            notify(context, 6000 + (h.symbol.hashCode() and 0xfff), title, text)
+        }
+    }
+
     /** 逐筆大單：自上次檢查後出現的單筆成交張數 ≥ 門檻 */
     private val bigSeen = HashMap<Int, Long>()
 

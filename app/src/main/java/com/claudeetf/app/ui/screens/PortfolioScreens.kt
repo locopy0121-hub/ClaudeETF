@@ -23,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -652,6 +653,19 @@ fun DividendScreen(nav: NavController) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            item {
+                Card(padding = 14.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("持股即將配息", Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        val scope = rememberCoroutineScope()
+                        Text("重新整理", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clickable {
+                            scope.launch { runCatching { com.claudeetf.app.data.DividendCalendar.refresh(force = true) } }
+                        }.padding(4.dp))
+                    }
+                    UpcomingHoldingDividends(nav)
+                    if (AppState.divPlansUpdatedAt > 0) Label("更新 " + Fmt.time(AppState.divPlansUpdatedAt) + "，每天開 App 自動更新")
+                }
+            }
             item {
                 Card(padding = 14.dp) {
                     Label("$year 累計實收股息（TWD）")

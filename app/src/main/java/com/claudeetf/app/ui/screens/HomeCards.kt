@@ -122,23 +122,12 @@ fun KeysCard(nav: NavController) {
     }
 }
 
-/** 持股即將除息 */
+/** 持股即將除權息：除息日、最後買進日、發放日、預估實收 */
 @Composable
 fun DivCalCard(nav: NavController) {
-    val held = AppState.holdings.mapNotNull { AppState.quote(it.symbol) }
-    LaunchedEffect(held.size) { com.claudeetf.app.data.WatchExtras.loadDividends(held) }
-    val md = java.time.format.DateTimeFormatter.ofPattern("M/d")
-    val tpe = java.time.ZoneId.of("Asia/Taipei")
-    val upcoming = held.mapNotNull { q -> AppState.divBriefs[q.symbol]?.nextEx?.let { q to it } }.sortedBy { it.second }
     Card {
-        CardTitle("持股除息行事曆")
-        if (upcoming.isEmpty()) Label(if (held.all { AppState.divBriefs.containsKey(it.symbol) }) "近期沒有已公布的除息日" else "載入中…")
-        upcoming.forEach { (q, t) ->
-            val b = AppState.divBriefs[q.symbol]
-            val h = AppState.holdings.firstOrNull { it.symbol == q.symbol }
-            val est = if (b?.lastAmount != null && h != null) "，參考上次 " + Fmt.num(b.lastAmount, 2) + " 估 " + mask(Fmt.num(b.lastAmount * h.shares)) else ""
-            MiniQuoteRow(nav, q.symbol, "除息 " + java.time.Instant.ofEpochMilli(t).atZone(tpe).format(md) + est, C.Primary)
-        }
+        CardTitle("持股除權息行事曆", "股息 ›") { nav.navigate(Routes.DIVIDEND) }
+        UpcomingHoldingDividends(nav, limit = 6)
     }
 }
 

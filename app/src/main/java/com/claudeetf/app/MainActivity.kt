@@ -137,6 +137,14 @@ class MainActivity : ComponentActivity() {
                 if (AppState.locked) LockScreen { unlock() }
             }
         }
+        // App 開啟（回到前景）時更新除權息行事曆與持股配息預估，同一天只抓一次
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                delay(3_000L) // 先讓行情載入
+                runCatching { com.claudeetf.app.data.DividendCalendar.refresh() }
+                runCatching { com.claudeetf.app.alerts.AlertEngine.checkDividendDays(applicationContext) }
+            }
+        }
         // App 在前景時自動更新行情：
         // 交易時段每 5 秒即時更新報價、每 60 秒完整更新（指數、匯率、提醒、淨值、小工具）；收盤後每 15 分鐘
         lifecycleScope.launch {

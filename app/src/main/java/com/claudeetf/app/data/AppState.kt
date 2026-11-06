@@ -181,6 +181,9 @@ object AppState {
     val keyPrices = mutableStateMapOf<String, StockInfoRepo.KeyPrices>()
     /** 自選除權息、法人欄位 */
     val divBriefs = mutableStateMapOf<String, WatchExtras.DivBrief>()
+    /** 除權息行事曆（App 開啟時自動更新） */
+    val divPlans = mutableStateMapOf<String, DividendCalendar.Plan>()
+    var divPlansUpdatedAt by mutableStateOf(0L)
     val institutional = mutableStateMapOf<String, com.claudeetf.app.data.remote.TwInstitutional.Day>()
     val twDaily = mutableStateMapOf<String, WatchExtras.TwDaily>()
     var showKeyLevels by mutableStateOf(true)
