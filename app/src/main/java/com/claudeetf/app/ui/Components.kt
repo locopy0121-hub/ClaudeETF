@@ -175,7 +175,9 @@ fun SectionTitle(text: String, trailing: String? = null) {
 @Composable
 fun KeyValue(key: String, value: String, valueColor: Color = C.Text, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(key, Modifier.weight(1f), color = C.Muted, fontSize = 13.sp)
+        // 標題不換行：空間不足時以 … 收尾，數值優先完整顯示
+        Text(key, Modifier.weight(1f).padding(end = 8.dp), color = C.Muted, fontSize = 13.sp, maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         NumText(value, 13.sp, valueColor)
     }
 }

@@ -22,20 +22,61 @@ import kotlin.math.sqrt
  *   籌碼 15：三大法人近 5 日買賣超（台股上市）
  *   市場 10：大盤（台股看加權指數、美股看 S&P 500）是否在 60 日均線之上
  *   風險  5：一年年化波動度
+ *   分析師 10：Yahoo 分析師評等（1 強力買進～5 強力賣出）與平均目標價的上漲空間
  */
 object InvestAnalysis {
     data class Factor(val name: String, val score: Int, val weight: Int, val note: String)
+    /** Yahoo 分析師共識 */
+    data class Analyst(
+        val rating: String?,
+        /** 1 強力買進 … 5 強力賣出 */
+        val mean: Double?,
+        val count: Int?,
+        val target: Double?,
+        val high: Double?,
+        val low: Double?,
+    )
+
     data class Result(
         val score: Int,
         val label: String,
         val advice: String,
         val factors: List<Factor>,
         val at: Long,
+        val analyst: Analyst? = null,
     )
 
-    private val cache = HashMap<String, Result>()
+    /** Compose 可觀察：個股頁標題徽章與分析卡片共用 */
+    val results = androidx.compose.runtime.mutableStateMapOf<String, Result>()
 
-    fun cached(symbol: String): Result? = cache[symbol]?.takeIf { System.currentTimeMillis() - it.at < 10 * 60_000L }
+    fun cached(symbol: String): Result? = results[symbol]?.takeIf { System.currentTimeMillis() - it.at < 10 * 60_000L }
+
+    private fun analyst(q: Quote): Analyst? {
+        val fd = runCatching { YahooExtra.summary(StockInfoRepo.yahooSymbol(q), listOf("financialData")).optJSONObject("financialData") }.getOrNull() ?: return null
+        fun raw(k: String) = fd.optJSONObject(k)?.optDouble("raw", Double.NaN)?.takeIf { !it.isNaN() && it > 0 }
+        val key = fd.optString("recommendationKey").takeIf { it.isNotBlank() && it != "none" }
+        val a = Analyst(
+            key?.let { mapOf("strong_buy" to "強力買進", "buy" to "買進", "hold" to "持有", "underperform" to "表現落後", "sell" to "賣出", "strong_sell" to "強力賣出")[it] ?: it },
+            raw("recommendationMean"), raw("numberOfAnalystOpinions")?.toInt(),
+            raw("targetMeanPrice"), raw("targetHighPrice"), raw("targetLowPrice"),
+        )
+        return a.takeIf { it.mean != null || it.target != null }
+    }
+
+    private fun analystFactor(a: Analyst?, price: Double): Factor? {
+        if (a == null) return null
+        val parts = ArrayList<Double>()
+        val notes = ArrayList<String>()
+        a.mean?.let { parts += (100 - (it - 1) * 21).coerceIn(10.0, 95.0); notes += (a.rating ?: "評等") + "（" + "%.1f".format(it) + "）" }
+        a.target?.let { t ->
+            val up = (t / price - 1) * 100
+            parts += (50 + up * 1.5).coerceIn(10.0, 95.0)
+            notes += "目標價 " + "%.2f".format(t) + "（" + "%+.0f".format(up) + "%）"
+        }
+        if (parts.isEmpty()) return null
+        a.count?.let { notes += "$it 位分析師" }
+        return Factor("分析師", clamp(parts.average()), 10, notes.joinToString("、"))
+    }
 
     private fun clamp(v: Double) = v.coerceIn(0.0, 100.0).roundToInt()
 
@@ -160,7 +201,9 @@ object InvestAnalysis {
         val price = q.price.takeIf { it > 0 } ?: raw.lastOrNull()?.toDouble() ?: throw IllegalStateException("沒有 ${q.symbol} 的價格")
         // 最後一根換成目前行情價，盤中分數會跟著現價走
         val c = if (raw.isNotEmpty()) raw.dropLast(1) + price.toFloat() else raw
+        val an = analyst(q)
         val factors = listOfNotNull(
+            analystFactor(an, price),
             trendFactor(c, price, q.symbol),
             momentumFactor(c),
             valuationFactor(q),
@@ -173,9 +216,7 @@ object InvestAnalysis {
         val wsum = factors.sumOf { it.weight }
         val score = (factors.sumOf { it.score * it.weight }.toDouble() / wsum).roundToInt()
         val (label, advice) = label(score)
-        Result(score, label, advice, factors, System.currentTimeMillis()).also { cache[q.symbol] = it }
+        Result(score, label, advice, factors, System.currentTimeMillis(), an).also { r -> withContext(Dispatchers.Main) { results[q.symbol] = r } }
     }
 
-    /** 分數變化箭頭用：與 50 中性的差距 */
-    fun tilt(score: Int) = abs(score - 50)
 }

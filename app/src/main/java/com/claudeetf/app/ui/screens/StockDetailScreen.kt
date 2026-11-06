@@ -187,6 +187,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar(q.symbol, onBack = { nav.popBackStack() }) {
+            ScoreBadge(q)
             if (!held) {
                 IconButton(onClick = { if (AppState.removeWatch(q.symbol)) nav.popBackStack() }) {
                     Icon(Icons.Filled.Close, contentDescription = "移出自選", tint = C.Muted)
@@ -417,7 +418,7 @@ private fun LazyListScope.showError(msg: String) {
 
 private fun LazyListScope.infoGrid(items: List<InfoItem>) {
     items(items.chunked(2)) { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             row.forEach { KeyValue(it.label, it.value, modifier = Modifier.weight(1f)) }
             if (row.size == 1) Spacer(Modifier.weight(1f))
         }
@@ -430,25 +431,33 @@ private fun LiveInfo(q0: Quote) {
     val q = AppState.quote(q0.symbol) ?: q0
     val ds = AppState.dayStats[q.symbol]
     val ccy = if (q.market == Market.US) "$" else ""
-    val items = listOfNotNull(
-        InfoItem("現價", if (q.price > 0) ccy + Fmt.price(q.price) else "—"),
-        InfoItem("漲跌", if (q.price > 0 && q.prevClose > 0) Fmt.signed(q.change, 2) + "（" + Fmt.pct(q.changePct) + "）" else "—"),
-        ds?.high?.let { InfoItem("最高", ccy + Fmt.price(it)) },
-        ds?.low?.let { InfoItem("最低", ccy + Fmt.price(it)) },
-        ds?.volume?.let { InfoItem("成交量", volumeText(it, q.market)) },
-        if (q.prevClose > 0) InfoItem("昨收（參考價）", ccy + Fmt.price(q.prevClose)) else null,
-    )
-    Column {
+    val col = Trend.fg(q.change)
+    // 現價與漲跌獨立一列（大字），其餘兩欄排列，避免擠壓換行
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Card).padding(14.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                Label("現價")
+                NumText(if (q.price > 0) ccy + Fmt.price(q.price) else "—", 22.sp, col, FontWeight.Bold)
+            }
+            if (q.price > 0 && q.prevClose > 0) Column(horizontalAlignment = Alignment.End) {
+                NumText(Fmt.signed(q.change, 2), 14.sp, col)
+                NumText(Fmt.pct(q.changePct), 13.sp, col)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        val items = listOfNotNull(
+            ds?.high?.let { InfoItem("最高", ccy + Fmt.price(it)) },
+            ds?.low?.let { InfoItem("最低", ccy + Fmt.price(it)) },
+            ds?.volume?.let { InfoItem("成交量", volumeText(it, q.market)) },
+            if (q.prevClose > 0) InfoItem("昨收", ccy + Fmt.price(q.prevClose)) else null,
+        )
         items.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                row.forEach {
-                    val color = if (it.label == "現價" || it.label == "漲跌") Trend.fg(q.change) else C.Text
-                    KeyValue(it.label, it.value, color, modifier = Modifier.weight(1f))
-                }
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                row.forEach { KeyValue(it.label, it.value, modifier = Modifier.weight(1f)) }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
-        Label(sourceText(q.source, q.updatedAt), Modifier.padding(bottom = 4.dp))
+        Label(sourceText(q.source, q.updatedAt), Modifier.padding(top = 2.dp))
     }
 }
 
@@ -493,10 +502,7 @@ private fun LazyListScope.overviewTab(q: Quote, fund: Load<Fundamentals>) {
                 (if (q.prevClose > 0) setOf("昨收") else emptySet())
             val rest = f.overview.filter { it.label !in liveLabels }
             if (rest.isEmpty()) item { Label("暫無概覽資料") } else infoGrid(rest)
-            if (f.analyst.isNotEmpty()) {
-                item { SectionTitle("分析師") }
-                infoGrid(f.analyst)
-            }
+            // 分析師共識已併入「投資分析指數」卡片
             item { Label("資料來源：Yahoo Finance" + if (q.market == Market.TW) "、證交所 OpenAPI" else "", Modifier.padding(top = 6.dp)) }
         }
     }
@@ -848,7 +854,7 @@ private fun LazyListScope.chipsTab(q: Quote, chips: Load<StockInfoRepo.Chips>) {
                         }
                     }
                 }
-                item { Label("資料來源：證交所 三大法人買賣超日報（T86）", Modifier.padding(top = 6.dp)) }
+                item { Label(if (c.days.first().otc) "資料來源：櫃買中心 OpenAPI 三大法人買賣超（上櫃只提供最新一日）" else "資料來源：證交所 三大法人買賣超日報（T86）", Modifier.padding(top = 6.dp)) }
             }
             is StockInfoRepo.Chips.Us -> {
                 val o = c.ownership

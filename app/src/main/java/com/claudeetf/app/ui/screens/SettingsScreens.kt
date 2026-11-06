@@ -489,6 +489,9 @@ fun SettingsScreen(nav: NavController) {
                                 if (AppState.isCustomCard(id)) Text("✕", color = C.Red, fontSize = 16.sp, modifier = Modifier.clickable { AppState.removeHomeCard(id) }.padding(10.dp))
                             }
                         }
+                        Text("個股頁", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                        OptToggle("標題顯示投資分析指數（0–100）", AppState.showScoreBadge) { AppState.updateShowScoreBadge(it) }
+                        OptToggle("走勢圖標示我的買賣點", AppState.showTradeMarks) { AppState.updateShowTradeMarks(it) }
                         Text("指數卡片顯示內容", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                         IndexCardOptions(null)
                     }

@@ -21,6 +21,8 @@ object TwInstitutional {
         val trust: Long,
         val dealer: Long,
         val total: Long,
+        /** true：來自櫃買中心（上櫃） */
+        val otc: Boolean = false,
     )
 
     private val TPE = ZoneId.of("Asia/Taipei")

@@ -118,7 +118,7 @@ object TpexOpenData {
             val f = num(fS)?.toLong() ?: 0L
             val t = num(tS)?.toLong() ?: 0L
             val d = num(dS)?.toLong() ?: 0L
-            out[c] = TwInstitutional.Day(date(o) ?: LocalDate.now(TPE), f, t, d, num(totS)?.toLong() ?: (f + t + d))
+            out[c] = TwInstitutional.Day(date(o) ?: LocalDate.now(TPE), f, t, d, num(totS)?.toLong() ?: (f + t + d), otc = true)
         }
         out
     }

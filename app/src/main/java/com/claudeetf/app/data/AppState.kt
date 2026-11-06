@@ -198,6 +198,10 @@ object AppState {
     /** 持股排序（0 市值、1 今日損益、2 今日漲跌、3 報酬率、4 代號） */
     var holdingSort by mutableIntStateOf(0)
     fun updateHoldingSort(i: Int) { holdingSort = i; save() }
+    /** 個股頁標題顯示投資分析指數 */
+    var showScoreBadge by mutableStateOf(true)
+    fun updateShowScoreBadge(on: Boolean) { showScoreBadge = on; save() }
+
     /** 走勢圖標示我的買賣點 */
     var showTradeMarks by mutableStateOf(true)
     fun updateShowTradeMarks(on: Boolean) { showTradeMarks = on; save() }
@@ -363,6 +367,7 @@ object AppState {
         futProduct = p.getString("futProduct", "TXF") ?: "TXF"
         futSource = p.getString("futSource", "auto") ?: "auto"
         showTradeMarks = p.getBoolean("showTradeMarks", true)
+        showScoreBadge = p.getBoolean("showScoreBadge", true)
         heatSize = p.getInt("heatSize", 0)
         heatColor = p.getInt("heatColor", 0)
         heatLabel = p.getInt("heatLabel", 0)
@@ -544,6 +549,7 @@ object AppState {
             .putString("futProduct", futProduct)
             .putString("futSource", futSource)
             .putBoolean("showTradeMarks", showTradeMarks)
+            .putBoolean("showScoreBadge", showScoreBadge)
             .putInt("heatSize", heatSize)
             .putInt("heatColor", heatColor)
             .putInt("heatLabel", heatLabel)

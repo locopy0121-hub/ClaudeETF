@@ -36,18 +36,18 @@ private fun scoreColor(score: Int): Color = when {
     else -> Trend.fg(-1.0)
 }
 
-/** 個股概覽：投資分析指數 */
+/** 個股概覽：投資分析指數（含分析師共識） */
 @Composable
 fun AnalysisCard(q0: Quote) {
     val q = AppState.quote(q0.symbol) ?: q0
-    var result by remember(q.symbol) { mutableStateOf(InvestAnalysis.cached(q.symbol)) }
+    val result = InvestAnalysis.results[q.symbol]
     var error by remember(q.symbol) { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
     LaunchedEffect(q.symbol) {
         while (true) {
             runCatching { InvestAnalysis.analyze(AppState.quote(q.symbol) ?: q) }
-                .onSuccess { result = it; error = null }
-                .onFailure { if (result == null) error = it.friendly() }
+                .onSuccess { error = null }
+                .onFailure { if (InvestAnalysis.results[q.symbol] == null) error = it.friendly() }
             kotlinx.coroutines.delay(10 * 60_000L + 1_000L)
         }
     }
@@ -68,37 +68,97 @@ fun AnalysisCard(q0: Quote) {
             Text(" / 100", color = C.Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 6.dp))
             Spacer(Modifier.weight(1f))
             Text(
-                r.label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                r.label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(color).padding(horizontal = 12.dp, vertical = 5.dp),
             )
         }
         ScoreGauge(r.score)
-        Text(r.advice, color = C.Text2, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-        // 依各因子分數列出最強與最弱
+        Text(r.advice, color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 6.dp))
+
+        // 最強與最弱因子：標籤一行、說明一行，避免長句擠在一起
         val best = r.factors.maxBy { it.score }
         val worst = r.factors.minBy { it.score }
-        Label("優勢：${best.name}（${best.note}）", color = Trend.fg(1.0))
-        if (worst !== best) Label("留意：${worst.name}（${worst.note}）", color = Trend.fg(-1.0))
+        Spacer(Modifier.height(6.dp))
+        FactorLine("優勢", best, Trend.fg(1.0))
+        if (worst !== best) FactorLine("留意", worst, Trend.fg(-1.0))
+
+        r.analyst?.let { a ->
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(C.Bg))
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("分析師共識", Modifier.weight(1f), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                a.count?.let { Label("$it 位") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.weight(1f)) {
+                    KeyValue("評等", a.rating ?: "—")
+                    KeyValue("平均分數", a.mean?.let { "%.1f".format(it) + " / 5" } ?: "—")
+                }
+                Column(Modifier.weight(1f)) {
+                    KeyValue("目標價", a.target?.let { Fmt.price(it) } ?: "—")
+                    a.target?.takeIf { q.price > 0 }?.let { t ->
+                        val up = (t / q.price - 1) * 100
+                        KeyValue("上漲空間", Fmt.pct(up), Trend.fg(up))
+                    }
+                }
+            }
+            if (a.high != null && a.low != null) Label("目標價區間 " + Fmt.price(a.low) + "～" + Fmt.price(a.high) + "（1 強力買進～5 強力賣出）")
+        }
+
         if (expanded) {
             Spacer(Modifier.height(6.dp))
             r.factors.forEach { f ->
-                Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(f.name, color = C.Text, fontSize = 13.sp, modifier = Modifier.width(40.dp))
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(f.name, color = C.Text, fontSize = 13.sp, maxLines = 1, modifier = Modifier.width(52.dp))
                     Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Bg)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(f.score / 100f).clip(RoundedCornerShape(4.dp)).background(scoreColor(f.score)))
                     }
-                    NumText(f.score.toString(), 12.sp, scoreColor(f.score), modifier = Modifier.width(34.dp).padding(start = 8.dp))
-                    Label("權重 ${f.weight}", Modifier.width(52.dp))
+                    NumText(f.score.toString(), 12.sp, scoreColor(f.score), modifier = Modifier.width(36.dp).padding(start = 8.dp))
+                    Label("權重 ${f.weight}", Modifier.width(56.dp))
                 }
-                Label(f.note, Modifier.padding(start = 40.dp))
+                Text(f.note, color = C.Muted, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(start = 52.dp, top = 2.dp))
             }
         }
-        Label(
-            "依趨勢、動能、估值、52 週位置、法人籌碼、大盤環境與波動度計算的參考分數，" +
-                "缺資料的項目不計入。僅供參考，不構成投資建議，請自行判斷並控制風險。" +
-                " 更新 " + Fmt.time(r.at),
-            Modifier.padding(top = 8.dp),
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Label("更新 " + Fmt.time(r.at), Modifier.weight(1f))
+            Text(if (AppState.showScoreBadge) "標題顯示指數 ✓" else "標題顯示指數", color = C.Primary, fontSize = 12.sp,
+                modifier = Modifier.clickable { AppState.updateShowScoreBadge(!AppState.showScoreBadge) }.padding(4.dp))
+        }
+        Text(
+            "依趨勢、動能、估值、52 週位置、法人籌碼、分析師、大盤環境與波動度計算的參考分數，缺資料的項目不計入。僅供參考，不構成投資建議。",
+            color = C.Muted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp),
         )
+    }
+}
+
+@Composable
+private fun FactorLine(tag: String, f: InvestAnalysis.Factor, color: Color) {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.Top) {
+        Text(tag, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+            modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(color.copy(alpha = 0.8f)).padding(horizontal = 6.dp, vertical = 2.dp))
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(f.name + " " + f.score + " 分", color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(f.note, color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+    }
+}
+
+/** 個股頁標題列的投資分析指數徽章 */
+@Composable
+fun ScoreBadge(q: Quote) {
+    if (!AppState.showScoreBadge) return
+    val r = InvestAnalysis.results[q.symbol]
+    LaunchedEffect(q.symbol) { if (InvestAnalysis.cached(q.symbol) == null) runCatching { InvestAnalysis.analyze(q) } }
+    val color = r?.let { scoreColor(it.score) } ?: C.Muted
+    Row(
+        Modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.18f)).padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("指數 ", color = C.Text2, fontSize = 11.sp, maxLines = 1)
+        NumText(r?.let { "${it.score}%" } ?: "…", 14.sp, color, FontWeight.Bold)
+        r?.let { Text(" " + it.label, color = color, fontSize = 11.sp, maxLines = 1) }
     }
 }
 
