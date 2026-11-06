@@ -379,7 +379,26 @@ private fun ChartBlock(
                         )
                     }
                 }
-                StockChart(h, start, type, mas, sub, base, opt.intraday, levels, slots, bounds)
+                val myTrades = AppState.trades.filter {
+                    it.symbol.equals(q.symbol, true) && (it.type == com.claudeetf.app.data.TradeType.BUY || it.type == com.claudeetf.app.data.TradeType.SELL) &&
+                        it.origin != com.claudeetf.app.data.TradeOrigin.LEGACY
+                }
+                val marks = if (!AppState.showTradeMarks || opt.intraday) emptyList() else myTrades.mapNotNull { t ->
+                    runCatching { java.time.LocalDate.parse(t.date.replace('/', '-').let { d -> d.split('-').let { "%04d-%02d-%02d".format(it[0].toInt(), it[1].toInt(), it[2].toInt()) } }) }
+                        .getOrNull()?.let { com.claudeetf.app.ui.TradeMark(it, t.price.toFloat(), t.type == com.claudeetf.app.data.TradeType.BUY, t.shares) }
+                }
+                StockChart(h, start, type, mas, sub, base, opt.intraday, levels, slots, bounds, marks)
+                if (myTrades.isNotEmpty() && !opt.intraday) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("● 買進", color = com.claudeetf.app.ui.MARK_BUY, fontSize = 11.sp); HGap(8.dp)
+                        Text("● 賣出", color = com.claudeetf.app.ui.MARK_SELL, fontSize = 11.sp); HGap(8.dp)
+                        Label("點 K 棒看當天成交", Modifier.weight(1f))
+                        Text(
+                            if (AppState.showTradeMarks) "我的買賣點 ✓" else "我的買賣點", color = C.Primary, fontSize = 12.sp,
+                            modifier = Modifier.clickable { AppState.updateShowTradeMarks(!AppState.showTradeMarks) }.padding(4.dp),
+                        )
+                    }
+                }
                 }
             }
         }

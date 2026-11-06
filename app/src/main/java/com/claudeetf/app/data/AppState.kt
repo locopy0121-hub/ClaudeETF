@@ -198,6 +198,10 @@ object AppState {
     /** 持股排序（0 市值、1 今日損益、2 今日漲跌、3 報酬率、4 代號） */
     var holdingSort by mutableIntStateOf(0)
     fun updateHoldingSort(i: Int) { holdingSort = i; save() }
+    /** 走勢圖標示我的買賣點 */
+    var showTradeMarks by mutableStateOf(true)
+    fun updateShowTradeMarks(on: Boolean) { showTradeMarks = on; save() }
+
     /** 首頁期貨卡片商品：TXF 台指、MXF 小台、EXF 電子、FXF 金融 */
     var futProduct by mutableStateOf("TXF")
     fun updateFutProduct(p: String) { futProduct = p; save() }
@@ -358,6 +362,7 @@ object AppState {
         holdingSort = p.getInt("holdingSort", 0)
         futProduct = p.getString("futProduct", "TXF") ?: "TXF"
         futSource = p.getString("futSource", "auto") ?: "auto"
+        showTradeMarks = p.getBoolean("showTradeMarks", true)
         heatSize = p.getInt("heatSize", 0)
         heatColor = p.getInt("heatColor", 0)
         heatLabel = p.getInt("heatLabel", 0)
@@ -538,6 +543,7 @@ object AppState {
             .putInt("holdingSort", holdingSort)
             .putString("futProduct", futProduct)
             .putString("futSource", futSource)
+            .putBoolean("showTradeMarks", showTradeMarks)
             .putInt("heatSize", heatSize)
             .putInt("heatColor", heatColor)
             .putInt("heatLabel", heatLabel)

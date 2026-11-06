@@ -98,6 +98,8 @@ fun StockChart(
     slots: Int = 0,
     /** 固定 Y 軸上下限（台股分時用漲停、跌停價） */
     yBounds: Pair<Float, Float>? = null,
+    /** 我的買賣點（依成交日期對到 K 棒） */
+    marks: List<TradeMark> = emptyList(),
 ) {
     val n = h.closes.size
     val from = start.coerceIn(0, maxOf(0, n - 2))
@@ -119,6 +121,19 @@ fun StockChart(
     val pattern = if (intraday) "M/d HH:mm" else "yyyy/M/d"
     fun date(i: Int) = Instant.ofEpochMilli(h.times[i]).atZone(ZoneId.of("Asia/Taipei")).format(DateTimeFormatter.ofPattern(pattern))
 
+    // 買賣點對應的 K 棒：成交日當天那根；遇非交易日放到之後第一根
+    val markAt = remember(h, marks) {
+        if (intraday || marks.isEmpty()) emptyMap() else {
+            val tpe = ZoneId.of("Asia/Taipei")
+            val days = h.times.map { Instant.ofEpochMilli(it).atZone(tpe).toLocalDate() }
+            marks.mapNotNull { m ->
+                val k = days.indexOfFirst { !it.isBefore(m.date) }
+                // 成交日早於資料起點（或對到的 K 棒差太多天，如週 K）就不標
+                if (k < 0 || java.time.temporal.ChronoUnit.DAYS.between(m.date, days[k]) > 8) null else k to m
+            }.groupBy({ it.first }, { it.second })
+        }
+    }
+
     // ---- 讀值列 ----
     val i = sel ?: (n - 1)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -136,6 +151,12 @@ fun StockChart(
             }
             Mini("收", h.closes[i])
             if (h.volumes.size == n) Label("量 " + Fmt.num(h.volumes[i].toDouble()))
+        }
+        markAt[i]?.let { ms ->
+            Text(
+                ms.joinToString("　") { (if (it.buy) "買 " else "賣 ") + Fmt.shares(it.shares) + " 股 @ " + Fmt.price(it.price.toDouble()) },
+                color = C.Text2, fontSize = 11.sp, maxLines = 1,
+            )
         }
         if (mas.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -210,6 +231,23 @@ fun StockChart(
                 drawPath(path, lineColor, style = Stroke(width = 2.dp.toPx()))
             }
             maLines.forEach { (m, l) -> drawSeries(l, from, n, ::x, ::y, MA_COLORS[m] ?: C.Muted) }
+            // 我的買賣點：買進「B」在成交價下方、賣出「S」在成交價上方
+            markAt.forEach { (k, ms) ->
+                if (k < from) return@forEach
+                ms.forEach { m ->
+                    val col = if (m.buy) MARK_BUY else MARK_SELL
+                    val cy = y(m.price.coerceIn(lo, hi))
+                    val r = 7.dp.toPx()
+                    val cy2 = if (m.buy) cy + r + 2 else cy - r - 2
+                    drawLine(col, Offset(x(k), cy), Offset(x(k), cy2), 1.5f)
+                    drawCircle(col, r, Offset(x(k), cy2))
+                    val tp = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                        color = android.graphics.Color.WHITE; textSize = 9.sp.toPx(); textAlign = android.graphics.Paint.Align.CENTER
+                        isFakeBoldText = true
+                    }
+                    drawContext.canvas.nativeCanvas.drawText(if (m.buy) "B" else "S", x(k), cy2 + tp.textSize / 3, tp)
+                }
+            }
             sel?.let { s -> crosshair(x(s), y(h.closes[s])) }
 
             // ---- 價格座標與標線數值（讓三關、昨收與走勢的相對位置一目了然） ----
@@ -319,6 +357,12 @@ private fun Mini(label: String, v: Float) {
 
 /** 圖上的參考價位 */
 data class KeyLevel(val label: String, val value: Float, val color: Color)
+
+/** 走勢圖上的我的買賣點 */
+data class TradeMark(val date: java.time.LocalDate, val price: Float, val buy: Boolean, val shares: Double)
+
+val MARK_BUY = Color(0xFF3B82F6)
+val MARK_SELL = Color(0xFFF59E0B)
 
 private fun indexAt(px: Float, width: Float, from: Int, count: Int): Int {
     if (count <= 0 || width <= 0f) return from
