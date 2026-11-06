@@ -289,34 +289,67 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     }
 }
 
-/** ETF 類型與配息方式標籤 */
+/** ETF 類型與配息方式標籤；點標籤看說明，點配息看紀錄與年化配息率 */
 @Composable
 private fun EtfTagRow(q: Quote) {
-    if (!com.claudeetf.app.data.EtfTags.isEtf(q)) return
-    LaunchedEffect(q.symbol) { com.claudeetf.app.data.EtfTags.ensureFreq(q) }
-    val tags = com.claudeetf.app.data.EtfTags.typeTags(q)
-    val freq = com.claudeetf.app.data.EtfTags.divFreq[q.symbol]
+    val T = com.claudeetf.app.data.EtfTags
+    if (!T.isEtf(q)) return
+    LaunchedEffect(q.symbol) { T.ensureFreq(q) }
+    val tags = T.typeTags(q)
+    val freq = T.divFreq[q.symbol]
+    var info by remember { mutableStateOf<String?>(null) }
     Row(
         Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        EtfChip("ETF", C.Primary)
+        EtfChip("ETF", C.Primary) { info = "ETF" }
         tags.forEach { t ->
             EtfChip(t.text, when (t.kind) {
                 com.claudeetf.app.data.EtfTags.Kind.STYLE -> if (t.text == "主動式") androidx.compose.ui.graphics.Color(0xFFFF9800) else C.Text2
                 else -> androidx.compose.ui.graphics.Color(0xFF26A69A)
-            })
+            }) { info = t.text }
         }
-        EtfChip(freq ?: "配息…", if (freq == null || freq == "不配息" || freq == "尚未配息") C.Muted else androidx.compose.ui.graphics.Color(0xFFE6C34A))
+        val y = T.annualYield(q.symbol, q.price)
+        EtfChip(
+            (freq ?: "配息…") + (y?.let { " · 年化 " + Fmt.num(it, 1) + "%" } ?: ""),
+            if (freq == null || freq == "不配息" || freq == "尚未配息") C.Muted else androidx.compose.ui.graphics.Color(0xFFE6C34A),
+        ) { info = "__div" }
+    }
+    info?.let { key ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { info = null },
+            containerColor = C.Card,
+            title = { Text(if (key == "__div") "配息方式：" + (freq ?: "載入中") else key, color = C.Text, fontSize = 16.sp) },
+            text = {
+                if (key != "__div") Text(T.explain(key), color = C.Text2, fontSize = 14.sp)
+                else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val list = T.divs[q.symbol].orEmpty()
+                    val y = T.annualYield(q.symbol, q.price)
+                    if (y != null) Text("年化配息率約 " + Fmt.num(y, 2) + "%（最近一次 × 每年 " + T.perYear(freq) + " 次 ÷ 現價）", color = C.Text, fontSize = 13.sp)
+                    if (list.isEmpty()) Label(if (freq == null) "載入中…" else "查無配息紀錄")
+                    val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd")
+                    val zone = java.time.ZoneId.of(if (q.market == Market.TW) "Asia/Taipei" else "America/New_York")
+                    list.take(12).forEach { d ->
+                        Row {
+                            Text("除息 " + java.time.Instant.ofEpochMilli(d.time).atZone(zone).format(fmt), Modifier.weight(1f), color = C.Text2, fontSize = 13.sp)
+                            Text(q.market.currency + " " + Fmt.num(d.amount, 4).trimEnd('0').trimEnd('.'), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Label("資料來源：Yahoo Finance；實際以投信公告為準。")
+                }
+            },
+            confirmButton = { Text("關閉", color = C.Primary, fontSize = 14.sp, modifier = Modifier.clickable { info = null }.padding(12.dp)) },
+        )
     }
 }
 
 @Composable
-private fun EtfChip(text: String, color: androidx.compose.ui.graphics.Color) {
+private fun EtfChip(text: String, color: androidx.compose.ui.graphics.Color, onClick: () -> Unit = {}) {
     Text(
         text,
         modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(color.copy(alpha = 0.16f))
-            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp),
+            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(6.dp)).clickable(onClick = onClick)
+            .padding(horizontal = 7.dp, vertical = 2.dp),
         color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
     )
 }

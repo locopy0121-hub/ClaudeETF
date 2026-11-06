@@ -15,6 +15,35 @@ object EtfTags {
 
     /** symbol → 配息方式（背景載入後更新畫面） */
     val divFreq = mutableStateMapOf<String, String>()
+    /** symbol → 配息紀錄（新到舊） */
+    val divs = mutableStateMapOf<String, List<YahooExtra.Dividend>>()
+
+    /** 一年配息次數 */
+    fun perYear(freq: String?) = when (freq) { "月配" -> 12; "季配" -> 4; "半年配" -> 2; "年配" -> 1; else -> 0 }
+
+    /** 年化配息率（%）：最近一次配息 × 每年次數 ÷ 現價 */
+    fun annualYield(symbol: String, price: Double): Double? {
+        val last = divs[symbol]?.firstOrNull() ?: return null
+        val k = perYear(divFreq[symbol]); if (k == 0 || price <= 0) return null
+        return last.amount * k / price * 100
+    }
+
+    /** 標籤說明 */
+    fun explain(text: String): String = when (text) {
+        "ETF" -> "指數股票型基金，可像股票一樣在交易所買賣，一次持有一籃子標的。"
+        "主動式" -> "由經理人主動選股、調整持股，目標是勝過指標；持股每日可能變動，費用通常較高。"
+        "被動式" -> "依指數成分股與權重被動追蹤，持股透明、費用較低。"
+        "市值型" -> "依公司市值加權，跟著大盤走，偏長期累積資產。"
+        "高股息" -> "選股以殖利率、配息穩定為主，追求現金流；股價成長性通常較市值型低。"
+        "主題型" -> "集中投資特定產業或主題（如半導體、AI、ESG），波動較大。"
+        "股票型" -> "主要投資股票的 ETF。"
+        "債券型" -> "投資公債或公司債，波動較低、受利率影響大；債券 ETF 證交稅停徵至 2026/12/31。"
+        "槓桿型" -> "追蹤指數單日報酬的倍數，長期持有會有耗損，適合短線。"
+        "反向型" -> "追蹤指數單日反向報酬，用於避險或短線，長期持有會有耗損。"
+        "期貨/商品", "商品" -> "透過期貨追蹤商品或指數，有轉倉成本，與現貨走勢可能有差距。"
+        "海外" -> "投資海外市場，配息可能屬海外所得，另需注意匯率風險。"
+        else -> ""
+    }
     private val loading = HashSet<String>()
 
     fun isEtf(q: Quote) = q.isEtf || (q.market == Market.TW && q.symbol.startsWith("00"))
@@ -86,12 +115,13 @@ object EtfTags {
 
     suspend fun ensureFreq(q: Quote) {
         if (!isEtf(q) || divFreq.containsKey(q.symbol) || !loading.add(q.symbol)) return
-        fromName(q.name)?.let { divFreq[q.symbol] = it; return }
+        fromName(q.name)?.let { divFreq[q.symbol] = it }
         val f = withContext(Dispatchers.IO) {
             runCatching { YahooExtra.dividends(StockInfoRepo.yahooSymbol(q)) }.getOrNull()
         }
         if (f == null) { loading.remove(q.symbol); return }
         // 剛上市（名稱或代號判斷不出、且無配息紀錄）顯示「尚未配息」
-        divFreq[q.symbol] = if (f.isEmpty()) "尚未配息" else freqOf(f.map { it.time })
+        divs[q.symbol] = f.sortedByDescending { it.time }
+        if (!divFreq.containsKey(q.symbol)) divFreq[q.symbol] = if (f.isEmpty()) "尚未配息" else freqOf(f.map { it.time })
     }
 }
