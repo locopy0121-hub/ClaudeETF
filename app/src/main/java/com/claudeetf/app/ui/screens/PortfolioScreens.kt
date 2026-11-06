@@ -702,6 +702,8 @@ fun AnalysisScreen(nav: NavController) {
                     }
                 }
             }
+            concentrationSection()
+            statsSection()
             item {
                 Card(padding = 14.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -795,6 +797,58 @@ fun AttachmentThumb(name: String, onRemove: (() -> Unit)? = null) {
                     contentScale = androidx.compose.ui.layout.ContentScale.FillWidth,
                 )
             }
+        }
+    }
+}
+
+// ---------------- 集中度與交易統計 ----------------
+
+private fun androidx.compose.foundation.lazy.LazyListScope.concentrationSection() {
+    val c = com.claudeetf.app.data.Insights.concentration() ?: return
+    item { SectionTitle("集中度與風險", "等效 " + Fmt.num(c.effectiveN, 1) + " 檔") }
+    item {
+        Card(padding = 14.dp) {
+            Row {
+                Column(Modifier.weight(1f)) { Label("最大持股"); NumText(Fmt.num(c.top1, 1) + "%", 16.sp, weight = FontWeight.Bold) }
+                Column(Modifier.weight(1f)) { Label("前三大"); NumText(Fmt.num(c.top3, 1) + "%", 16.sp, weight = FontWeight.Bold) }
+                Column(Modifier.weight(1f)) { Label("美元資產"); NumText(Fmt.num(c.usd, 1) + "%", 16.sp, weight = FontWeight.Bold) }
+                Column(Modifier.weight(1f)) { Label("現金"); NumText(Fmt.num(c.cash, 1) + "%", 16.sp, weight = FontWeight.Bold) }
+            }
+            c.top.take(5).forEach { (sym, pct) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(sym + " " + (AppState.quote(sym)?.name ?: ""), Modifier.width(130.dp), color = C.Text, fontSize = 12.sp, maxLines = 1)
+                    Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Line)) {
+                        Box(
+                            Modifier.fillMaxWidth((pct / 100).toFloat().coerceIn(0f, 1f)).fillMaxHeight()
+                                .background(if (pct >= 25) C.Tw else C.Primary)
+                        )
+                    }
+                    NumText(Fmt.num(pct, 1) + "%", 12.sp, modifier = Modifier.width(52.dp).padding(start = 6.dp))
+                }
+            }
+            if (c.warnings.isEmpty()) Label("目前沒有明顯的集中風險。", color = C.Primary)
+            c.warnings.forEach { w -> Text("⚠ " + w, color = C.Text2, fontSize = 12.sp, lineHeight = 18.sp) }
+        }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.statsSection() {
+    val s = com.claudeetf.app.data.Insights.tradeStats() ?: return
+    item { SectionTitle("交易統計", "已賣出 ${s.closed} 筆") }
+    item {
+        Card(padding = 14.dp) {
+            Row {
+                Column(Modifier.weight(1f)) { Label("勝率"); NumText(Fmt.num(s.winRate, 0) + "%", 16.sp, weight = FontWeight.Bold) }
+                Column(Modifier.weight(1f)) { Label("獲利因子"); NumText(s.profitFactor?.let { Fmt.num(it, 2) } ?: "—", 16.sp, weight = FontWeight.Bold) }
+                Column(Modifier.weight(1f)) { Label("平均持有"); NumText(s.avgHoldDays?.let { Fmt.num(it, 0) + " 天" } ?: "—", 16.sp, weight = FontWeight.Bold) }
+            }
+            KeyValue("獲利／虧損筆數", "${s.wins} / ${s.losses}")
+            KeyValue("平均獲利", mask(Fmt.signed(s.avgWin)), Trend.fg(s.avgWin))
+            KeyValue("平均虧損", mask(Fmt.signed(s.avgLoss)), Trend.fg(s.avgLoss))
+            s.best?.let { KeyValue("最大單筆獲利", it.first + " " + mask(Fmt.signed(it.second)), Trend.fg(it.second)) }
+            s.worst?.let { KeyValue("最大單筆虧損", it.first + " " + mask(Fmt.signed(it.second)), Trend.fg(it.second)) }
+            KeyValue("累計已實現", mask(Fmt.signed(s.totalRealized)), Trend.fg(s.totalRealized))
+            Label("獲利因子＝總獲利 ÷ 總虧損，大於 1 代表賺多賠少；平均持有天數以先進先出計算，不含期初持股。")
         }
     }
 }

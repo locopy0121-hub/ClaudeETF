@@ -143,6 +143,7 @@ fun SearchScreen(nav: NavController) {
         t.origin != TradeOrigin.LEGACY && (t.symbol.contains(text, true) || t.note.contains(text, true) ||
             (AppState.quote(t.symbol)?.name?.contains(text, true) == true))
     }.take(20)
+    val noteHits = if (text.isEmpty()) emptyList() else AppState.notes.entries.filter { it.value.first.contains(text, true) }.map { it.key }
     val feats = if (text.isEmpty()) features else features.filter { it.name.contains(text, true) || it.keywords.contains(text, true) }
     val canAdd = text.isNotEmpty() && text.all { it.isLetterOrDigit() || it == '.' } && !AppState.isWatched(text.uppercase())
 
@@ -176,6 +177,19 @@ fun SearchScreen(nav: NavController) {
                 item { SectionTitle("自選", "${quotes.size}") }
                 items(quotes, key = { "q" + it.symbol }) { qq -> QuoteRow(qq) { nav.navigate(Routes.stock(qq.symbol)) } }
             }
+            if (noteHits.isNotEmpty()) {
+                item { SectionTitle("筆記", "${noteHits.size}") }
+                items(noteHits, key = { "n$it" }) { sym ->
+                    val n = AppState.notes[sym]?.first ?: ""
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Card)
+                            .clickable { nav.navigate(Routes.stock(sym)) }.padding(12.dp),
+                    ) {
+                        Text(sym + " " + (AppState.quote(sym)?.name ?: ""), color = C.Text, fontSize = 14.sp)
+                        Label(n.replace("\n", " ").take(80))
+                    }
+                }
+            }
             if (trades.isNotEmpty()) {
                 item { SectionTitle("交易紀錄", "${trades.size}") }
                 items(trades, key = { "t" + it.id }) { t ->
@@ -202,7 +216,7 @@ fun SearchScreen(nav: NavController) {
                     }
                 }
             }
-            if (text.isNotEmpty() && quotes.isEmpty() && trades.isEmpty() && feats.isEmpty() && !canAdd) {
+            if (text.isNotEmpty() && quotes.isEmpty() && trades.isEmpty() && noteHits.isEmpty() && feats.isEmpty() && !canAdd) {
                 item { Label("找不到「$text」") }
             }
         }

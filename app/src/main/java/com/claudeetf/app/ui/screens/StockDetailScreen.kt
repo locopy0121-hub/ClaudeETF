@@ -322,6 +322,7 @@ private fun LazyListScope.overviewTab(q: Quote, fund: Load<Fundamentals>) {
     }
     if (holding != null) item { LotsCard(q) }
     item { MarksCard(q) }
+    item { NoteCard(q) }
     when (fund) {
         is Load.Loading -> loading("載入基本資料中…")
         is Load.Err -> showError(fund.message)
@@ -857,4 +858,40 @@ private fun LazyListScope.peersSection(nav: NavController, peers: Load<List<Stoc
         }
     }
     item { Label("由 Yahoo Finance 依相關性推薦，點擊加入自選並開啟", Modifier.padding(top = 4.dp)) }
+}
+
+/** 個股筆記：投資理由、觀察重點、檢討；離開輸入框即儲存 */
+@Composable
+private fun NoteCard(q: Quote) {
+    val saved = AppState.notes[q.symbol]
+    var editing by remember { mutableStateOf(false) }
+    var text by remember(q.symbol, saved) { mutableStateOf(saved?.first ?: "") }
+    Card(padding = 12.dp) {
+        Row(Modifier.fillMaxWidth().clickable { if (editing) AppState.setNote(q.symbol, text); editing = !editing },
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("我的筆記", Modifier.weight(1f), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Label(if (editing) "完成" else if (saved == null) "新增" else "編輯")
+        }
+        if (editing) {
+            OutlinedTextField(
+                text, { text = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
+                placeholder = { Text("為什麼買？觀察什麼？什麼情況會賣？") }, colors = fieldColors(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f)) { PrimaryButton("儲存") { AppState.setNote(q.symbol, text); editing = false } }
+                Box(Modifier.weight(1f)) {
+                    PrimaryButton("插入今天日期") {
+                        text = (if (text.isBlank()) "" else text.trimEnd() + "\n\n") +
+                            java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd")) + "："
+                    }
+                }
+            }
+        } else if (saved != null) {
+            Text(saved.first, color = C.Text2, fontSize = 13.sp, lineHeight = 20.sp, maxLines = 8,
+                overflow = TextOverflow.Ellipsis)
+            Label("更新於 " + Fmt.time(saved.second))
+        } else {
+            Label("記下買進理由與停利停損計畫，之後回顧更客觀。")
+        }
+    }
 }

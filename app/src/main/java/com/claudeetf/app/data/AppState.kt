@@ -111,6 +111,13 @@ object AppState {
     val dcaPlans = mutableStateListOf<DcaPlan>()
     val groups = mutableStateListOf<WatchGroup>()
     val marks = mutableStateMapOf<String, PriceMark>()
+    /** 個股筆記：代號 → (內容, 更新時間) */
+    val notes = mutableStateMapOf<String, Pair<String, Long>>()
+
+    fun setNote(symbol: String, text: String) {
+        if (text.isBlank()) notes.remove(symbol) else notes[symbol] = text to System.currentTimeMillis()
+        save()
+    }
     /** 代號 → 目標配置 %（再平衡用） */
     val targets = mutableStateMapOf<String, Double>()
     /** 最近觸發的提醒（新到舊，最多 30 筆） */
@@ -222,6 +229,13 @@ object AppState {
                 }
             }
         }
+        notes.clear()
+        p.getString("notes", null)?.let { json ->
+            runCatching {
+                val o = JSONObject(json)
+                o.keys().forEach { k -> val n = o.getJSONObject(k); notes[k] = n.getString("x") to n.optLong("t") }
+            }
+        }
         marks.clear()
         p.getString("marks", null)?.let { json ->
             runCatching {
@@ -307,6 +321,7 @@ object AppState {
                         .put("acc", it.account).put("on", it.enabled).put("done", it.lastDone).put("ntf", it.lastNotified))
                 }
             }.toString())
+            .putString("notes", JSONObject().apply { notes.forEach { (k, v) -> put(k, JSONObject().put("x", v.first).put("t", v.second)) } }.toString())
             .putString("marks", JSONObject().apply {
                 marks.forEach { (k, m) ->
                     put(k, JSONObject().apply {
