@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.draw.clip
@@ -288,6 +289,38 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     }
 }
 
+/** ETF 類型與配息方式標籤 */
+@Composable
+private fun EtfTagRow(q: Quote) {
+    if (!com.claudeetf.app.data.EtfTags.isEtf(q)) return
+    LaunchedEffect(q.symbol) { com.claudeetf.app.data.EtfTags.ensureFreq(q) }
+    val tags = com.claudeetf.app.data.EtfTags.typeTags(q)
+    val freq = com.claudeetf.app.data.EtfTags.divFreq[q.symbol]
+    Row(
+        Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        EtfChip("ETF", C.Primary)
+        tags.forEach { t ->
+            EtfChip(t.text, when (t.kind) {
+                com.claudeetf.app.data.EtfTags.Kind.STYLE -> if (t.text == "主動式") androidx.compose.ui.graphics.Color(0xFFFF9800) else C.Text2
+                else -> androidx.compose.ui.graphics.Color(0xFF26A69A)
+            })
+        }
+        EtfChip(freq ?: "配息…", if (freq == null || freq == "不配息" || freq == "尚未配息") C.Muted else androidx.compose.ui.graphics.Color(0xFFE6C34A))
+    }
+}
+
+@Composable
+private fun EtfChip(text: String, color: androidx.compose.ui.graphics.Color) {
+    Text(
+        text,
+        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(color.copy(alpha = 0.16f))
+            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp),
+        color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+    )
+}
+
 @Composable
 private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -296,6 +329,7 @@ private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info
             MarketTag(q.market); HGap(6.dp)
             Label(StockInfoRepo.yahooSymbol(q) + " · " + q.market.currency)
         }
+        EtfTagRow(q)
         Row(verticalAlignment = Alignment.Bottom) {
             // 股價顏色依漲跌：漲紅、平黃、跌綠（依配色設定）
             NumText(if (q.price > 0) Fmt.price(q.price) else "—", 32.sp, if (q.price > 0 && q.prevClose > 0) Trend.price(q.change) else C.Text, FontWeight.Bold)
