@@ -174,4 +174,34 @@ object TpexOpenData {
         }
         out
     }
+
+    /** 上櫃公司基本資料：代號 → 欄位（含實收資本額） */
+    fun companies(): Map<String, TwOpenData.Company> = firstOf(listOf("/mopsfin_t187ap03_O", "/t187ap03_O")) { arr ->
+        val out = HashMap<String, TwOpenData.Company>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val c = (o.like(listOf("公司代號")) ?: code(o)) ?: continue
+            val f = ArrayList<Pair<String, String>>()
+            fun add(label: String, v: String?) { if (!v.isNullOrBlank()) f += label to v }
+            val name = o.like(listOf("公司名稱")) ?: o.like(listOf("CompanyName"))
+            add("公司名稱", name)
+            add("董事長", o.like(listOf("董事長")))
+            add("總經理", o.like(listOf("總經理")))
+            add("成立日期", o.like(listOf("成立日期"))?.let { roc(it) })
+            add("上櫃日期", o.like(listOf("上櫃日期"))?.let { roc(it) })
+            val cap = num(o.like(listOf("實收資本額")))
+            cap?.let { add("實收資本額", "%,.2f 億元".format(java.util.Locale.US, it / 1e8)) }
+            add("網址", o.like(listOf("網址")))
+            add("地址", o.like(listOf("地址"), listOf("英文")))
+            out[c] = TwOpenData.Company(f, cap, name, "上櫃")
+        }
+        out
+    }
+
+    private fun roc(s: String): String {
+        val d = s.filter { it.isDigit() }
+        if (d.length < 6) return s
+        val y = d.dropLast(4).toIntOrNull() ?: return s
+        return (if (y < 1000) y + 1911 else y).toString() + "/" + d.takeLast(4).take(2) + "/" + d.takeLast(2)
+    }
 }

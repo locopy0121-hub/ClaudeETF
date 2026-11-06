@@ -148,7 +148,13 @@ object TwOpenData {
     }
 
     // ---------- 公司基本資料 ----------
-    data class Company(val fields: List<Pair<String, String>>)
+    data class Company(
+        val fields: List<Pair<String, String>>,
+        /** 實收資本額（元） */
+        val capital: Double? = null,
+        val name: String? = null,
+        val market: String = "上市",
+    )
 
     private val industryCodes = mapOf(
         "01" to "水泥", "02" to "食品", "03" to "塑膠", "04" to "紡織纖維", "05" to "電機機械",
@@ -187,7 +193,7 @@ object TwOpenData {
         add("實收資本額", o.find("實收資本額")?.let { s -> toNum(s)?.let { "%,.0f 億元".format(Locale.US, it / 1e8) } ?: s })
         add("網址", o.find("網址"))
         add("地址", o.find("地址"))
-        return Company(out)
+        return Company(out, o.find("實收資本額")?.let { toNum(it) }, o.find("公司名稱"))
     }
 
     /** 民國日期 0760221 / 76/02/21 → 1987/02/21 */

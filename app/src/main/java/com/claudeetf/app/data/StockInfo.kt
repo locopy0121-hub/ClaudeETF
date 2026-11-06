@@ -25,6 +25,19 @@ data class Fundamentals(
     val profile: List<InfoItem>,
     val summary: String?,
     val analyst: List<InfoItem>,
+    /** 公司分頁表頭：發行公司與最新資本額（ETF 為基金規模） */
+    val header: CompanyHeader? = null,
+)
+
+data class CompanyHeader(
+    /** 「發行公司」或「發行投信」 */
+    val role: String,
+    val name: String,
+    /** 「實收資本額」、「基金規模」或「市值」 */
+    val capitalLabel: String,
+    val capitalText: String,
+    val note: String,
+    val tags: List<String> = emptyList(),
 )
 
 data class DividendInfo(
@@ -117,7 +130,7 @@ object StockInfoRepo {
         val s: JSONObject? = runCatching {
             YahooExtra.summary(
                 ys,
-                listOf("summaryDetail", "defaultKeyStatistics", "financialData", "calendarEvents", "assetProfile", "earnings", "price"),
+                listOf("summaryDetail", "defaultKeyStatistics", "financialData", "calendarEvents", "assetProfile", "earnings", "price", "fundProfile"),
             )
         }.getOrNull()
         val sd = s?.optJSONObject("summaryDetail")
@@ -131,7 +144,8 @@ object StockInfoRepo {
         val tw = q.market == Market.TW
         val twVal = if (tw) runCatching { TwOpenData.valuation(q.symbol) }.getOrNull() else null
         val twRev = if (tw) runCatching { TwOpenData.monthlyRevenue(q.symbol) }.getOrNull() else null
-        val twCo = if (tw) runCatching { TwOpenData.company(q.symbol) }.getOrNull() else null
+        val twCo = if (tw) (runCatching { TwOpenData.company(q.symbol) }.getOrNull()
+            ?: runCatching { com.claudeetf.app.data.remote.TpexOpenData.companies()[q.symbol] }.getOrNull()) else null
 
         if (s == null && twVal == null && twRev == null && twCo == null) {
             throw IllegalStateException("無法取得 ${q.symbol} 的基本資料")
@@ -221,7 +235,46 @@ object StockInfoRepo {
             fd.fmt("numberOfAnalystOpinions")?.let { InfoItem("分析師人數", it) },
         )
 
-        return Fundamentals(overview, financials, quarterly, yearly, profile, summary, analyst)
+        // ---- 表頭：發行公司與最新資本額 ----
+        val isEtf = EtfTags.isEtf(q) || pr?.optString("quoteType") == "ETF"
+        val fp = s?.optJSONObject("fundProfile")
+        fun raw(o: org.json.JSONObject?, k: String): Double? = o?.optJSONObject(k)?.optDouble("raw")?.takeIf { !it.isNaN() && it > 0 }
+        fun yi(v: Double, ccy: String) = if (ccy == "TWD") "%,.2f 億元".format(Locale.US, v / 1e8)
+            else if (v >= 1e9) "$ccy " + "%,.2f B".format(Locale.US, v / 1e9) else "$ccy " + "%,.1f M".format(Locale.US, v / 1e6)
+        val header = if (isEtf) {
+            val issuer = EtfIssuers.of(q.name) ?: fp?.optString("family")?.ifBlank { null }
+            val aum = raw(sd, "totalAssets") ?: raw(ks, "totalAssets") ?: raw(ks, "netAssets")
+            val ccy = if (tw) "TWD" else "US$"
+            if (issuer != null || aum != null) {
+                val exp = raw(fp?.optJSONObject("feesExpensesInvestment"), "annualReportExpenseRatio")
+                val inception = ks?.optJSONObject("fundInceptionDate")?.optString("fmt")?.ifBlank { null }
+                CompanyHeader(
+                    "發行投信", issuer ?: "—", "基金規模", aum?.let { yi(it, ccy) } ?: "—",
+                    (if (aum != null) "最新淨資產，資料來源 Yahoo Finance" else "暫無基金規模資料"),
+                    listOfNotNull(inception?.let { "成立 $it" }, exp?.let { "費用率 " + "%.2f%%".format(Locale.US, it * 100) },
+                        fp?.optString("categoryName")?.ifBlank { null }),
+                )
+            } else null
+        } else if (twCo != null) {
+            CompanyHeader(
+                "發行公司", twCo.name ?: q.name, "實收資本額", twCo.capital?.let { yi(it, "TWD") } ?: "—",
+                twCo.market + "公司 · 資料來源 " + (if (twCo.market == "上櫃") "櫃買中心" else "證交所") + " OpenAPI（最新公告）",
+                listOfNotNull(twCo.capital?.let { "發行約 " + "%,.2f".format(Locale.US, it / 10 / 1e8) + " 億股" }),
+            )
+        } else if (pr != null || ap != null) {
+            val mc = raw(sd, "marketCap") ?: raw(pr, "marketCap")
+            CompanyHeader("發行公司", pr?.optString("longName")?.ifBlank { null } ?: q.name, "市值",
+                mc?.let { yi(it, if (tw) "TWD" else "US$") } ?: "—", "美股不揭露實收資本額，以市值表示 · Yahoo Finance",
+                listOfNotNull(ap?.optString("sector")?.ifBlank { null }))
+        } else null
+
+        // ETF 補上發行投信、基金類別
+        if (isEtf && profile.none { it.label == "發行投信" }) {
+            header?.takeIf { it.name != "—" }?.let { profile.add(0, InfoItem("發行投信", it.name)) }
+            fp?.optString("legalType")?.ifBlank { null }?.let { profile += InfoItem("基金類型", it) }
+        }
+
+        return Fundamentals(overview, financials, quarterly, yearly, profile, summary, analyst, header)
     }
 
     suspend fun dividends(q: Quote): DividendInfo = withContext(Dispatchers.IO) {

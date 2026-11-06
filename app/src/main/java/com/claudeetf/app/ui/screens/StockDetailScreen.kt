@@ -734,13 +734,33 @@ private fun LazyListScope.companyTab(fund: Load<Fundamentals>) {
         is Load.Err -> showError(fund.message)
         is Load.Ok -> {
             val f = fund.value
-            if (f.profile.isEmpty() && f.summary == null) item { Label("暫無公司資料") }
+            f.header?.let { h -> item { CompanyHeaderCard(h) } }
+            if (f.profile.isEmpty() && f.summary == null && f.header == null) item { Label("暫無公司資料") }
             infoList(f.profile)
             f.summary?.let { s ->
                 item { SectionTitle("公司簡介") }
                 item { Text(s, color = C.Text2, fontSize = 13.sp, lineHeight = 20.sp) }
             }
         }
+    }
+}
+
+/** 公司分頁表頭：發行公司／投信與最新資本額（ETF 為基金規模） */
+@Composable
+private fun CompanyHeaderCard(h: com.claudeetf.app.data.CompanyHeader) {
+    Card(padding = 14.dp) {
+        Label(h.role)
+        Text(h.name, color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp)
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Label(h.capitalLabel + "（最新）")
+                NumText(h.capitalText, 22.sp, C.Primary, FontWeight.Bold)
+            }
+        }
+        if (h.tags.isNotEmpty()) Row(Modifier.padding(top = 8.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) { h.tags.forEach { EtfChip(it, C.Text2) } }
+        Label(h.note, Modifier.padding(top = 6.dp))
     }
 }
 
