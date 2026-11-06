@@ -113,6 +113,14 @@ object TaxRules {
     fun sellTax(symbol: String, amount: Double, date: String, dayTrade: Boolean): Double =
         if (amount <= 0) 0.0 else Math.floor(amount * sellTaxRate(symbol, date, dayTrade).first + 1e-9)
 
+    /** 台股賣出紀錄中，證交稅與規則不符者：(交易, 應為稅額) */
+    fun taxMismatches(): List<Pair<Trade, Double>> = AppState.trades.filter { t ->
+        t.type == TradeType.SELL && t.symbol.firstOrNull()?.isDigit() == true && t.origin != TradeOrigin.LEGACY
+    }.mapNotNull { t ->
+        val expect = sellTax(t.symbol, t.shares * t.price, t.date, looksLikeDayTrade(t.symbol, t.date, t.id))
+        if (kotlin.math.abs(expect - t.tax) >= 1.0) t to expect else null
+    }
+
     /** 同一天已有同代號買進（且非期初）→ 視為現股當沖 */
     fun looksLikeDayTrade(symbol: String, date: String, excludeId: Long = -1): Boolean {
         val norm = date.trim().replace("-", "/")

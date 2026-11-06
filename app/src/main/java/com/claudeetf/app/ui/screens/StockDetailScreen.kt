@@ -1155,9 +1155,17 @@ private fun LazyListScope.tapeTab(q: Quote) {
         }
     }
     item { SectionTitle("逐筆", "最新在上") }
+    item { Segmented(listOf("全部", "大單 ≥50", "外盤", "內盤"), AppState.tapeFilter, { AppState.tapeFilter = it }) }
+    val shown = when (AppState.tapeFilter) {
+        1 -> list.filter { it.lots >= 50 }
+        2 -> list.filter { it.side == 1 }
+        3 -> list.filter { it.side == -1 }
+        else -> list
+    }
+    if (shown.isEmpty()) item { Label("沒有符合的成交", Modifier.padding(vertical = 8.dp)) }
     val tpe = ZoneId.of("Asia/Taipei")
     val fmt = DateTimeFormatter.ofPattern("HH:mm:ss")
-    items(list) { t ->
+    items(shown) { t ->
         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             NumText(Instant.ofEpochMilli(t.time).atZone(tpe).format(fmt), 12.sp, C.Text2, modifier = Modifier.weight(1f))
             NumText(Fmt.price(t.price), 12.sp, Trend.fg(t.price - q.prevClose), modifier = Modifier.weight(1f))

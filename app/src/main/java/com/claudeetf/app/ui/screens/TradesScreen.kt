@@ -62,6 +62,8 @@ fun TradesScreen(nav: NavController) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            val mism = com.claudeetf.app.data.TaxRules.taxMismatches()
+            if (mism.isNotEmpty()) item { TaxCheckCard(mism) }
             item {
                 OutlinedTextField(
                     value = query, onValueChange = { query = it }, singleLine = true,
@@ -169,5 +171,35 @@ private fun TradeRow(t: Trade, onClick: () -> Unit) {
             AppState.realizedById[t.id]?.let { r -> NumText(mask("損益 " + Fmt.signed(r)), 12.sp, Trend.fg(r)) }
             AppState.dividendById[t.id]?.let { d -> NumText(mask("實收 NT$" + Fmt.num(d)), 12.sp, C.Muted) }
         }
+    }
+}
+
+/** 證交稅檢查：列出與規則不符的賣出紀錄，可一鍵修正 */
+@Composable
+private fun TaxCheckCard(list: List<Pair<com.claudeetf.app.data.Trade, Double>>) {
+    var open by remember { mutableStateOf(false) }
+    var msg by remember { mutableStateOf<String?>(null) }
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text("⚠ ${list.size} 筆賣出的證交稅與規則不符", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable { open = !open })
+        Label("ETF 0.1%、股票 0.3%、當沖 0.15%、債券 ETF 停徵，元以下捨去。" + if (open) "" else "點此查看")
+        if (open) {
+            list.forEach { (t, expect) ->
+                Row {
+                    Text(t.date + " " + t.symbol + " " + (com.claudeetf.app.data.AppState.quote(t.symbol)?.name ?: ""),
+                        Modifier.weight(1f), color = C.Text2, fontSize = 12.sp, maxLines = 1)
+                    NumText(Fmt.num(t.tax) + " → " + Fmt.num(expect), 12.sp, C.Primary)
+                }
+            }
+            Text("全部修正", color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable {
+                    val errs = list.mapNotNull { (t, e) -> com.claudeetf.app.data.AppState.updateTrade(t.copy(tax = e)) }
+                    msg = if (errs.isEmpty()) "已修正 ${list.size} 筆，持股與損益已重新計算" else errs.first()
+                }.padding(vertical = 6.dp))
+        }
+        msg?.let { Label(it, color = C.Primary) }
     }
 }

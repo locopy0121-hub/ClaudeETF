@@ -169,6 +169,9 @@ object AppState {
     var watchLayout by mutableStateOf("list")
     fun updateWatchLayout(l: String) { watchLayout = l; save() }
 
+    /** 明細分頁篩選：0 全部、1 大單、2 外盤、3 內盤 */
+    var tapeFilter by mutableIntStateOf(0)
+
     /** 市場頁類股：false 方塊、true 依漲跌排行 */
     var sectorRanked by mutableStateOf(false)
 
