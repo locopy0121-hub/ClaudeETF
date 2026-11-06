@@ -106,6 +106,18 @@ object InvestAnalysis {
         else -> "偏空" to "趨勢與籌碼偏弱，宜降低部位或等待轉強訊號"
     }
 
+    /**
+     * 參考投入比例：本次預計投入資金中，依分數建議先投入多少（其餘分批或保留）。
+     * 偏空 10%、中性偏空 25%、中性 40%、中性偏多 60%、偏多 80%；永遠不建議一次 100%。
+     */
+    fun suggestedRatio(score: Int): Int = when {
+        score >= 70 -> 80
+        score >= 58 -> 60
+        score >= 45 -> 40
+        score >= 33 -> 25
+        else -> 10
+    }
+
     private fun trendFactor(c: List<Float>, price: Double, symbol: String): Factor? {
         if (c.size < 25) return null
         val ma20 = Indicators.sma(c, 20).lastOrNull()?.toDouble()

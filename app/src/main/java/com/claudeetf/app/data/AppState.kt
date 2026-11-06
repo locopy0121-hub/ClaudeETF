@@ -213,6 +213,9 @@ object AppState {
 
     /** 個股頁標題顯示投資分析指數 */
     var showScoreBadge by mutableStateOf(true)
+    /** 每檔預計投入資金（台幣），用來把參考投入比例換算成金額；0 = 未設定 */
+    var investBudget by mutableStateOf(0.0)
+    fun updateInvestBudget(v: Double) { investBudget = v.coerceAtLeast(0.0); save() }
     fun updateShowScoreBadge(on: Boolean) { showScoreBadge = on; save() }
 
     /** 走勢圖標示我的買賣點 */
@@ -381,6 +384,7 @@ object AppState {
         futSource = p.getString("futSource", "auto") ?: "auto"
         showTradeMarks = p.getBoolean("showTradeMarks", true)
         showScoreBadge = p.getBoolean("showScoreBadge", true)
+        investBudget = p.getFloat("investBudget", 0f).toDouble()
         p.getString("newsSources", null)?.let { j ->
             runCatching { val a = JSONArray(j); newsSources.clear(); for (k in 0 until a.length()) newsSources.add(a.getString(k)) }
         }
@@ -572,6 +576,7 @@ object AppState {
             .putString("futSource", futSource)
             .putBoolean("showTradeMarks", showTradeMarks)
             .putBoolean("showScoreBadge", showScoreBadge)
+            .putFloat("investBudget", investBudget.toFloat())
             .putString("newsSources", JSONArray(newsSources.toList()).toString())
             .putString("customFeeds", JSONArray().apply { customFeeds.forEach { put(JSONObject().put("n", it.first).put("u", it.second)) } }.toString())
             .putInt("heatSize", heatSize)

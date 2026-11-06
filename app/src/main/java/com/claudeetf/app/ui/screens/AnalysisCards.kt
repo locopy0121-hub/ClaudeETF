@@ -74,6 +74,7 @@ fun AnalysisCard(q0: Quote) {
         }
         ScoreGauge(r.score)
         Text(r.advice, color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 6.dp))
+        SuggestedInvest(q, r.score)
 
         // 最強與最弱因子：標籤一行、說明一行，避免長句擠在一起
         val best = r.factors.maxBy { it.score }
@@ -163,6 +164,41 @@ fun AnalysisCard(q0: Quote) {
 
 private data class InfoCell(val label: String, val value: String?)
 
+/** 參考投入比例與金額：預計投入資金 × 比例，換算可買股數（台股另顯示張數） */
+@Composable
+private fun SuggestedInvest(q: Quote, score: Int) {
+    val ratio = InvestAnalysis.suggestedRatio(score)
+    var editing by remember { mutableStateOf(false) }
+    var text by remember { mutableStateOf(if (AppState.investBudget > 0) Fmt.num(AppState.investBudget).replace(",", "") else "") }
+    val budget = AppState.investBudget
+    val fx = AppState.fxFor(q.market)
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("參考投入比例", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+            NumText("$ratio%", 18.sp, scoreColor(score), FontWeight.Bold)
+        }
+        if (budget > 0 && q.price > 0) {
+            val amount = budget * ratio / 100
+            val shares = Math.floor(amount / (q.price * fx))
+            Label(
+                "預計投入 NT$" + mask(Fmt.num(budget)) + " × $ratio% ＝ NT$" + mask(Fmt.num(amount)) +
+                    "，約 " + Fmt.shares(shares) + " 股" + (if (q.market == Market.TW && shares >= 1000) "（" + Fmt.num(shares / 1000, 1) + " 張）" else "") +
+                    "；其餘 " + (100 - ratio) + "% 分批或保留",
+            )
+        } else Label("設定預計投入資金後，換算成金額與股數")
+        Text(if (editing) "收合" else if (budget > 0) "修改預計投入資金" else "設定預計投入資金", color = C.Primary, fontSize = 12.sp,
+            modifier = Modifier.clickable { editing = !editing }.padding(vertical = 4.dp))
+        if (editing) Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.OutlinedTextField(text, { text = it.filter { c -> c.isDigit() } }, label = { Text("預計投入（台幣）") },
+                singleLine = true, modifier = Modifier.weight(1f), colors = fieldColors(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+            Text("儲存", color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { AppState.updateInvestBudget(text.toDoubleOrNull() ?: 0.0); editing = false }.padding(10.dp))
+        }
+        Label("偏空 10%・中性偏空 25%・中性 40%・中性偏多 60%・偏多 80%；依分數分批布局的參考，不構成投資建議。")
+    }
+}
+
 @Composable
 private fun FactorLine(tag: String, f: InvestAnalysis.Factor, color: Color) {
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.Top) {
@@ -189,7 +225,10 @@ fun ScoreBadge(q: Quote) {
     ) {
         Text("指數 ", color = C.Text2, fontSize = 11.sp, maxLines = 1)
         NumText(r?.let { "${it.score}%" } ?: "…", 14.sp, color, FontWeight.Bold)
-        r?.let { Text(" " + it.label, color = color, fontSize = 11.sp, maxLines = 1) }
+        r?.let {
+            Text(" " + it.label, color = color, fontSize = 11.sp, maxLines = 1)
+            Text(" · 投入 " + InvestAnalysis.suggestedRatio(it.score) + "%", color = C.Text2, fontSize = 11.sp, maxLines = 1)
+        }
     }
 }
 
