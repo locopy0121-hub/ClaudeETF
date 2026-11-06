@@ -146,6 +146,11 @@ class MainActivity : ComponentActivity() {
                 runCatching { com.claudeetf.app.alerts.AlertEngine.checkDividendDays(applicationContext) }
             }
         }
+        // 線上更新：開啟 App 後自動檢查 GitHub 最新版本（6 小時內只查一次）
+        lifecycleScope.launch {
+            delay(4_000L)
+            if (AppState.autoUpdateCheck) runCatching { com.claudeetf.app.data.AppUpdater.check(applicationContext, auto = true) }
+        }
         // 美股盤中：依「美股更新頻率」獨立輪詢（1～10 秒），或 Finnhub 逐筆串流（即時）
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -410,6 +415,7 @@ fun AppRoot() {
         }
         // 群聊新訊息彈幕（不在聊天畫面時從右往左飄過，點一下開啟群聊）
         if (route != Routes.CHAT) com.claudeetf.app.ui.screens.DanmakuOverlay { nav.navigate(Routes.CHAT) }
+        com.claudeetf.app.ui.screens.UpdatePrompt()
         }
         }
     }

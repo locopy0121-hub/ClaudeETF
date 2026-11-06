@@ -559,6 +559,7 @@ fun SettingsScreen(nav: NavController) {
             item { FoldHeader("關於", version, "關於" in openGroups) { if ("關於" in openGroups) openGroups.remove("關於") else openGroups.add("關於") } }
             if ("關於" in openGroups) {
                 item { SettingRow("版本", version) }
+                item { UpdateCard() }
                 item { SettingRow("錯誤紀錄", if (com.claudeetf.app.util.CrashLog.read(context) != null) "有紀錄 ›" else "無 ›") { nav.navigate(Routes.ERRORS) } }
                 item { SettingRow("重新看使用引導", "›") { nav.navigate(Routes.WELCOME) } }
             }

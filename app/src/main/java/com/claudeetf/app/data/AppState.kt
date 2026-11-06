@@ -235,6 +235,9 @@ object AppState {
     /** 美股盤中更新頻率（毫秒）；0 = 即時（Finnhub 逐筆串流，沒有金鑰時改為每秒輪詢） */
     var usRefreshMs by mutableStateOf(5_000L)
     fun updateUsRefreshMs(v: Long) { usRefreshMs = v; save() }
+    /** 開啟 App 時自動檢查線上更新 */
+    var autoUpdateCheck by mutableStateOf(true)
+    fun updateAutoUpdateCheck(on: Boolean) { autoUpdateCheck = on; save() }
     var usStreamStatus by mutableStateOf("")
     /** 狀態列用的說明文字 */
     fun usRefreshLabel(): String = when {
@@ -416,6 +419,7 @@ object AppState {
         showScoreBadge = p.getBoolean("showScoreBadge", true)
         showLiveSignal = p.getBoolean("showLiveSignal", true)
         usRefreshMs = p.getLong("usRefreshMs", 5_000L)
+        autoUpdateCheck = p.getBoolean("autoUpdateCheck", true)
         showCardEntry = p.getBoolean("showCardEntry", true)
         showFinalSignal = p.getBoolean("showFinalSignal", true)
         investBudget = p.getFloat("investBudget", 0f).toDouble()
@@ -613,6 +617,7 @@ object AppState {
             .putBoolean("showScoreBadge", showScoreBadge)
             .putBoolean("showLiveSignal", showLiveSignal)
             .putLong("usRefreshMs", usRefreshMs)
+            .putBoolean("autoUpdateCheck", autoUpdateCheck)
             .putBoolean("showCardEntry", showCardEntry)
             .putBoolean("showFinalSignal", showFinalSignal)
             .putFloat("investBudget", investBudget.toFloat())

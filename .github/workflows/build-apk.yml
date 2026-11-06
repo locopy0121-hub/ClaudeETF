@@ -54,7 +54,10 @@ jobs:
           prerelease: true
           make_latest: false
           body: |
+            ${{ github.event.head_commit.message }}
+
+            ---
             開發版 0.2.${{ env.PATCH }}（建置 #${{ github.run_number }}）
             commit: ${{ github.sha }}
-            下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。
+            下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。App 內「我的 › 關於 › 檢查更新」可線上更新。
           files: ${{ steps.apk.outputs.name }}
