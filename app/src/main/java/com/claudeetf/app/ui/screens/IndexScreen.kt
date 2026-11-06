@@ -89,6 +89,8 @@ fun IndexScreen(nav: NavController, symbol: String) {
                     }
                 }
             }
+            // 歷年報酬格圖（加權指數、櫃買、美股指數都適用）
+            item { YearlyReturnsBlock(symbol, tw, info?.value, isIndex = true) }
             item { Label("走勢資料來源 Yahoo Finance；台股指數報價盤中以證交所即時更新。", Modifier.padding(top = 6.dp)) }
         }
     }
