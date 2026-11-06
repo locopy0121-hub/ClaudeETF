@@ -17,6 +17,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -91,6 +93,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     val session = rememberUsSession()
     var range by remember { mutableIntStateOf(0) }
     var tabIdx by remember { mutableIntStateOf(0) }
+    var ovSub by remember { mutableIntStateOf(0) }
     val tabs = remember(q.symbol) { tabsFor(q) }
     val tab = tabs[tabIdx.coerceIn(0, tabs.lastIndex)]
     var chartType by remember { mutableStateOf(ChartType.LINE) }
@@ -198,7 +201,19 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             }
         }
         LazyColumn(
-            Modifier.weight(1f),
+            Modifier.weight(1f).pointerInput(tab) {
+                if (tab != Tab.OVERVIEW) return@pointerInput
+                var acc = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { acc = 0f },
+                    onDragEnd = {
+                        val th = 90.dp.toPx()
+                        if (acc < -th && ovSub < OVERVIEW_SUBS.size - 1) ovSub++
+                        else if (acc > th && ovSub > 0) ovSub--
+                    },
+                    onHorizontalDrag = { change, dx -> acc += dx; change.consume() },
+                )
+            },
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -222,18 +237,27 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             item { Segmented(tabs.map { it.label }, tabIdx, { tabIdx = it }) }
             when (tab) {
                 Tab.OVERVIEW -> {
-                    tradingSection(q, trading)
-                    if (q.market == Market.TW && AppState.tape[q.symbol].orEmpty().isNotEmpty()) item { TapeCard(q) }
-                    (history as? Load.Ok<YahooExtra.History>)?.value?.let { h ->
-                        val opt = ranges[range]
-                        val start = opt.days?.let { d ->
-                            val cutoff = System.currentTimeMillis() - d * 24 * 3600 * 1000
-                            h.times.indexOfFirst { it >= cutoff }.takeIf { it >= 0 }
-                        } ?: 0
-                        item { VolumeProfileCard(q, h, start, opt.label) }
+                    // 概覽再分子分頁：點選或在內容區左右滑動切換
+                    item { OverviewSubTabs(ovSub) { ovSub = it } }
+                    when (ovSub) {
+                        0 -> {
+                            item { LiveInfo(q) }
+                            tradingSection(q, trading)
+                            if (q.market == Market.TW && AppState.tape[q.symbol].orEmpty().isNotEmpty()) item { TapeCard(q) }
+                            (history as? Load.Ok<YahooExtra.History>)?.value?.let { h ->
+                                val opt = ranges[range]
+                                val start = opt.days?.let { d ->
+                                    val cutoff = System.currentTimeMillis() - d * 24 * 3600 * 1000
+                                    h.times.indexOfFirst { it >= cutoff }.takeIf { it >= 0 }
+                                } ?: 0
+                                item { VolumeProfileCard(q, h, start, opt.label) }
+                            }
+                        }
+                        1 -> { item { AnalysisCard(q) }; item { PriceBandCard(q) } }
+                        2 -> { item { YearlyReturnsCard(q) }; item { NextDividendCard(q, compact = true) } }
+                        3 -> overviewMine(q)
+                        else -> { overviewBasic(q, fund); peersSection(nav, peers, peerExtras) }
                     }
-                    item { SectionTitle("基本資料") }
-                    overviewTab(q, fund); peersSection(nav, peers, peerExtras)
                 }
                 Tab.CHIPS -> chipsTab(q, chips)
                 Tab.FIN -> financialsTab(q, fund)
@@ -465,7 +489,33 @@ private fun LazyListScope.infoList(items: List<InfoItem>) {
     items(items) { KeyValue(it.label, it.value) }
 }
 
-private fun LazyListScope.overviewTab(q: Quote, fund: Load<Fundamentals>) {
+/** 概覽子分頁 */
+private val OVERVIEW_SUBS = listOf("行情", "分析", "報酬", "我的", "基本")
+
+@Composable
+private fun OverviewSubTabs(sel: Int, onSelect: (Int) -> Unit) {
+    Column {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OVERVIEW_SUBS.forEachIndexed { i, n ->
+                val on = i == sel
+                Text(n, color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1,
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(if (on) C.Primary else C.Card)
+                        .clickable { onSelect(i) }.padding(vertical = 7.dp))
+            }
+        }
+        // 位置點：提示可左右滑動
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.Center) {
+            OVERVIEW_SUBS.indices.forEach { i ->
+                Box(Modifier.padding(horizontal = 3.dp).size(if (i == sel) 14.dp else 5.dp, 5.dp).clip(RoundedCornerShape(3.dp))
+                    .background(if (i == sel) C.Primary else C.Border))
+            }
+        }
+    }
+}
+
+/** 我的：持股損益、分批成本、標記、筆記 */
+private fun LazyListScope.overviewMine(q: Quote) {
     val holding = AppState.holdings.firstOrNull { it.symbol == q.symbol }
     if (holding != null && q.price > 0) {
         item {
@@ -485,26 +535,23 @@ private fun LazyListScope.overviewTab(q: Quote, fund: Load<Fundamentals>) {
                 }
             }
         }
-    }
-    item { AnalysisCard(q) }
-    item { PriceBandCard(q) }
-    item { YearlyReturnsCard(q) }
-    item { NextDividendCard(q, compact = true) }
-    if (holding != null) item { LotsCard(q) }
+        item { LotsCard(q) }
+    } else item { Label("尚未持有這檔，記一筆交易後這裡會顯示損益與分批成本", Modifier.padding(vertical = 6.dp)) }
     item { MarksCard(q) }
     item { NoteCard(q) }
+}
+
+/** 基本：Yahoo 概覽（本益比、殖利率、52 週區間…） */
+private fun LazyListScope.overviewBasic(q: Quote, fund: Load<Fundamentals>) {
     when (fund) {
         is Load.Loading -> loading("載入基本資料中…")
         is Load.Err -> showError(fund.message)
         is Load.Ok -> {
             val f = fund.value
-            // 現價、漲跌、高低與量來自目前行情（富果串流／證交所即時），其餘才用 Yahoo 概覽
-            item { LiveInfo(q) }
             val liveLabels = setOf("最高", "最低", "成交量").filter { AppState.dayStats[q.symbol] != null }.toSet() +
                 (if (q.prevClose > 0) setOf("昨收") else emptySet())
             val rest = f.overview.filter { it.label !in liveLabels }
             if (rest.isEmpty()) item { Label("暫無概覽資料") } else infoGrid(rest)
-            // 分析師共識已併入「投資分析指數」卡片
             item { Label("資料來源：Yahoo Finance" + if (q.market == Market.TW) "、證交所 OpenAPI" else "", Modifier.padding(top = 6.dp)) }
         }
     }
