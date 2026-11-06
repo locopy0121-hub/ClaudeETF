@@ -70,12 +70,13 @@ private val ranges = listOf(
     RangeOpt("5年", "5y", null),
 )
 
-private enum class Tab(val label: String) { OVERVIEW("概覽"), CHIPS("籌碼"), FIN("財務"), HOLD("成分"), DIV("股息"), NEWS("新聞"), CO("公司") }
+private enum class Tab(val label: String) { OVERVIEW("概覽"), TAPE("明細"), CHIPS("籌碼"), FIN("財務"), HOLD("成分"), DIV("股息"), NEWS("新聞"), CO("公司") }
 
 private fun tabsFor(q: Quote): List<Tab> =
-    if (q.isEtf || (q.market == Market.TW && q.symbol.startsWith("00")))
-        listOf(Tab.OVERVIEW, Tab.CHIPS, Tab.HOLD, Tab.DIV, Tab.NEWS, Tab.CO)
-    else listOf(Tab.OVERVIEW, Tab.CHIPS, Tab.FIN, Tab.DIV, Tab.NEWS, Tab.CO)
+    (if (q.isEtf || (q.market == Market.TW && q.symbol.startsWith("00")))
+        listOf(Tab.OVERVIEW, Tab.TAPE, Tab.CHIPS, Tab.HOLD, Tab.DIV, Tab.NEWS, Tab.CO)
+    else listOf(Tab.OVERVIEW, Tab.TAPE, Tab.CHIPS, Tab.FIN, Tab.DIV, Tab.NEWS, Tab.CO))
+        .filter { it != Tab.TAPE || q.market == Market.TW }
 
 @Composable
 fun StockDetailScreen(nav: NavController, symbol: String) {
@@ -225,6 +226,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                 Tab.DIV -> dividendTab(q, divs)
                 Tab.NEWS -> newsTab(news)
                 Tab.CO -> companyTab(fund)
+                Tab.TAPE -> tapeTab(q)
             }
         }
         Row(
@@ -1098,5 +1100,70 @@ private fun liveMerge(history: Load<YahooExtra.History>, range: Int, q: Quote): 
                 volumes = if (h.volumes.size == n) h.volumes.dropLast(1) + (volFor(prevSum)?.let { maxOf(it, h.volumes.last()) } ?: h.volumes.last()) else h.volumes,
             )
         )
+    }
+}
+
+// ---------------- 明細：逐筆成交與分價成交 ----------------
+
+private fun LazyListScope.tapeTab(q: Quote) {
+    val list = AppState.tape[q.symbol].orEmpty()
+    val streaming = com.claudeetf.app.data.remote.FugleStream.isStreaming(q.symbol)
+    item { SectionTitle("成交明細", if (streaming) "● 富果串流同步" else "證交所／富果即時") }
+    if (list.isEmpty()) {
+        item { Label("盤中開啟 App 後開始累積逐筆成交；目前尚無資料。", Modifier.padding(vertical = 12.dp)) }
+        return
+    }
+    val outer = list.filter { it.side == 1 }.sumOf { it.lots }
+    val inner = list.filter { it.side == -1 }.sumOf { it.lots }
+    val total = list.sumOf { it.lots }
+    val big = list.count { it.lots >= 50 }
+    item {
+        Card(padding = 12.dp) {
+            Row {
+                Column(Modifier.weight(1f)) { Label("筆數"); NumText(Fmt.num(list.size.toDouble()), 15.sp, weight = FontWeight.Bold) }
+                Column(Modifier.weight(1f)) { Label("張數"); NumText(Fmt.num(total), 15.sp, weight = FontWeight.Bold) }
+                Column(Modifier.weight(1f)) { Label("大單 ≥50 張"); NumText(big.toString(), 15.sp, weight = FontWeight.Bold) }
+            }
+            if (outer + inner > 0) InOutBar(inner, outer)
+            Label("統計範圍：App 開啟後收到的最近 ${list.size} 筆")
+        }
+    }
+    // 分價成交：依價格累積張數，外盤比例
+    val byPrice = list.groupBy { it.price }.map { (p, ts) ->
+        Triple(p, ts.sumOf { it.lots }, ts.filter { it.side == 1 }.sumOf { it.lots })
+    }.sortedByDescending { it.first }
+    val maxLots = byPrice.maxOfOrNull { it.second }?.takeIf { it > 0 } ?: 1.0
+    item { SectionTitle("分價成交", "價格 · 張數 · 外盤比") }
+    item {
+        Card(padding = 12.dp) {
+            byPrice.take(20).forEach { (p, lots, out) ->
+                Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    NumText(Fmt.price(p), 12.sp, Trend.fg(p - q.prevClose), modifier = Modifier.width(72.dp))
+                    Box(Modifier.weight(1f).height(10.dp)) {
+                        Row(Modifier.fillMaxHeight().fillMaxWidth((lots / maxLots).toFloat().coerceIn(0.02f, 1f)).clip(RoundedCornerShape(3.dp))) {
+                            val o = (out / lots).toFloat().coerceIn(0f, 1f)
+                            if (o > 0f) Box(Modifier.fillMaxHeight().weight(o).background(Trend.fg(1.0).copy(alpha = 0.7f)))
+                            if (o < 1f) Box(Modifier.fillMaxHeight().weight(1f - o).background(Trend.fg(-1.0).copy(alpha = 0.7f)))
+                        }
+                    }
+                    NumText(Fmt.num(lots), 12.sp, modifier = Modifier.width(56.dp).padding(start = 6.dp))
+                    NumText(Fmt.num(out / lots * 100, 0) + "%", 11.sp, C.Muted, modifier = Modifier.width(40.dp))
+                }
+            }
+            if (byPrice.size > 20) Label("另有 ${byPrice.size - 20} 個價位")
+        }
+    }
+    item { SectionTitle("逐筆", "最新在上") }
+    val tpe = ZoneId.of("Asia/Taipei")
+    val fmt = DateTimeFormatter.ofPattern("HH:mm:ss")
+    items(list) { t ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            NumText(Instant.ofEpochMilli(t.time).atZone(tpe).format(fmt), 12.sp, C.Text2, modifier = Modifier.weight(1f))
+            NumText(Fmt.price(t.price), 12.sp, Trend.fg(t.price - q.prevClose), modifier = Modifier.weight(1f))
+            NumText(Fmt.num(t.lots), 12.sp, if (t.lots >= 50) C.Primary else C.Text,
+                weight = if (t.lots >= 50) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(0.8f))
+            Text(when (t.side) { 1 -> "外"; -1 -> "內"; else -> "—" }, Modifier.weight(0.4f), fontSize = 12.sp,
+                color = when (t.side) { 1 -> Trend.fg(1.0); -1 -> Trend.fg(-1.0); else -> C.Muted })
+        }
     }
 }

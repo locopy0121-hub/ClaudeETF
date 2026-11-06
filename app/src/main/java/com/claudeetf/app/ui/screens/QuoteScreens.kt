@@ -570,6 +570,7 @@ private fun QuoteCard(q: Quote, modifier: Modifier, onLongClick: () -> Unit, onC
             if (q.price > 0) Fmt.price(q.price) else "—", 26.sp, color, weight = FontWeight.Bold,
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
+        if (q.spark.size >= 2) Sparkline(q.spark, color, Modifier.fillMaxWidth().height(26.dp), fill = true)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(if (q.change > 0) "▲" else if (q.change < 0) "▼" else "", color = color, fontSize = 11.sp)
             HGap(4.dp)
