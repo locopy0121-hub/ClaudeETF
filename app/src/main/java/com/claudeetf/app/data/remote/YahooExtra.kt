@@ -101,6 +101,25 @@ object YahooExtra {
         return out.sortedByDescending { it.time }
     }
 
+    data class Split(val time: Long, val ratio: Double, val text: String)
+
+    /** 近 5 年股票分割（ratio = 分割後股數 ÷ 分割前股數） */
+    fun splits(symbol: String): List<Split> {
+        val body = Http.get("$Q1/v8/finance/chart/${enc(symbol)}?range=5y&interval=1mo&events=split", mapOf("User-Agent" to UA))
+        val r = JSONObject(body).getJSONObject("chart").optJSONArray("result")?.optJSONObject(0) ?: return emptyList()
+        val sp = r.optJSONObject("events")?.optJSONObject("splits") ?: return emptyList()
+        val out = ArrayList<Split>()
+        val keys = sp.keys()
+        while (keys.hasNext()) {
+            val o = sp.optJSONObject(keys.next()) ?: continue
+            val num = o.optDouble("numerator", Double.NaN)
+            val den = o.optDouble("denominator", Double.NaN)
+            if (num.isNaN() || den.isNaN() || den == 0.0) continue
+            out += Split(o.optLong("date") * 1000, num / den, o.optString("splitRatio"))
+        }
+        return out.sortedByDescending { it.time }
+    }
+
     // ---------------- quoteSummary（需 crumb） ----------------
 
     @Volatile private var cookie: String? = null

@@ -111,6 +111,24 @@ object AppState {
     val dcaPlans = mutableStateListOf<DcaPlan>()
     val groups = mutableStateListOf<WatchGroup>()
     val marks = mutableStateMapOf<String, PriceMark>()
+    /** 偵測到尚未記錄的除息與拆股；已略過的項目 */
+    val pendingActions = mutableStateListOf<CorporateActions.Pending>()
+    val dismissedActions = mutableStateListOf<String>()
+
+    /** 已推播過的偵測項目（避免重複通知） */
+    fun actionNotified(key: String) = prefs?.getString("actNotified", "")?.split("|")?.contains(key) == true
+    fun markActionNotified(keys: List<String>) {
+        val p = prefs ?: return
+        val list = (p.getString("actNotified", "")?.split("|")?.filter { it.isNotBlank() } ?: emptyList()) + keys
+        p.edit().putString("actNotified", list.takeLast(300).joinToString("|")).apply()
+    }
+
+    fun dismissAction(key: String) {
+        if (key !in dismissedActions) dismissedActions.add(key)
+        while (dismissedActions.size > 300) dismissedActions.removeAt(0)
+        save()
+    }
+
     /** 個股筆記：代號 → (內容, 更新時間) */
     val notes = mutableStateMapOf<String, Pair<String, Long>>()
 
@@ -229,6 +247,8 @@ object AppState {
                 }
             }
         }
+        dismissedActions.clear()
+        p.getString("dismissed", null)?.split("|")?.filter { it.isNotBlank() }?.let { dismissedActions.addAll(it) }
         notes.clear()
         p.getString("notes", null)?.let { json ->
             runCatching {
@@ -321,6 +341,7 @@ object AppState {
                         .put("acc", it.account).put("on", it.enabled).put("done", it.lastDone).put("ntf", it.lastNotified))
                 }
             }.toString())
+            .putString("dismissed", dismissedActions.joinToString("|"))
             .putString("notes", JSONObject().apply { notes.forEach { (k, v) -> put(k, JSONObject().put("x", v.first).put("t", v.second)) } }.toString())
             .putString("marks", JSONObject().apply {
                 marks.forEach { (k, m) ->

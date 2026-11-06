@@ -61,7 +61,10 @@ fun PnlCalendarScreen(nav: NavController) {
     val cells: List<LocalDate?> = List(lead) { null } + (1..days).map { month.atDay(it) }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
-        TopBar("損益日曆", onBack = { nav.popBackStack() })
+        TopBar("損益日曆", onBack = { nav.popBackStack() }) {
+            Text("年度回顧", color = C.Primary, fontSize = 14.sp,
+                modifier = Modifier.clickable { nav.navigate(Routes.REVIEW) }.padding(12.dp))
+        }
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),

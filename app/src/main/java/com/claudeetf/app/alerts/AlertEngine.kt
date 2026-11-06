@@ -83,6 +83,18 @@ object AlertEngine {
         val todayKey = today.toString()
         val now = System.currentTimeMillis()
         dailySummaries(context, today)
+        // 除息、拆股：發現尚未記錄的項目時通知一次
+        runCatching {
+            val fresh = com.claudeetf.app.data.CorporateActions.scan().filter { !AppState.actionNotified(it.key) }
+            if (fresh.isNotEmpty()) {
+                AppState.markActionNotified(fresh.map { it.key })
+                notify(
+                    context, 903,
+                    if (fresh.size == 1) "有一筆股息／拆股待記錄" else "有 ${fresh.size} 筆股息／拆股待記錄",
+                    fresh.take(3).joinToString("\n") { it.text } + "\n打開持股頁一鍵記錄",
+                )
+            }
+        }
         // 定期定額扣款日：每月通知一次
         val month = java.time.YearMonth.now(TPE).toString()
         for (p in AppState.dueDca()) {

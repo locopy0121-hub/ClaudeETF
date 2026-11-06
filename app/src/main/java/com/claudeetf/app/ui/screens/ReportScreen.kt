@@ -151,6 +151,10 @@ fun ReportScreen(nav: NavController) {
             }
             msg?.let { t -> item { Label(t, color = C.Primary) } }
             item {
+                Text("年度回顧（資產變化、最佳月份、股息成長） ›", color = C.Primary, fontSize = 13.sp,
+                    modifier = Modifier.clickable { nav.navigate(Routes.REVIEW) }.padding(vertical = 4.dp))
+            }
+            item {
                 Text("交易成本分析（手續費、交易稅、節省建議） ›", color = C.Primary, fontSize = 13.sp,
                     modifier = Modifier.clickable { nav.navigate(Routes.COST) }.padding(vertical = 4.dp))
             }

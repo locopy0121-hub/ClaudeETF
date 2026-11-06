@@ -66,6 +66,8 @@ import kotlin.math.roundToLong
 fun PortfolioScreen(nav: NavController) {
     var inTwd by remember { mutableStateOf(true) }
     var heat by remember { mutableStateOf(false) }
+    var actionMsg by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { runCatching { com.claudeetf.app.data.CorporateActions.scan() } }
     var accFilter by remember { mutableIntStateOf(-1) } // -1 = 全部帳戶
     val usedAccounts = AppState.trades.filter { it.origin != TradeOrigin.LEGACY }.map { it.account }.toSet()
     val accChoices = listOf(-1) + AppState.accounts.map { it.id }.filter { it in usedAccounts } +
@@ -145,6 +147,32 @@ fun PortfolioScreen(nav: NavController) {
                                     .clickable { accFilter = id }.padding(horizontal = 12.dp, vertical = 8.dp),
                             )
                         }
+                    }
+                }
+            }
+            if (AppState.pendingActions.isNotEmpty() || actionMsg != null) {
+                item {
+                    Card(padding = 14.dp) {
+                        Text("待記錄的股息與拆股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Label("依 Yahoo 公告比對你的交易紀錄自動找出，記錄前可再到交易紀錄修改。")
+                        AppState.pendingActions.toList().forEach { p ->
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(p.text, color = C.Text2, fontSize = 13.sp)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Box(
+                                        Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(10.dp)).background(C.Primary)
+                                            .clickable { actionMsg = com.claudeetf.app.data.CorporateActions.record(p) ?: "已記錄 ${p.symbol}" },
+                                        contentAlignment = Alignment.Center,
+                                    ) { Text("記錄", color = C.OnPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                                    Box(
+                                        Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(10.dp)).background(C.Selected)
+                                            .clickable { com.claudeetf.app.data.CorporateActions.dismiss(p) },
+                                        contentAlignment = Alignment.Center,
+                                    ) { Text("略過", color = C.Text, fontSize = 13.sp) }
+                                }
+                            }
+                        }
+                        actionMsg?.let { Label(it, color = C.Primary) }
                     }
                 }
             }

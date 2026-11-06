@@ -116,6 +116,7 @@ private val features = listOf(
     Feature("新增交易", "記帳 買進 賣出 股息 拆股", Routes.trade()),
     Feature("交易紀錄", "歷史 明細 編輯 刪除", Routes.TRADES),
     Feature("股息與稅務", "配息 二代健保 預扣", Routes.DIVIDEND),
+    Feature("年度回顧", "回顧 年度 總結 最佳月份 回撤", Routes.REVIEW),
     Feature("股息再投入試算", "複利 DRIP 存股 試算 退休", Routes.DRIP),
     Feature("美元匯率", "匯率 USD TWD 換匯 台銀", Routes.FX),
     Feature("交易成本分析", "手續費 交易稅 證交稅 折扣 成本", Routes.COST),
