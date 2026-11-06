@@ -314,7 +314,23 @@ private fun ChartBlock(
                 val base = if (range == 0) h.prevClose?.toFloat() else null
                 // 1 日分時：X 軸固定為整個交易時段（台股 09:00–13:30、美股 09:30–16:00，5 分 K）
                 val slots = if (opt.fetch == "1d") (if (q.market == Market.TW) 55 else 79) else 0
-                StockChart(h, start, type, mas, sub, base, opt.intraday, levels, slots)
+                val bounds = if (opt.fetch == "1d" && q.market == Market.TW && AppState.limitAxis && q.prevClose > 0) {
+                    com.claudeetf.app.util.TwSession.limits(q.prevClose, q.isEtf || q.symbol.startsWith("00")).let { (u, d) -> u.toFloat() to d.toFloat() }
+                } else null
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (opt.fetch == "1d" && q.market == Market.TW) {
+                    val (u, d) = com.claudeetf.app.util.TwSession.limits(q.prevClose, q.isEtf || q.symbol.startsWith("00"))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Label("漲停 " + Fmt.price(u), color = Trend.fg(1.0)); HGap(10.dp)
+                        Label("跌停 " + Fmt.price(d), color = Trend.fg(-1.0), modifier = Modifier.weight(1f))
+                        Text(
+                            if (AppState.limitAxis) "漲跌停座標" else "自動座標", color = C.Primary, fontSize = 12.sp,
+                            modifier = Modifier.clickable { AppState.updateLimitAxis(!AppState.limitAxis) }.padding(4.dp),
+                        )
+                    }
+                }
+                StockChart(h, start, type, mas, sub, base, opt.intraday, levels, slots, bounds)
+                }
             }
         }
     }

@@ -70,6 +70,21 @@ object TwInstitutional {
         return out
     }
 
+    /** 最近一個有資料的交易日全部上市證券（今天 16:00 前不查今天） */
+    fun latest(): Map<String, Day> {
+        val now = ZonedDateTime.now(TPE)
+        var d = now.toLocalDate()
+        if (now.toLocalTime() < LocalTime.of(16, 0)) d = d.minusDays(1)
+        repeat(10) {
+            if (d.dayOfWeek != DayOfWeek.SATURDAY && d.dayOfWeek != DayOfWeek.SUNDAY) {
+                val map = runCatching { day(d) }.getOrNull()
+                if (!map.isNullOrEmpty()) return map
+            }
+            d = d.minusDays(1)
+        }
+        return emptyMap()
+    }
+
     /** 最近 n 個有資料的交易日（今天 16:00 前不查今天），由新到舊 */
     fun recent(code: String, n: Int = 5): List<Day> {
         val now = ZonedDateTime.now(TPE)

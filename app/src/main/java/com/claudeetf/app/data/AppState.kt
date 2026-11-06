@@ -156,7 +156,13 @@ object AppState {
 
     /** 三關價（代號 → 當日上中下關），個股走勢與自選欄位共用 */
     val keyPrices = mutableStateMapOf<String, StockInfoRepo.KeyPrices>()
+    /** 自選除權息、法人欄位 */
+    val divBriefs = mutableStateMapOf<String, WatchExtras.DivBrief>()
+    val institutional = mutableStateMapOf<String, com.claudeetf.app.data.remote.TwInstitutional.Day>()
     var showKeyLevels by mutableStateOf(true)
+    /** 台股分時 Y 軸用漲跌停價 */
+    var limitAxis by mutableStateOf(true)
+    fun updateLimitAxis(on: Boolean) { limitAxis = on; save() }
     fun updateShowKeyLevels(on: Boolean) { showKeyLevels = on; save() }
     /** 自選版面：list 清單、card 卡片 */
     var watchLayout by mutableStateOf("list")
@@ -265,6 +271,7 @@ object AppState {
         twIntradaySource = p.getString("twIntradaySource", "fugle") ?: "fugle"
         monthlyReport = p.getBoolean("monthlyReport", true)
         showKeyLevels = p.getBoolean("showKeyLevels", true)
+        limitAxis = p.getBoolean("limitAxis", true)
         watchLayout = p.getString("watchLayout", "list") ?: "list"
         industries.clear()
         p.getString("industries", null)?.let { json ->
@@ -428,6 +435,7 @@ object AppState {
             .putString("twIntradaySource", twIntradaySource)
             .putBoolean("monthlyReport", monthlyReport)
             .putBoolean("showKeyLevels", showKeyLevels)
+            .putBoolean("limitAxis", limitAxis)
             .putString("watchLayout", watchLayout)
             .putString("industries", JSONObject().apply { industries.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("finnhubKey", finnhubKey)

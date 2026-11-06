@@ -59,6 +59,8 @@ fun WatchlistScreen(nav: NavController) {
     // 三關欄位或卡片版面：背景補抓各檔三關價
     LaunchedEffect(AppState.watchColumn, AppState.watchLayout, AppState.quotes.size) {
         if (AppState.watchColumn == "keys" || AppState.watchLayout == "card") KeyLevelsUi.load(AppState.quotes.toList())
+        if (AppState.watchColumn == "div") com.claudeetf.app.data.WatchExtras.loadDividends(AppState.quotes.toList())
+        if (AppState.watchColumn == "inst") com.claudeetf.app.data.WatchExtras.loadInstitutional()
     }
     val base = AppState.quotes.filter { q ->
         (editing && group != null) || when (filter) {
@@ -303,7 +305,7 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
 }
 
-val watchColumns = listOf("spark" to "走勢", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "pe" to "本益比", "pnl" to "持股損益")
+val watchColumns = listOf("spark" to "走勢", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "div" to "除權息", "inst" to "法人", "pe" to "本益比", "pnl" to "持股損益")
 
 /** 當日振幅 %：(最高 − 最低) ÷ 昨收 */
 fun amplitude(q: Quote): Double? {
@@ -322,6 +324,29 @@ private fun WatchCell(q: Quote) {
         "volume" -> CellText(AppState.dayStats[q.symbol]?.volume?.let { volumeText(it, q.market) } ?: "—", "量", m)
         "amp" -> CellText(amplitude(q)?.let { Fmt.num(it, 2) + "%" } ?: "—", "振幅", m)
         "pe" -> CellText(q.stats?.pe?.takeIf { it.isNotBlank() } ?: "—", "本益比", m)
+        "div" -> {
+            val b = AppState.divBriefs[q.symbol]
+            val md = java.time.format.DateTimeFormatter.ofPattern("M/d")
+            fun d(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.of("Asia/Taipei")).format(md)
+            when {
+                b == null -> CellText("…", "除權息", m)
+                b.nextEx != null -> CellText("除息 " + d(b.nextEx), "上次 " + (b.lastAmount?.let { Fmt.num(it, 2) } ?: "—"), m)
+                b.lastTime != null -> CellText(Fmt.num(b.lastAmount ?: 0.0, 2), "上次 " + d(b.lastTime), m)
+                else -> CellText("—", "無配息", m)
+            }
+        }
+        "inst" -> {
+            val i = AppState.institutional[q.symbol]
+            if (q.market != Market.TW) CellText("—", "美股", m)
+            else if (i == null) CellText("—", "法人", m)
+            else {
+                val lots = i.total / 1000.0
+                Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                    NumText(Fmt.signed(lots) + " 張", 12.sp, Trend.fg(lots))
+                    Text("外" + Fmt.signed(i.foreign / 1000.0) + " 投" + Fmt.signed(i.trust / 1000.0), color = C.Muted, fontSize = 9.sp, maxLines = 1)
+                }
+            }
+        }
         "keys" -> {
             val k = AppState.keyPrices[q.symbol]
             if (k == null) CellText("—", "三關", m)

@@ -122,7 +122,7 @@ object AlertEngine {
             val result: Pair<String, String>? = when (a.type) {
                 AlertType.US_OPEN -> usOpen(a, todayKey)
                 AlertType.EARNINGS, AlertType.EXDIV -> event(a, today)
-                AlertType.RAPID, AlertType.BIG_TRADE -> null // 由 checkRapid 即時偵測
+                AlertType.RAPID, AlertType.BIG_TRADE, AlertType.KEY_LEVEL -> null // 由 checkRapid 即時偵測
                 else -> price(a, todayKey, today)
             }
             if (result != null) {
@@ -268,6 +268,39 @@ object AlertEngine {
             }
         }
         checkBigTrades(context, now)
+        checkKeyLevels(context, now)
+    }
+
+    /** 三關區間：0 跌破下關、1 下關～中關、2 中關～上關、3 站上上關 */
+    private val lastZone = HashMap<String, Int>()
+
+    /** 提醒對象（供主迴圈預先載入三關價） */
+    fun keyLevelTargets(): List<String> = AppState.alerts.filter { it.enabled && it.type == AlertType.KEY_LEVEL }
+        .flatMap { a -> if (a.symbol.isBlank()) AppState.holdings.map { it.symbol } else listOf(a.symbol) }.distinct()
+
+    private fun checkKeyLevels(context: Context, now: Long) {
+        val names = listOf("跌破下關", "回到下關～中關", "站上中關", "站上上關")
+        for (a in AppState.alerts.toList()) {
+            if (!a.enabled || a.type != AlertType.KEY_LEVEL) continue
+            val targets = if (a.symbol.isBlank()) AppState.holdings.map { it.symbol } else listOf(a.symbol)
+            for (sym in targets) {
+                val q = AppState.quote(sym) ?: continue
+                val k = AppState.keyPrices[sym] ?: continue
+                if (q.price <= 0) continue
+                val zone = when { q.price >= k.upper -> 3; q.price >= k.mid -> 2; q.price > k.lower -> 1; else -> 0 }
+                val zk = "${a.id}:$sym"
+                val prev = lastZone[zk]
+                lastZone[zk] = zone
+                if (prev == null || prev == zone) continue
+                val marks = a.lastFired.split(";").filter { it.contains("@") }.associate { it.substringBefore("@") to (it.substringAfter("@").toLongOrNull() ?: 0L) }
+                if (now - (marks[sym] ?: 0L) < 15 * 60_000) continue
+                val key = (marks + (sym to now)).filter { now - it.value < 60 * 60_000 }.entries.joinToString(";") { it.key + "@" + it.value }
+                val name = if (zone == 1 && prev == 0) "站回下關" else if (zone == 1) "跌破中關" else if (zone == 2 && prev == 3) "跌破上關" else names[zone]
+                val text = "${q.symbol} ${q.name} $name，現價 ${Fmt.price(q.price)}（上 ${Fmt.price(k.upper)}／中 ${Fmt.price(k.mid)}／下 ${Fmt.price(k.lower)}）"
+                AppState.markFired(a.id, key, text, now)
+                notify(context, 4000 + (sym.hashCode() and 0xfff), "${q.symbol} $name", text)
+            }
+        }
     }
 
     /** 逐筆大單：自上次檢查後出現的單筆成交張數 ≥ 門檻 */

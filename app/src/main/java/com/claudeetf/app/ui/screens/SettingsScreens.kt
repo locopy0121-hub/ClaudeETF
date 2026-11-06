@@ -200,10 +200,10 @@ private fun AddAlertCard(initialSymbol: String = "", onDone: () -> Unit) {
         if (type != AlertType.US_OPEN) {
             OutlinedTextField(
                 value = symbol, onValueChange = { symbol = it; error = null },
-                label = { Text(if (type == AlertType.RAPID || type == AlertType.BIG_TRADE) "股票代號（留空＝全部持股）" else "股票代號（例如 2330、AAPL）") }, singleLine = true,
+                label = { Text(if (type == AlertType.RAPID || type == AlertType.BIG_TRADE || type == AlertType.KEY_LEVEL) "股票代號（留空＝全部持股）" else "股票代號（例如 2330、AAPL）") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth(), colors = fieldColors(),
             )
-            OutlinedTextField(
+            if (type != AlertType.KEY_LEVEL) OutlinedTextField(
                 value = valueText, onValueChange = { valueText = it; error = null },
                 label = { Text(type.label + "（" + type.unit + "）") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -219,6 +219,10 @@ private fun AddAlertCard(initialSymbol: String = "", onDone: () -> Unit) {
             val v = valueText.toDoubleOrNull()
             when {
                 type == AlertType.US_OPEN -> { AppState.addAlert("", type, 0.0); onDone() }
+                type == AlertType.KEY_LEVEL -> {
+                    if (sym.isNotEmpty() && !AppState.isWatched(sym)) AppState.addWatch(sym)
+                    AppState.addAlert(sym, type, 0.0); onDone()
+                }
                 (type == AlertType.RAPID || type == AlertType.BIG_TRADE) && sym.isEmpty() && v != null && v > 0 -> { AppState.addAlert("", type, v); onDone() }
                 sym.isEmpty() -> error = "請輸入股票代號"
                 v == null || v < 0 -> error = "請輸入數值"

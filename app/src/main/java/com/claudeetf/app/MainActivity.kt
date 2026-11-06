@@ -154,6 +154,10 @@ class MainActivity : ComponentActivity() {
                     val now = System.currentTimeMillis()
                     if (now - lastFull >= (if (live) 60_000L else 15 * 60_000L)) {
                         runCatching { MarketData.refreshAll() }
+                        runCatching {
+                            val t = AlertEngine.keyLevelTargets()
+                            if (t.isNotEmpty()) com.claudeetf.app.ui.screens.KeyLevelsUi.load(t.mapNotNull { AppState.quote(it) })
+                        }
                         runCatching { AlertEngine.check(applicationContext) }
                         runCatching { AppState.recordNav() }
                         runCatching { com.claudeetf.app.widget.WidgetUpdater.update(applicationContext) }

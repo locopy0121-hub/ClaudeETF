@@ -94,6 +94,8 @@ fun StockChart(
     levels: List<KeyLevel> = emptyList(),
     /** 分時圖整個交易時段的 K 棒數；> 0 時 X 軸固定為全時段 */
     slots: Int = 0,
+    /** 固定 Y 軸上下限（台股分時用漲停、跌停價） */
+    yBounds: Pair<Float, Float>? = null,
 ) {
     val n = h.closes.size
     val from = start.coerceIn(0, maxOf(0, n - 2))
@@ -171,7 +173,8 @@ fun StockChart(
             }
             if (basePrice != null) { if (basePrice > hi) hi = basePrice; if (basePrice < lo) lo = basePrice }
             levels.forEach { l -> if (l.value > hi) hi = l.value; if (l.value < lo) lo = l.value }
-            val pad = (hi - lo) * 0.06f + 0.0001f
+            yBounds?.let { (up, down) -> if (up > hi) hi = up; if (down < lo) lo = down }
+            val pad = if (yBounds != null) 0.0001f else (hi - lo) * 0.06f + 0.0001f
             hi += pad; lo -= pad
             val w = size.width
             val ht = size.height
