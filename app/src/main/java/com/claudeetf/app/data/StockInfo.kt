@@ -53,7 +53,7 @@ object StockInfoRepo {
         if (range == "1d" && q.market == Market.TW && AppState.twUseFugle && AppState.fugleKey.isNotBlank() && MarketData.isTwIntraday()) {
             runCatching { fugleIntraday(q) }.getOrNull()?.let { return@withContext it }
         }
-        YahooExtra.history(yahooSymbol(q), range)
+        YahooExtra.history(yahooSymbol(q), range, prePost = range == "1d" && q.market == Market.US && AppState.usExtendedChart)
     }
 
     private fun fugleIntraday(q: Quote): YahooExtra.History? {

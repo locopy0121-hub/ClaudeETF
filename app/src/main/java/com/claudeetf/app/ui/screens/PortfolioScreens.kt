@@ -449,7 +449,9 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
                     Label(
                         (AppState.account(effAccount)?.let { a ->
                             if (isUs) "${a.name}：手續費 ${Fmt.num(a.usRate * 100, 3)}%，最低 $${Fmt.num(a.usMinFee, 2)}"
-                            else "${a.name}：0.1425% × ${Fmt.num(a.discount * 10, 2)} 折，最低 ${Fmt.num(a.minFee)} 元"
+                            else "${a.name}：0.1425% × ${Fmt.num(a.discount * 10, 2)} 折，最低 ${Fmt.num(a.minFee)} 元" +
+                                (if (amount > 0) "\n手續費試算 ${Fmt.num(amount)} × 0.1425% × ${Fmt.num(a.discount, 3)} = ${Fmt.num(amount * 0.001425 * a.discount, 2)} → ${Fmt.num(AppState.feeFor(a.id, market, amount))} 元（元以下捨去、不足最低以最低計）" else "") +
+                                (if (amount > 0 && tType == TradeType.SELL) "\n證交稅試算 ${Fmt.num(amount)} × ${Fmt.num(taxRule.first * 100, 2)}% = ${Fmt.num(amount * taxRule.first, 2)} → ${Fmt.num(tax)} 元" else "")
                         } ?: "") + if (isUs) "；美股免交易稅" else if (tType == TradeType.SELL) "；" + taxRule.second + "（元以下捨去）" else "",
                         Modifier.padding(top = 4.dp),
                     )

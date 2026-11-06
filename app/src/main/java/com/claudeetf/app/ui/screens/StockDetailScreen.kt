@@ -100,7 +100,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
 
     // 走勢
     var history by remember { mutableStateOf<Load<YahooExtra.History>>(Load.Loading) }
-    LaunchedEffect(q.symbol, range) {
+    LaunchedEffect(q.symbol, range, AppState.usExtendedChart) {
         history = Load.Loading
         history = runCatching { StockInfoRepo.history(q, ranges[range].fetch) }
             .fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
@@ -330,11 +330,22 @@ private fun ChartBlock(
                 } ?: 0
                 val base = if (range == 0) h.prevClose?.toFloat() else null
                 // 1 日分時：X 軸固定為整個交易時段（台股 09:00–13:30、美股 09:30–16:00，5 分 K）
-                val slots = if (opt.fetch == "1d") (if (q.market == Market.TW) 55 else 79) else 0
+                val ext = q.market == Market.US && AppState.usExtendedChart
+                // 美股含盤前盤後：04:00–20:00（美東）共 16 小時
+                val slots = if (opt.fetch == "1d") (if (q.market == Market.TW) 55 else if (ext) 193 else 79) else 0
                 val bounds = if (opt.fetch == "1d" && q.market == Market.TW && AppState.limitAxis && q.prevClose > 0) {
                     com.claudeetf.app.util.TwSession.limits(q.prevClose, q.isEtf || q.symbol.startsWith("00")).let { (u, d) -> u.toFloat() to d.toFloat() }
                 } else null
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (opt.fetch == "1d" && q.market == Market.US) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Label(if (ext) "含盤前 04:00 與盤後至 20:00（美東）" else "僅正常交易時段 09:30–16:00（美東）", Modifier.weight(1f))
+                        Text(
+                            if (ext) "盤前盤後 ✓" else "盤前盤後", color = C.Primary, fontSize = 12.sp,
+                            modifier = Modifier.clickable { AppState.updateUsExtendedChart(!ext) }.padding(4.dp),
+                        )
+                    }
+                }
                 if (opt.fetch == "1d" && q.market == Market.TW) {
                     val (u, d) = com.claudeetf.app.util.TwSession.limits(q.prevClose, q.isEtf || q.symbol.startsWith("00"))
                     Row(verticalAlignment = Alignment.CenterVertically) {

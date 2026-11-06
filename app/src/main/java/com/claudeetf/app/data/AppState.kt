@@ -169,6 +169,10 @@ object AppState {
     var watchLayout by mutableStateOf("list")
     fun updateWatchLayout(l: String) { watchLayout = l; save() }
 
+    /** 美股 1 日走勢含盤前盤後 */
+    var usExtendedChart by mutableStateOf(true)
+    fun updateUsExtendedChart(on: Boolean) { usExtendedChart = on; save() }
+
     /** 明細分頁篩選：0 全部、1 大單、2 外盤、3 內盤 */
     var tapeFilter by mutableIntStateOf(0)
 
@@ -280,6 +284,7 @@ object AppState {
         monthlyReport = p.getBoolean("monthlyReport", true)
         showKeyLevels = p.getBoolean("showKeyLevels", true)
         limitAxis = p.getBoolean("limitAxis", true)
+        usExtendedChart = p.getBoolean("usExtendedChart", true)
         watchLayout = p.getString("watchLayout", "list") ?: "list"
         industries.clear()
         p.getString("industries", null)?.let { json ->
@@ -445,6 +450,7 @@ object AppState {
             .putBoolean("monthlyReport", monthlyReport)
             .putBoolean("showKeyLevels", showKeyLevels)
             .putBoolean("limitAxis", limitAxis)
+            .putBoolean("usExtendedChart", usExtendedChart)
             .putString("watchLayout", watchLayout)
             .putString("industries", JSONObject().apply { industries.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("finnhubKey", finnhubKey)
