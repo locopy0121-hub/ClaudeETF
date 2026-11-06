@@ -749,6 +749,13 @@ object AppState {
         return true
     }
 
+    /** 復原剛移除的自選（放回原位置） */
+    fun restoreWatch(q: Quote, index: Int) {
+        if (quote(q.symbol) != null) return
+        quotes.add(index.coerceIn(0, quotes.size), q)
+        save()
+    }
+
     /** 移出自選（仍有持股的不移除） */
     fun removeWatch(symbol: String): Boolean {
         if (holdings.any { it.symbol.equals(symbol, true) }) return false

@@ -54,6 +54,13 @@ fun WatchlistScreen(nav: NavController) {
     val session = rememberUsSession()
     val scope = rememberCoroutineScope()
     var addMsg by remember { mutableStateOf<String?>(null) }
+    // 滑動：左滑移除（可復原）、右滑加入群組
+    var undo by remember { mutableStateOf<Pair<Quote, Int>?>(null) }
+    var undoGroup by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    var groupPick by remember { mutableStateOf<Quote?>(null) }
+    var swipeMsg by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(swipeMsg) { if (swipeMsg != null) { kotlinx.coroutines.delay(6_000); swipeMsg = null; undo = null; undoGroup = null } }
+    groupPick?.let { gq -> GroupPickDialog(gq) { groupPick = null } }
     val group = if (filter.startsWith("g")) AppState.groups.firstOrNull { "g" + it.id == filter } else null
     val sortNames = listOf("自訂", "漲幅", "跌幅", "代號", "價格", "成交量", "振幅")
     // 三關欄位或卡片版面：背景補抓各檔三關價
@@ -132,6 +139,20 @@ fun WatchlistScreen(nav: NavController) {
                     AppState.groups.map { ("g" + it.id) to it.name }
                 chips.forEach { (k, label) -> FilterChipText(label, filter == k) { filter = k } }
                 FilterChipText("＋ 群組", false) { newGroup = "" }
+            }
+            swipeMsg?.let { m ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Card).padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(m, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+                    if (undo != null || undoGroup != null) Text("復原", color = C.Primary, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            undo?.let { (q, i) -> AppState.restoreWatch(q, i) }
+                            undoGroup?.let { (g, sym) -> AppState.toggleInGroup(g, sym) }
+                            undo = null; undoGroup = null; swipeMsg = null
+                        }.padding(horizontal = 8.dp, vertical = 4.dp))
+                }
             }
             newGroup?.let { name ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -221,7 +242,23 @@ fun WatchlistScreen(nav: NavController) {
                 }
             } else if (!heat || editing) items(list, key = { it.symbol }) { q ->
                 if (!editing) {
-                    QuoteRow(q, onLongClick = { quick = q }) { nav.navigate(Routes.stock(q.symbol)) }
+                    SwipeRow(
+                        q,
+                        removeLabel = if (group != null) "移出群組" else "移除",
+                        onRemove = {
+                            if (group != null) {
+                                AppState.toggleInGroup(group.id, q.symbol); undoGroup = group.id to q.symbol; undo = null
+                                swipeMsg = "已將 ${q.symbol} 移出「${group.name}」"
+                            } else {
+                                val idx = AppState.quotes.indexOfFirst { it.symbol == q.symbol }
+                                if (AppState.removeWatch(q.symbol)) { undo = q to idx; undoGroup = null; swipeMsg = "已移除 ${q.symbol} ${q.name}" }
+                                else { undo = null; undoGroup = null; swipeMsg = "${q.symbol} 仍有持股，無法移出自選" }
+                            }
+                        },
+                        onGroup = { groupPick = q },
+                    ) {
+                        QuoteRow(q, onLongClick = { quick = q }) { nav.navigate(Routes.stock(q.symbol)) }
+                    }
                 } else {
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (group != null) {
@@ -599,4 +636,84 @@ private fun QuoteCard(q: Quote, modifier: Modifier, onLongClick: () -> Unit, onC
             Text("三關：$pos", color = c, fontSize = 10.sp, maxLines = 1)
         }
     }
+}
+
+
+/** 自選列滑動：左滑移除、右滑加入群組（放開後列會彈回） */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeRow(q: Quote, removeLabel: String, onRemove: () -> Unit, onGroup: () -> Unit, content: @Composable () -> Unit) {
+    // confirmValueChange 可能連續呼叫，0.8 秒內只處理一次
+    val last = remember { longArrayOf(0L) }
+    val state = androidx.compose.material3.rememberSwipeToDismissBoxState(
+        confirmValueChange = { v ->
+            val now = System.currentTimeMillis()
+            if (v != androidx.compose.material3.SwipeToDismissBoxValue.Settled && now - last[0] < 800) return@rememberSwipeToDismissBoxState false
+            if (v != androidx.compose.material3.SwipeToDismissBoxValue.Settled) last[0] = now
+            when (v) {
+                androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> onRemove()
+                androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> onGroup()
+                else -> {}
+            }
+            false // 不真的滑掉，交給清單更新
+        },
+        positionalThreshold = { it * 0.35f },
+    )
+    androidx.compose.material3.SwipeToDismissBox(
+        state = state,
+        backgroundContent = {
+            val dir = state.dismissDirection
+            val toRemove = dir == androidx.compose.material3.SwipeToDismissBoxValue.EndToStart
+            Row(
+                Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
+                    .background(if (toRemove) C.Red.copy(alpha = 0.85f) else C.Primary.copy(alpha = 0.85f))
+                    .padding(horizontal = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (toRemove) Arrangement.End else Arrangement.Start,
+            ) {
+                Text(if (toRemove) removeLabel else "加入群組", color = androidx.compose.ui.graphics.Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+    ) {
+        Box(Modifier.background(C.Bg)) { content() }
+    }
+}
+
+/** 快速加入／移出群組，也可直接建立新群組 */
+@Composable
+private fun GroupPickDialog(q: Quote, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.Card,
+        title = { Text("${q.symbol} ${q.name} 加入群組", color = C.Text, fontSize = 16.sp) },
+        text = {
+            Column {
+                if (AppState.groups.isEmpty()) Label("還沒有群組，輸入名稱建立")
+                AppState.groups.forEach { g ->
+                    val inG = q.symbol in g.symbols
+                    Row(
+                        Modifier.fillMaxWidth().clickable { AppState.toggleInGroup(g.id, q.symbol) }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(if (inG) "☑" else "☐", color = if (inG) C.Primary else C.Muted, fontSize = 20.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(g.name, Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+                        Label("${g.symbols.size} 檔")
+                    }
+                }
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it }, singleLine = true,
+                    placeholder = { Text("新群組名稱") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    colors = fieldColors(),
+                )
+            }
+        },
+        confirmButton = {
+            Text(if (name.isBlank()) "完成" else "建立並加入", color = C.Primary, fontSize = 15.sp, modifier = Modifier.clickable {
+                if (name.isNotBlank()) AppState.groupFrom(name, listOf(q.symbol))
+                onDismiss()
+            }.padding(12.dp))
+        },
+    )
 }
