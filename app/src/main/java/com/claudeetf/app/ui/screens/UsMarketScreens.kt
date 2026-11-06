@@ -129,7 +129,7 @@ fun MarketScreen(nav: NavController) {
                     }
                 }
                 items(AppState.usIndices.chunked(3)) { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { IndexCard(it, Modifier.weight(1f)) } }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { ix -> IndexCard(ix, Modifier.weight(1f)) { nav.navigate(Routes.index(ix.symbol)) } } }
                 }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -140,7 +140,7 @@ fun MarketScreen(nav: NavController) {
                 }
             } else {
                 items(AppState.twIndices.chunked(2)) { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { IndexCard(it, Modifier.weight(1f)) } }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { ix -> IndexCard(ix, Modifier.weight(1f)) { nav.navigate(Routes.index(ix.symbol)) } } }
                 }
             }
             if (tab != 2) boardSection(board, tab == 0, moverTab, { moverTab = it }, ::open)

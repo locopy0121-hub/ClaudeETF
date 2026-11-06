@@ -235,9 +235,25 @@ private fun StatusChip(market: Market, text: String, modifier: Modifier) {
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    // 價格跳動：上漲／下跌時以對應顏色閃一下
+    var last by remember(q.symbol) { mutableStateOf(q.price) }
+    var flash by remember(q.symbol) { mutableIntStateOf(0) }
+    LaunchedEffect(q.price) {
+        if (last != 0.0 && q.price != last) {
+            flash = if (q.price > last) 1 else -1
+            last = q.price
+            kotlinx.coroutines.delay(700)
+            flash = 0
+        } else last = q.price
+    }
+    val flashColor by androidx.compose.animation.animateColorAsState(
+        if (flash == 0) androidx.compose.ui.graphics.Color.Transparent else Trend.fg(flash.toDouble()).copy(alpha = 0.18f),
+        label = "flash",
+    )
     Row(
         Modifier
             .fillMaxWidth()
+            .background(flashColor)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,

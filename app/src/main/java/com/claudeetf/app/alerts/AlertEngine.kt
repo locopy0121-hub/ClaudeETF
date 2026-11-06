@@ -121,6 +121,7 @@ object AlertEngine {
             val result: Pair<String, String>? = when (a.type) {
                 AlertType.US_OPEN -> usOpen(a, todayKey)
                 AlertType.EARNINGS, AlertType.EXDIV -> event(a, today)
+                AlertType.RAPID -> null // 由 checkRapid 即時偵測
                 else -> price(a, todayKey, today)
             }
             if (result != null) {
@@ -206,6 +207,30 @@ object AlertEngine {
         val nyWeekday = ny.dayOfWeek.value <= 5
         if (nyWeekday && ny.toLocalTime() >= java.time.LocalTime.of(16, 15) && nyDay !in UsSession.holidayNames.keys) {
             summary(com.claudeetf.app.data.Market.US, "美股收盤摘要", "US-$nyDay")
+        }
+    }
+
+    /** 急漲急跌：每次即時更新後呼叫，比較 5 分鐘前價格 */
+    fun checkRapid(context: Context) {
+        val now = System.currentTimeMillis()
+        for (a in AppState.alerts.toList()) {
+            if (!a.enabled || a.type != AlertType.RAPID) continue
+            val targets = if (a.symbol.isBlank()) AppState.holdings.map { it.symbol } else listOf(a.symbol)
+            for (sym in targets) {
+                val q = AppState.quote(sym) ?: continue
+                val past = AppState.priceMinutesAgo(sym, 5) ?: continue
+                if (past <= 0 || q.price <= 0) continue
+                val pct = (q.price / past - 1) * 100
+                if (kotlin.math.abs(pct) < a.value) continue
+                // lastFired 記錄「代號@時間」，同一檔 30 分鐘內不重複
+                val marks = a.lastFired.split(";").filter { it.contains("@") }.associate { it.substringBefore("@") to (it.substringAfter("@").toLongOrNull() ?: 0L) }
+                if (now - (marks[sym] ?: 0L) < 30 * 60_000) continue
+                val key = (marks + (sym to now)).filter { now - it.value < 60 * 60_000 }.entries.joinToString(";") { it.key + "@" + it.value }
+                val dir = if (pct > 0) "急漲" else "急跌"
+                val text = "${q.symbol} ${q.name} 5 分鐘內$dir ${Fmt.signedPct(pct)}，現價 ${Fmt.price(q.price)}（今日 ${Fmt.signedPct(q.changePct)}）"
+                AppState.markFired(a.id, key, text, now)
+                notify(context, 2000 + (sym.hashCode() and 0xfff), "${q.symbol} $dir", text)
+            }
         }
     }
 

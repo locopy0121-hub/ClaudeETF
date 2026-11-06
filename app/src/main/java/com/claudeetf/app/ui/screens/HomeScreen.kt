@@ -188,7 +188,7 @@ fun HomeScreen(nav: NavController) {
                     }
                     items(idx.chunked(2)) { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            pair.forEach { IndexCard(it, Modifier.weight(1f)) }
+                            pair.forEach { ix -> IndexCard(ix, Modifier.weight(1f)) { nav.navigate(Routes.index(ix.symbol)) } }
                         }
                     }
                     }
@@ -215,11 +215,12 @@ private fun AllocRow(tag: @Composable () -> Unit, name: String, ratio: Double, v
 }
 
 @Composable
-fun IndexCard(q: IndexQuote, modifier: Modifier = Modifier) {
+fun IndexCard(q: IndexQuote, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     Column(
         modifier
             .clip(RoundedCornerShape(14.dp))
             .background(C.Card)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {

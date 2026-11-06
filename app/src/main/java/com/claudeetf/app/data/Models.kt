@@ -156,6 +156,7 @@ enum class AlertType(val label: String, val isPrice: Boolean, val unit: String) 
     EARNINGS("財報前", false, "天"),
     EXDIV("除息前", false, "天"),
     US_OPEN("美股開盤", false, ""),
+    RAPID("5 分鐘急漲急跌", true, "%"),
 }
 
 data class AlertRule(
@@ -174,6 +175,7 @@ data class AlertRule(
     val title: String
         get() = when (type) {
             AlertType.US_OPEN -> "美股開盤推播"
+            AlertType.RAPID -> (if (symbol.isBlank()) "全部持股" else symbol) + " 5 分鐘內漲跌 ≥ ${trimNum(value)}%"
             AlertType.PRICE_ABOVE, AlertType.PRICE_BELOW -> "$symbol ${type.label} ${trimNum(value)}"
             AlertType.CHANGE_UP, AlertType.CHANGE_DOWN -> "$symbol ${type.label} ${trimNum(value)}%"
             AlertType.EARNINGS, AlertType.EXDIV -> "$symbol ${type.label} ${trimNum(value)} 天"
@@ -182,6 +184,7 @@ data class AlertRule(
     val subtitle: String
         get() = when (type) {
             AlertType.US_OPEN -> "開盤後推播一次，自動依夏令／冬令調整"
+            AlertType.RAPID -> "盤中即時偵測（App 開著時），同一檔 30 分鐘內不重複"
             AlertType.EARNINGS -> "依 Yahoo 公布的財報日"
             AlertType.EXDIV -> "依 Yahoo 公布的除息日"
             else -> "盤中與背景更新時檢查，每天最多通知一次"

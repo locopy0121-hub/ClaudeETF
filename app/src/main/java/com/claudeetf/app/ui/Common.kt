@@ -51,6 +51,9 @@ object Routes {
     const val DRIP = "drip"
     const val REVIEW = "review"
     const val HEALTH = "health"
+    const val INDEX = "index"
+
+    fun index(symbol: String) = "$INDEX/" + java.net.URLEncoder.encode(symbol, "UTF-8")
     const val FX = "fx"
 
     fun alerts(symbol: String = "") = "$ALERTS?s=$symbol"

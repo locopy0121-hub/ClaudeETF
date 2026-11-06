@@ -95,7 +95,7 @@ fun AlertsScreen(nav: NavController, initialSymbol: String = "") {
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (a.type != AlertType.US_OPEN) { MarketTag(a.market); HGap(6.dp) }
+                            if (a.symbol.isNotBlank()) { MarketTag(a.market); HGap(6.dp) }
                             Text(a.title, color = C.Text, fontSize = 14.sp)
                         }
                         Label(a.subtitle)
@@ -179,7 +179,7 @@ private fun AddAlertCard(initialSymbol: String = "", onDone: () -> Unit) {
         if (type != AlertType.US_OPEN) {
             OutlinedTextField(
                 value = symbol, onValueChange = { symbol = it; error = null },
-                label = { Text("股票代號（例如 2330、AAPL）") }, singleLine = true,
+                label = { Text(if (type == AlertType.RAPID) "股票代號（留空＝全部持股）" else "股票代號（例如 2330、AAPL）") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth(), colors = fieldColors(),
             )
             OutlinedTextField(
@@ -198,6 +198,7 @@ private fun AddAlertCard(initialSymbol: String = "", onDone: () -> Unit) {
             val v = valueText.toDoubleOrNull()
             when {
                 type == AlertType.US_OPEN -> { AppState.addAlert("", type, 0.0); onDone() }
+                type == AlertType.RAPID && sym.isEmpty() && v != null && v > 0 -> { AppState.addAlert("", type, v); onDone() }
                 sym.isEmpty() -> error = "請輸入股票代號"
                 v == null || v < 0 -> error = "請輸入數值"
                 else -> {

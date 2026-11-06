@@ -161,6 +161,7 @@ class MainActivity : ComponentActivity() {
                     } else if (live) {
                         runCatching { MarketData.refreshLive() }
                     }
+                    if (live) runCatching { AlertEngine.checkRapid(applicationContext) }
                     delay(if (live) 5_000L else 60_000L)
                 }
             }
@@ -231,7 +232,7 @@ private fun tabOf(route: String?): String? = when {
     route == Routes.CALENDAR -> Routes.MARKET
     route.startsWith(Routes.ALERTS) || route == Routes.PNL -> Routes.HOME
     route == Routes.REPORT || route == Routes.COST || route == Routes.DRIP || route == Routes.REVIEW -> Routes.PORTFOLIO
-    route == Routes.FX -> Routes.MARKET
+    route == Routes.FX || route.startsWith(Routes.INDEX) -> Routes.MARKET
     else -> route
 }
 
@@ -351,6 +352,10 @@ fun AppRoot() {
             composable(Routes.DRIP) { com.claudeetf.app.ui.screens.DripScreen(nav) }
             composable(Routes.REVIEW) { com.claudeetf.app.ui.screens.ReviewScreen(nav) }
             composable(Routes.HEALTH) { com.claudeetf.app.ui.screens.HealthScreen(nav) }
+            composable(
+                Routes.INDEX + "/{sym}",
+                arguments = listOf(navArgument("sym") { type = NavType.StringType }),
+            ) { com.claudeetf.app.ui.screens.IndexScreen(nav, java.net.URLDecoder.decode(it.arguments?.getString("sym") ?: "", "UTF-8")) }
             composable(Routes.FX) { com.claudeetf.app.ui.screens.FxScreen(nav) }
             composable(Routes.SETTINGS) { SettingsScreen(nav) }
         }

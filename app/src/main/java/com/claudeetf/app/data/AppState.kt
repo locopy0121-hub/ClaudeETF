@@ -104,6 +104,24 @@ object AppState {
     var finnhubKey by mutableStateOf("")
         private set
     var refreshing by mutableStateOf(false)
+    /** 盤中逐筆價格（急漲急跌偵測用，只保留 10 分鐘） */
+    val ticks = HashMap<String, ArrayDeque<Pair<Long, Double>>>()
+
+    private fun recordTick(symbol: String, price: Double) {
+        val now = System.currentTimeMillis()
+        val dq = ticks.getOrPut(symbol) { ArrayDeque() }
+        if (dq.isEmpty() || dq.last().second != price || now - dq.last().first > 30_000) dq.addLast(now to price)
+        while (dq.isNotEmpty() && now - dq.first().first > 10 * 60_000) dq.removeFirst()
+    }
+
+    /** 5 分鐘前（含）最接近的價格 */
+    fun priceMinutesAgo(symbol: String, minutes: Int): Double? {
+        val dq = ticks[symbol] ?: return null
+        val cutoff = System.currentTimeMillis() - minutes * 60_000L
+        if (dq.isEmpty() || dq.first().first > cutoff + 60_000) return null // 資料不足 4 分鐘
+        return dq.lastOrNull { it.first <= cutoff }?.second ?: dq.first().second
+    }
+
     /** 美股延長盤：代號 → (盤前／盤後, 價格, 漲跌%, 時間) */
     data class ExtQuote(val label: String, val price: Double, val changePct: Double, val time: Long)
     val extended = mutableStateMapOf<String, ExtQuote>()
@@ -478,6 +496,7 @@ object AppState {
                 else -> it
             }
         }
+        if (live) recordTick(old.symbol, rq.price)
         quotes[i] = old.copy(
             name = if (old.name == old.symbol && rq.name != null) rq.name else old.name,
             price = rq.price,
