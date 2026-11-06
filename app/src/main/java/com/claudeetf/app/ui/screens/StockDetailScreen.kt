@@ -604,16 +604,9 @@ private fun LazyListScope.newsTab(news: Load<List<YahooExtra.News>>) {
 
 @Composable
 private fun NewsRow(n: YahooExtra.News) {
-    val uri = LocalUriHandler.current
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card)
-            .clickable { runCatching { uri.openUri(n.link) } }
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text(n.title, color = C.Text, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        Label(listOf(n.publisher, date(n.time, "M/d HH:mm")).filter { it.isNotBlank() && it != "—" }.joinToString(" · "))
-    }
+    var open by remember { mutableStateOf(false) }
+    if (open) NewsReader(n) { open = false }
+    NewsItem(n) { open = true }
 }
 
 private fun LazyListScope.companyTab(fund: Load<Fundamentals>) {

@@ -315,7 +315,7 @@ object YahooExtra {
 
     // ---------------- 新聞 ----------------
 
-    data class News(val title: String, val publisher: String, val link: String, val time: Long)
+    data class News(val title: String, val publisher: String, val link: String, val time: Long, val summary: String = "")
 
     fun news(query: String, count: Int = 12): List<News> {
         val body = Http.get(

@@ -254,12 +254,8 @@ object StockInfoRepo {
     /** 台股用 Google 中文新聞；美股用 Yahoo 新聞，失敗時改用 Google */
     suspend fun news(q: Quote): List<YahooExtra.News> = withContext(Dispatchers.IO) {
         newsCache[q.symbol]?.let { (t, n) -> if (System.currentTimeMillis() - t < TTL) return@withContext n }
-        val list = if (q.market == Market.TW) {
-            com.claudeetf.app.data.remote.GoogleNews.search("${q.symbol} ${q.name} 股")
-        } else {
-            runCatching { YahooExtra.news(q.symbol) }.getOrNull()?.takeIf { it.isNotEmpty() }
-                ?: com.claudeetf.app.data.remote.GoogleNews.search("${q.symbol} ${q.name} 股價")
-        }
+        // RSS 新聞（Yahoo股市／Yahoo Finance，備援 Google 新聞），內文在 App 內閱讀
+        val list = com.claudeetf.app.data.remote.RssNews.stock(q)
         newsCache[q.symbol] = System.currentTimeMillis() to list
         list
     }

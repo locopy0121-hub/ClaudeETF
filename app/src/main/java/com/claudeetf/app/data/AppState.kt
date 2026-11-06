@@ -79,9 +79,9 @@ object AppState {
         "session" to "美股交易時段", "index" to "主要指數", "source" to "資料來源", "goal" to "資產目標",
         "pnlsplit" to "今日損益（台股／美股）", "watch" to "自選前五檔", "holdings" to "持股前五大",
         "keys" to "持股三關位置", "divcal" to "持股除息行事曆", "alerts" to "最近通知", "fx" to "匯率與總經",
-        "fut" to "台指期近月")
+        "fut" to "台指期近月", "news" to "財經新聞（RSS）")
     /** v0.1.45 新增的固定卡片：舊使用者預設隱藏，到設定勾選 */
-    private val newHomeCards = setOf("pnlsplit", "watch", "holdings", "keys", "divcal", "alerts", "fx", "fut")
+    private val newHomeCards = setOf("pnlsplit", "watch", "holdings", "keys", "divcal", "alerts", "fx", "fut", "news")
 
     /** 自訂卡片：idx:代號（指數）、stk:代號（個股） */
     fun isCustomCard(id: String) = id.startsWith("idx:") || id.startsWith("stk:")
