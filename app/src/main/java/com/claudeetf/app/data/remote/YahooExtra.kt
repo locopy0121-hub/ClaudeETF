@@ -176,6 +176,35 @@ object YahooExtra {
         throw HttpException(401, "Yahoo 驗證失敗")
     }
 
+    // ---------------- 批次即時報價 ----------------
+
+    data class LiveQuote(val symbol: String, val name: String?, val price: Double, val prevClose: Double,
+                         val open: Double?, val high: Double?, val low: Double?, val volume: Double?, val time: Long, val state: String)
+
+    /** v7 批次報價（需 crumb），一次最多 50 檔 */
+    fun quotes(symbols: List<String>): List<LiveQuote> {
+        val out = ArrayList<LiveQuote>()
+        for (chunk in symbols.chunked(50)) {
+            val body = authedGet("$Q2/v7/finance/quote?symbols=${enc(chunk.joinToString(","))}&formatted=false")
+            val arr = JSONObject(body).optJSONObject("quoteResponse")?.optJSONArray("result") ?: continue
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val price = o.raw("regularMarketPrice") ?: continue
+                out += LiveQuote(
+                    o.optString("symbol"),
+                    o.optString("longName").ifBlank { o.optString("shortName") }.ifBlank { null },
+                    price,
+                    o.raw("regularMarketPreviousClose") ?: price,
+                    o.raw("regularMarketOpen"), o.raw("regularMarketDayHigh"), o.raw("regularMarketDayLow"),
+                    o.raw("regularMarketVolume"),
+                    ((o.raw("regularMarketTime") ?: 0.0) * 1000).toLong(),
+                    o.optString("marketState"),
+                )
+            }
+        }
+        return out
+    }
+
     // ---------------- 漲跌排行（預設篩選器） ----------------
 
     data class Mover(val symbol: String, val name: String, val price: Double, val changePct: Double, val volume: Double)

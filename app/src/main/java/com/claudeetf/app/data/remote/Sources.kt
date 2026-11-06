@@ -275,3 +275,60 @@ object YahooApi {
         )
     }
 }
+
+// ---------------------------------------------------------------------------
+// 證交所基本市況報導（MIS，盤中即時，免金鑰）
+// GET https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_2330.tw|otc_6488.tw&json=1&delay=0
+// 欄位：c 代號、n 名稱、z 最近成交價（"-" 表示該檔快照無成交）、y 昨收、o 開、h 高、l 低、
+//      v 累積成交量（張）、a/b 五檔賣價／買價（以 _ 分隔）、f/g 五檔賣量／買量、tlong 時間（毫秒）
+// 上市、上櫃代號不同前綴：同時送 tse_ 與 otc_，交易所只會回傳存在的那一個。
+// ---------------------------------------------------------------------------
+object TwseMisApi {
+    data class Tick(val quote: RemoteQuote, val time: Long, val isOtc: Boolean)
+
+    private fun first(s: String?): Double? =
+        s?.split("_")?.firstOrNull { it.isNotBlank() }?.toDoubleOrNull()?.takeIf { it > 0 }
+
+    private fun num(s: String?): Double? = s?.trim()?.takeIf { it != "-" && it.isNotEmpty() }?.toDoubleOrNull()?.takeIf { it > 0 }
+
+    /** channels 例：tse_2330.tw、otc_6488.tw、tse_t00.tw（加權指數） */
+    fun fetch(channels: List<String>): Map<String, Tick> {
+        val out = HashMap<String, Tick>()
+        for (chunk in channels.chunked(40)) {
+            val ex = java.net.URLEncoder.encode(chunk.joinToString("|"), "UTF-8")
+            val body = Http.get(
+                "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=$ex&json=1&delay=0&_=${System.currentTimeMillis()}",
+                mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 14) Mobile", "Referer" to "https://mis.twse.com.tw/stock/index.jsp"),
+                timeoutMs = 8_000,
+            )
+            val arr = JSONObject(body).optJSONArray("msgArray") ?: continue
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val code = o.optString("c").trim()
+                if (code.isEmpty()) continue
+                val prev = num(o.optString("y")) ?: continue
+                // 沒有新成交時，以最佳買價（其次賣價）代表目前價格
+                val price = num(o.optString("z")) ?: first(o.optString("b")) ?: first(o.optString("a")) ?: num(o.optString("o")) ?: prev
+                val vol = num(o.optString("v"))
+                out[code] = Tick(
+                    RemoteQuote(
+                        symbol = code,
+                        name = o.optString("n").trim().ifBlank { null },
+                        price = price,
+                        prevClose = prev,
+                        open = num(o.optString("o")),
+                        high = num(o.optString("h")),
+                        low = num(o.optString("l")),
+                        volume = vol?.times(1000),
+                    ),
+                    o.optString("tlong").toLongOrNull() ?: System.currentTimeMillis(),
+                    o.optString("ex") == "otc",
+                )
+            }
+        }
+        return out
+    }
+
+    fun quotes(symbols: List<String>): Map<String, Tick> =
+        fetch(symbols.flatMap { listOf("tse_$it.tw", "otc_$it.tw") })
+}

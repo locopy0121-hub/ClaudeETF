@@ -92,6 +92,8 @@ object AppState {
     var finnhubKey by mutableStateOf("")
         private set
     var refreshing by mutableStateOf(false)
+    /** 最近一次即時輪詢時間 */
+    var lastLiveAt by mutableLongStateOf(0L)
     var fxSource by mutableStateOf("手動輸入")
         private set
     var fxUpdatedAt by mutableLongStateOf(0L)
@@ -429,6 +431,8 @@ object AppState {
         now: Long,
         persist: Boolean = false,
         sparkOverride: List<Float>? = null,
+        /** 盤中即時更新：保留當日走勢，接上最新價格 */
+        live: Boolean = false,
     ) {
         val i = quotes.indexOfFirst { it.symbol.equals(rq.symbol, ignoreCase = true) }
         if (i < 0) return
@@ -440,7 +444,16 @@ object AppState {
             if (up) rq.low else rq.high,
             if (up) rq.high else rq.low,
             rq.price,
-        ).map { it.toFloat() }.let { if (sparkOverride != null && sparkOverride.size >= 2) sparkOverride else it }
+        ).map { it.toFloat() }.let {
+            when {
+                sparkOverride != null && sparkOverride.size >= 2 -> sparkOverride
+                live && old.spark.size >= 2 && old.updatedAt > 0 &&
+                    java.time.Instant.ofEpochMilli(old.updatedAt).atZone(java.time.ZoneId.of("Asia/Taipei")).toLocalDate() ==
+                    java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei")) ->
+                    (if (old.price == rq.price) old.spark else old.spark + rq.price.toFloat()).takeLast(120)
+                else -> it
+            }
+        }
         quotes[i] = old.copy(
             name = if (old.name == old.symbol && rq.name != null) rq.name else old.name,
             price = rq.price,

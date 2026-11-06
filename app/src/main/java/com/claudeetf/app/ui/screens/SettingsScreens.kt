@@ -237,7 +237,7 @@ fun SettingsScreen(nav: NavController) {
             item {
                 Card(padding = 14.dp) {
                     Text("台股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Label("盤中優先使用富果即時行情；盤後、未填金鑰或富果失敗時，自動改用證交所 OpenAPI 收盤資料（上櫃股票用櫃買中心）。")
+                    Label("盤中每 5 秒即時更新：有富果金鑰時富果優先（自動控制在免費額度內），其餘與未填金鑰時使用證交所即時行情；盤後改用證交所／櫃買收盤資料。")
                     KeyField(
                         label = "富果 Fugle API 金鑰",
                         initial = AppState.fugleKey,

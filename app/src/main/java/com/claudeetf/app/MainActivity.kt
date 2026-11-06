@@ -72,18 +72,24 @@ class MainActivity : ComponentActivity() {
         setContent {
             AppTheme { AppRoot() }
         }
-        // App 在前景時自動更新行情：交易時段每分鐘、其餘每 15 分鐘
+        // App 在前景時自動更新行情：
+        // 交易時段每 5 秒即時更新報價、每 60 秒完整更新（指數、匯率、提醒、淨值、小工具）；收盤後每 15 分鐘
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var lastFull = 0L
                 while (true) {
-                    runCatching { MarketData.refreshAll() }
-                    runCatching { AlertEngine.check(applicationContext) }
-                    runCatching { AppState.recordNav() }
-                    runCatching { com.claudeetf.app.widget.WidgetUpdater.update(applicationContext) }
-                    val usOpen = UsSession.info().phase.let {
-                        it == UsSession.Phase.PRE || it == UsSession.Phase.REGULAR || it == UsSession.Phase.POST
+                    val live = MarketData.anyMarketLive()
+                    val now = System.currentTimeMillis()
+                    if (now - lastFull >= (if (live) 60_000L else 15 * 60_000L)) {
+                        runCatching { MarketData.refreshAll() }
+                        runCatching { AlertEngine.check(applicationContext) }
+                        runCatching { AppState.recordNav() }
+                        runCatching { com.claudeetf.app.widget.WidgetUpdater.update(applicationContext) }
+                        lastFull = System.currentTimeMillis()
+                    } else if (live) {
+                        runCatching { MarketData.refreshLive() }
                     }
-                    delay(if (usOpen || MarketData.isTwIntraday()) 60_000L else 15 * 60_000L)
+                    delay(if (live) 5_000L else 60_000L)
                 }
             }
         }

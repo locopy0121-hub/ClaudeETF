@@ -103,6 +103,13 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
         history = Load.Loading
         history = runCatching { StockInfoRepo.history(q, ranges[range].fetch) }
             .fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        // 盤中：1 日走勢每 30 秒自動更新
+        while (range == 0) {
+            kotlinx.coroutines.delay(30_000)
+            val open = if (q.market == Market.TW) com.claudeetf.app.data.MarketData.isTwIntraday() else com.claudeetf.app.data.MarketData.usLive()
+            if (!open) continue
+            runCatching { StockInfoRepo.history(q, ranges[range].fetch) }.onSuccess { history = Load.Ok(it) }
+        }
     }
     // 基本面（概覽、財務、公司共用）
     var fund by remember { mutableStateOf<Load<Fundamentals>>(Load.Loading) }

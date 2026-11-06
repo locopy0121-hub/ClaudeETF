@@ -151,6 +151,7 @@ fun WatchlistScreen(nav: NavController) {
                     HGap(8.dp)
                     StatusChip(Market.US, session.phase.label.take(4) + " · 收 " + session.closeTw, Modifier.weight(1f))
                 }
+                LiveBanner()
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Label("排序", Modifier.padding(end = 6.dp))
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -263,8 +264,14 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
 }
 
-fun sourceText(src: QuoteSource, at: Long): String =
-    if (at == 0L) src.label else src.label + " " + Fmt.time(at)
+fun sourceText(src: QuoteSource, at: Long): String {
+    if (at == 0L) return src.label
+    // 2 分鐘內的報價視為即時，顯示到秒
+    return if (System.currentTimeMillis() - at < 120_000) {
+        "● 即時 " + java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.of("Asia/Taipei"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"))
+    } else src.label + " " + Fmt.time(at)
+}
 
 @Composable
 fun fieldColors() = OutlinedTextFieldDefaults.colors(
@@ -345,4 +352,25 @@ private fun QuickTradeDialog(q: Quote, onDismiss: () -> Unit) {
             Text("取消", color = C.Muted, fontSize = 15.sp, modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp))
         },
     )
+}
+
+/** 盤中顯示「即時更新中」與最後更新時間 */
+@Composable
+fun LiveBanner() {
+    if (!MarketData.anyMarketLive()) return
+    val last = AppState.lastLiveAt
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Card).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Dot(if (last > 0 && System.currentTimeMillis() - last < 30_000) C.Green else C.Tw, 8.dp)
+        HGap(8.dp)
+        Text(
+            "即時更新中・每 5 秒" + (if (last > 0) "・最後 " + java.time.Instant.ofEpochMilli(last)
+                .atZone(java.time.ZoneId.of("Asia/Taipei")).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")) else ""),
+            color = C.Text2, fontSize = 12.sp,
+        )
+        Spacer(Modifier.weight(1f))
+        Label(listOfNotNull(if (MarketData.isTwIntraday()) "台股" else null, if (MarketData.usLive()) "美股" else null).joinToString("・"))
+    }
 }

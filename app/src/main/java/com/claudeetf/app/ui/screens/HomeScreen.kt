@@ -174,7 +174,8 @@ fun HomeScreen(nav: NavController) {
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Card)
                                 .clickable { nav.navigate(Routes.SETTINGS) }.padding(12.dp),
                         ) {
-                            Label("台股：" + MarketData.twSourcePlan())
+                            if (MarketData.anyMarketLive()) Label("● 盤中即時更新（每 5 秒）", color = C.Green)
+                    Label("台股：" + MarketData.twSourcePlan())
                             Label("美股：" + (AppState.sourceStatus["US"] ?: "Yahoo Finance"))
                             Label("匯率：" + AppState.fxSource + (if (AppState.fxUpdatedAt > 0) " " + Fmt.time(AppState.fxUpdatedAt) else ""))
                         }
