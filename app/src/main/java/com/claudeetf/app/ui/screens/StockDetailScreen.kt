@@ -135,8 +135,22 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     var chips by remember { mutableStateOf<Load<StockInfoRepo.Chips>>(Load.Loading) }
     var holdings by remember { mutableStateOf<Load<YahooExtra.EtfHoldings>>(Load.Loading) }
     var peers by remember { mutableStateOf<Load<List<StockInfoRepo.Peer>>>(Load.Loading) }
+    var peerExtras by remember { mutableStateOf<Map<String, PeerExtra>>(emptyMap()) }
     LaunchedEffect(q.symbol) {
         peers = runCatching { StockInfoRepo.peers(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        // 同業的三關位置與法人買賣超
+        (peers as? Load.Ok<List<StockInfoRepo.Peer>>)?.value?.let { list ->
+            val inst = if (q.market == Market.TW) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { com.claudeetf.app.data.remote.TwInstitutional.latest() }.getOrDefault(emptyMap())
+            } else emptyMap()
+            val out = HashMap<String, PeerExtra>()
+            for (p in list) {
+                val pq = AppState.quote(p.symbol) ?: Quote(p.symbol, p.name, q.market, p.price, p.price / (1 + p.changePct / 100))
+                val k = runCatching { StockInfoRepo.keyPrices(pq) }.getOrNull()
+                out[p.symbol] = PeerExtra(k?.let { KeyLevelsUi.position(p.price, it) }, inst[p.symbol]?.total?.div(1000.0))
+                peerExtras = HashMap(out)
+            }
+        }
     }
     LaunchedEffect(q.symbol, tab) {
         when (tab) {
@@ -218,7 +232,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                         item { VolumeProfileCard(q, h, start, opt.label) }
                     }
                     item { SectionTitle("基本資料") }
-                    overviewTab(q, fund); peersSection(nav, peers)
+                    overviewTab(q, fund); peersSection(nav, peers, peerExtras)
                 }
                 Tab.CHIPS -> chipsTab(q, chips)
                 Tab.FIN -> financialsTab(q, fund)
@@ -949,7 +963,9 @@ private fun MarksCard(q: Quote) {
     }
 }
 
-private fun LazyListScope.peersSection(nav: NavController, peers: Load<List<StockInfoRepo.Peer>>) {
+private data class PeerExtra(val keyPos: Pair<String, androidx.compose.ui.graphics.Color>?, val instLots: Double?)
+
+private fun LazyListScope.peersSection(nav: NavController, peers: Load<List<StockInfoRepo.Peer>>, extras: Map<String, PeerExtra>) {
     val list = (peers as? Load.Ok<List<StockInfoRepo.Peer>>)?.value ?: return
     if (list.isEmpty()) return
     item { SectionTitle("相似股票", "今日 · 近一年") }
@@ -964,6 +980,12 @@ private fun LazyListScope.peersSection(nav: NavController, peers: Load<List<Stoc
             Column(Modifier.weight(1f)) {
                 Text(p.name, color = C.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 NumText(p.symbol + " · " + Fmt.price(p.price), 11.sp, C.Muted)
+                extras[p.symbol]?.let { e ->
+                    Row {
+                        e.keyPos?.let { (pos, c) -> Text("三關 $pos", color = c, fontSize = 10.sp); HGap(8.dp) }
+                        e.instLots?.let { Text("法人 " + Fmt.signed(it) + " 張", color = Trend.fg(it), fontSize = 10.sp) }
+                    }
+                }
             }
             ChangePill(p.changePct)
             HGap(8.dp)

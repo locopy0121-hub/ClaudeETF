@@ -72,15 +72,31 @@ object Backup {
  * 日期可用 2025/11/05、2025-11-05、114/11/05（民國年）。
  */
 object TradeCsv {
-    private val header = listOf("日期", "類別", "代號", "股數", "價格", "手續費", "交易稅", "匯率", "備註")
+    // 前 9 欄可直接匯回；後面為參考用的試算欄位（匯入時忽略）
+    private val header = listOf("日期", "類別", "代號", "股數", "價格", "手續費", "交易稅", "匯率", "備註",
+        "名稱", "帳戶", "標籤", "成交金額(原幣)", "淨收付(台幣)", "已實現損益(台幣)", "股息實收(台幣)")
 
     fun export(trades: List<Trade>): String {
         val sb = StringBuilder("﻿") // BOM，讓 Excel 正確顯示中文
         sb.append(header.joinToString(",")).append("\n")
         trades.filter { it.origin != TradeOrigin.LEGACY }.sortedBy { Ledger.sortKey(it) }.forEach { t ->
             val type = if (t.origin == TradeOrigin.OPENING) "期初" else t.type.label
-            sb.append(listOf(t.date, type, t.symbol, plain(t.shares), plain(t.price), plain(t.fee), plain(t.tax), plain(t.fx), t.note)
-                .joinToString(",") { csvCell(it) }).append("\n")
+            val gross = t.shares * t.price
+            val net = when (t.type) {
+                TradeType.BUY -> -(gross + t.fee) * t.fx
+                TradeType.SELL -> (gross - t.fee - t.tax) * t.fx
+                TradeType.DIVIDEND -> AppState.dividendById[t.id] ?: 0.0
+                TradeType.SPLIT -> 0.0
+            }
+            sb.append(
+                listOf(
+                    t.date, type, t.symbol, plain(t.shares), plain(t.price), plain(t.fee), plain(t.tax), plain(t.fx), t.note,
+                    AppState.quote(t.symbol)?.name ?: "", AppState.account(t.account)?.name ?: "", t.tags.joinToString(" "),
+                    plain(gross), plain(Math.round(net * 100) / 100.0),
+                    AppState.realizedById[t.id]?.let { plain(Math.round(it * 100) / 100.0) } ?: "",
+                    AppState.dividendById[t.id]?.let { plain(Math.round(it * 100) / 100.0) } ?: "",
+                ).joinToString(",") { csvCell(it) }
+            ).append("\n")
         }
         return sb.toString()
     }
