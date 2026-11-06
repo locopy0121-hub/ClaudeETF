@@ -71,4 +71,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-nearby:19.3.0")
     // Play 服務帶入舊版 fragment，指定新版讓 ActivityResult 權限請求正常
     implementation("androidx.fragment:fragment-ktx:1.8.5")
+    // 跨網 P2P：WebRTC DataChannel（Google libwebrtc 打包版）
+    implementation("io.getstream:stream-webrtc-android:1.3.9")
+    // 邀請碼 QR Code：產生（zxing core）與掃描（相機）
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }

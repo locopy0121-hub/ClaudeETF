@@ -18,6 +18,14 @@ object ChatPrefs {
         private set
     var groupId by mutableStateOf("")
         private set
+    /** 群組密碼：所有成員相同，用來衍生訊息加密金鑰（空白＝僅以群聊 ID 衍生） */
+    var groupPassword by mutableStateOf("")
+        private set
+    /** 連線方式：附近（藍牙／Wi-Fi 直連）、跨網（WebRTC） */
+    var useNearby by mutableStateOf(true)
+        private set
+    var useInternet by mutableStateOf(true)
+        private set
 
     fun init(c: Context) {
         ctx = c.applicationContext
@@ -26,6 +34,9 @@ object ChatPrefs {
         userId = p.getString("userId", null) ?: newId().also { p.edit().putString("userId", it).apply() }
         userName = p.getString("userName", null) ?: ("使用者" + userId.takeLast(4))
         groupId = p.getString("groupId", "") ?: ""
+        groupPassword = p.getString("groupPassword", "") ?: ""
+        useNearby = p.getBoolean("useNearby", true)
+        useInternet = p.getBoolean("useInternet", true)
     }
 
     private fun newId(): String {
@@ -49,4 +60,8 @@ object ChatPrefs {
     }
     /** 群聊 ID：同一個 ID 的成員互相連線 */
     fun updateGroupId(g: String) { groupId = g.trim().replace("|", "").take(24); put("groupId", groupId) }
+
+    fun updateGroupPassword(pw: String) { groupPassword = pw; put("groupPassword", pw) }
+    fun updateUseNearby(on: Boolean) { useNearby = on; put("useNearby", on) }
+    fun updateUseInternet(on: Boolean) { useInternet = on; put("useInternet", on) }
 }
