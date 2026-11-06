@@ -231,6 +231,9 @@ object AppState {
     /** 收盤後仍顯示「收盤定案」的最終進場標籤；關閉則收盤後自動隱藏 */
     var showFinalSignal by mutableStateOf(true)
     fun updateShowLiveSignal(on: Boolean) { showLiveSignal = on; save() }
+    /** 自選卡片、清單與持股列顯示進場建議標籤 */
+    var showCardEntry by mutableStateOf(true)
+    fun updateShowCardEntry(on: Boolean) { showCardEntry = on; save() }
     fun updateShowFinalSignal(on: Boolean) { showFinalSignal = on; save() }
 
     /** 走勢圖標示我的買賣點 */
@@ -401,6 +404,7 @@ object AppState {
         showTradeMarks = p.getBoolean("showTradeMarks", true)
         showScoreBadge = p.getBoolean("showScoreBadge", true)
         showLiveSignal = p.getBoolean("showLiveSignal", true)
+        showCardEntry = p.getBoolean("showCardEntry", true)
         showFinalSignal = p.getBoolean("showFinalSignal", true)
         investBudget = p.getFloat("investBudget", 0f).toDouble()
         p.getString("newsSources", null)?.let { j ->
@@ -596,6 +600,7 @@ object AppState {
             .putBoolean("showTradeMarks", showTradeMarks)
             .putBoolean("showScoreBadge", showScoreBadge)
             .putBoolean("showLiveSignal", showLiveSignal)
+            .putBoolean("showCardEntry", showCardEntry)
             .putBoolean("showFinalSignal", showFinalSignal)
             .putFloat("investBudget", investBudget.toFloat())
             .putString("newsSources", JSONArray(newsSources.toList()).toString())

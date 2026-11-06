@@ -53,6 +53,22 @@ fun EntryTag(e: KlineAnalysis.Entry, big: Boolean = false) {
             .padding(horizontal = if (big) 12.dp else 7.dp, vertical = if (big) 6.dp else 2.dp))
 }
 
+/**
+ * 清單／卡片用的進場建議標籤：背景載入該股日 K 分析（共用快取，報價變動即重算），
+ * 尚未載入或設定關閉時不顯示。holder = true 時在標籤後附上持有者建議。
+ */
+@Composable
+fun EntryTagFor(q: Quote, holder: Boolean = false, modifier: Modifier = Modifier) {
+    if (!AppState.showCardEntry || q.price <= 0) return
+    LaunchedEffect(q.symbol, q.price) { runCatching { KlineAnalysis.load(q, false) } }
+    val r = KlineAnalysis.latestDaily[q.symbol] ?: return
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        EntryTag(r.entry)
+        if (holder) Text(" " + r.entry.holderTip, color = C.Muted, fontSize = 10.sp, maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    }
+}
+
 private fun dirColor(d: KlineAnalysis.Dir): Color = when {
     d.bullish -> Trend.up
     d.bearish -> Trend.down

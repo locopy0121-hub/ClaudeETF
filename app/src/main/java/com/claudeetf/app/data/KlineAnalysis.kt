@@ -3,6 +3,7 @@ package com.claudeetf.app.data
 import com.claudeetf.app.data.remote.YahooExtra
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withPermit
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -411,10 +412,16 @@ object KlineAnalysis {
     /** 最近一次各股日 K 結果（標題徽章、摘要列共用） */
     val latestDaily = androidx.compose.runtime.mutableStateMapOf<String, Result>()
 
+    private val netLimit = kotlinx.coroutines.sync.Semaphore(3)
+
     private suspend fun candles(q: Quote, weekly: Boolean, maxAgeMs: Long): List<Candle> = withContext(Dispatchers.IO) {
         val key = q.symbol + if (weekly) "|w" else "|d"
         raw[key]?.let { (t, cs) -> if (System.currentTimeMillis() - t < maxAgeMs) return@withContext cs }
-        val h = YahooExtra.history(StockInfoRepo.yahooSymbol(q), if (weekly) "5y" else "2y")
+        // 清單一次載入很多檔時限制同時連線數
+        val h = netLimit.withPermit {
+            raw[key]?.let { (t, cs) -> if (System.currentTimeMillis() - t < maxAgeMs) return@withContext cs }
+            YahooExtra.history(StockInfoRepo.yahooSymbol(q), if (weekly) "5y" else "2y")
+        }
         val cs = ArrayList<Candle>()
         for (k in h.closes.indices) {
             val o = h.opens.getOrNull(k)?.toDouble() ?: continue

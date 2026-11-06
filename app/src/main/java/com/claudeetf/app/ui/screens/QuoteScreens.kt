@@ -345,6 +345,7 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
                 MarketTag(q.market); HGap(6.dp); NumText(q.symbol, 12.sp, C.Muted)
                 HGap(6.dp); Text(sourceText(q.source, q.updatedAt), color = C.Muted, fontSize = 10.sp, maxLines = 1)
             }
+            EntryTagFor(q)
         }
         WatchCell(q, AppState.watchColumn)
         if (AppState.watchColumn2.isNotEmpty() && AppState.watchColumn2 != AppState.watchColumn) {
@@ -621,19 +622,24 @@ private fun QuoteCard(q: Quote, modifier: Modifier, onLongClick: () -> Unit, onC
         )
         if (q.spark.size >= 2) Sparkline(q.spark, color, Modifier.fillMaxWidth().height(26.dp), fill = true)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (q.change > 0) "▲" else if (q.change < 0) "▼" else "", color = color, fontSize = 11.sp)
-            HGap(4.dp)
+            // Fmt.signed 已含 ▲▼，百分比帶正負號
             NumText(Fmt.signed(q.change, 2), 12.sp, color, modifier = Modifier.weight(1f))
-            NumText(Fmt.pct(kotlin.math.abs(q.changePct)), 12.sp, color)
+            NumText(Fmt.pct(q.changePct), 12.sp, color)
         }
         if (q.market == Market.TW) {
             com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00"))?.let { st ->
                 Text(st, color = Trend.fg(if (st == "漲停") 1.0 else -1.0), fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
-        AppState.keyPrices[q.symbol]?.let { k ->
-            val (pos, c) = KeyLevelsUi.position(q.price, k)
-            Text("三關：$pos", color = c, fontSize = 10.sp, maxLines = 1)
+        // 三關位置（左）＋進場建議（右）
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                AppState.keyPrices[q.symbol]?.let { k ->
+                    val (pos, c) = KeyLevelsUi.position(q.price, k)
+                    Text("三關：$pos", color = c, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            EntryTagFor(q)
         }
     }
 }

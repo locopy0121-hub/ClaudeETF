@@ -362,6 +362,7 @@ private fun HoldingRow(h: Holding, inTwd: Boolean, onClick: () -> Unit) {
                     color = Trend.fg(day), fontSize = 11.sp, maxLines = 1,
                 )
             }
+            q?.let { EntryTagFor(it, holder = true, modifier = Modifier.padding(top = 2.dp)) }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
             NumText(mask(mvText), 14.sp)
