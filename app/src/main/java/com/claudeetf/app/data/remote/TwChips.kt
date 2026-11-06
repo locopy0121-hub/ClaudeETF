@@ -42,8 +42,10 @@ object TwInstitutional {
         val o = JSONObject(body)
         val data = o.optJSONArray("data")
         if (o.optString("stat") != "OK" || data == null) {
-            cache[date] = emptyMap()
-            return emptyMap()
+            // 「沒有符合條件的資料」= 休市，可快取；其他（查詢過於頻繁等）不快取，交給呼叫端重試
+            val stat = o.optString("stat")
+            if (stat.contains("沒有符合") || stat.contains("查無")) { cache[date] = emptyMap(); return emptyMap() }
+            throw IllegalStateException("證交所 T86：" + stat.ifBlank { "暫時無法取得" })
         }
         val fields = o.optJSONArray("fields") ?: JSONArray()
         val names = (0 until fields.length()).map { fields.optString(it) }
@@ -102,7 +104,11 @@ object TwInstitutional {
         while (out.size < n && tries < n + 8) {
             tries++
             if (d.dayOfWeek != DayOfWeek.SATURDAY && d.dayOfWeek != DayOfWeek.SUNDAY) {
+                // 證交所限制查詢頻率：未快取的日期間隔 0.5 秒，失敗等 2 秒再試一次
+                val fresh = !cache.containsKey(d)
+                if (fresh && out.isNotEmpty()) Thread.sleep(500)
                 val map = runCatching { day(d) }.getOrNull()
+                    ?: run { Thread.sleep(2_000); runCatching { day(d) }.getOrNull() }
                 if (map != null && map.isNotEmpty()) {
                     val rec = map[code]
                     // 最近一個交易日就查不到，代表不是上市證券：改用櫃買中心（只有最新一日）
