@@ -82,6 +82,12 @@ data class Trade(
     val tags: List<String> = emptyList(),
 )
 
+/** 目標價與停損價（對應自動建立的提醒編號） */
+data class PriceMark(val target: Double?, val stop: Double?, val targetAlert: Int = 0, val stopAlert: Int = 0)
+
+/** FIFO 分批：剩餘股數、每股成本（含手續費）、匯率 */
+data class Lot(val date: String, val shares: Double, val unitCost: Double, val fx: Double, val opening: Boolean)
+
 /** 自選群組 */
 data class WatchGroup(val id: Int, val name: String, val symbols: List<String>)
 

@@ -316,6 +316,8 @@ private fun LazyListScope.overviewTab(q: Quote, fund: Load<Fundamentals>) {
             }
         }
     }
+    if (holding != null) item { LotsCard(q) }
+    item { MarksCard(q) }
     when (fund) {
         is Load.Loading -> loading("載入基本資料中…")
         is Load.Err -> showError(fund.message)
@@ -747,6 +749,83 @@ private fun LazyListScope.holdingsTab(q: Quote, holdings: Load<YahooExtra.EtfHol
                     Modifier.padding(top = 6.dp),
                 )
             }
+        }
+    }
+}
+
+/** 分批成本（FIFO） */
+@Composable
+private fun LotsCard(q: Quote) {
+    val lots = AppState.lots(q.symbol)
+    if (lots.isEmpty()) return
+    val us = q.market == Market.US
+    val ccy = if (us) "$" else ""
+    var open by remember { mutableStateOf(false) }
+    Card(padding = 12.dp) {
+        Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
+            Text("分批成本（先進先出）", Modifier.weight(1f), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Label("${lots.size} 批 " + if (open) "收合" else "展開")
+        }
+        if (open) {
+            Row {
+                Label("買入日", Modifier.weight(1.2f)); Label("股數", Modifier.weight(1f).wrapContentWidth(Alignment.End))
+                Label("成本", Modifier.weight(1f).wrapContentWidth(Alignment.End)); Label("損益", Modifier.weight(1f).wrapContentWidth(Alignment.End))
+            }
+            lots.forEach { l ->
+                val pl = (q.price - l.unitCost) * l.shares
+                val pct = if (l.unitCost > 0) (q.price / l.unitCost - 1) * 100 else 0.0
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NumText(l.date, 12.sp, modifier = Modifier.weight(1.2f))
+                    NumText(Fmt.shares(l.shares), 12.sp, modifier = Modifier.weight(1f).wrapContentWidth(Alignment.End))
+                    NumText(ccy + Fmt.price(l.unitCost), 12.sp, modifier = Modifier.weight(1f).wrapContentWidth(Alignment.End))
+                    NumText(Fmt.pct(pct, 1), 12.sp, Trend.fg(pl), modifier = Modifier.weight(1f).wrapContentWidth(Alignment.End))
+                }
+            }
+            Label("成本含手續費；持股頁的均價為平均成本法，兩者合計相同。")
+        }
+    }
+}
+
+/** 目標價、停損價：設定後自動建立價格提醒 */
+@Composable
+private fun MarksCard(q: Quote) {
+    val m = AppState.marks[q.symbol]
+    var editing by remember { mutableStateOf(false) }
+    var tText by remember(m) { mutableStateOf(m?.target?.let { Fmt.price(it).replace(",", "") } ?: "") }
+    var sText by remember(m) { mutableStateOf(m?.stop?.let { Fmt.price(it).replace(",", "") } ?: "") }
+    Card(padding = 12.dp) {
+        Row(Modifier.fillMaxWidth().clickable { editing = !editing }, verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("目標價／停損價", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                if (m == null) Label("未設定，點此設定")
+                else {
+                    val parts = listOfNotNull(
+                        m.target?.let { t -> "目標 " + Fmt.price(t) + (if (q.price > 0) "（距離 " + Fmt.pct((t / q.price - 1) * 100, 1) + "）" else "") },
+                        m.stop?.let { st -> "停損 " + Fmt.price(st) + (if (q.price > 0) "（距離 " + Fmt.pct((st / q.price - 1) * 100, 1) + "）" else "") },
+                    )
+                    Label(parts.joinToString(" · "))
+                }
+            }
+            Label(if (editing) "收合" else "編輯")
+        }
+        if (editing) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(tText, { tText = it }, label = { Text("目標價") }, singleLine = true, modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), colors = fieldColors())
+                OutlinedTextField(sText, { sText = it }, label = { Text("停損價") }, singleLine = true, modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), colors = fieldColors())
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f)) {
+                    PrimaryButton("儲存並建立提醒") {
+                        AppState.setMark(q.symbol, tText.toDoubleOrNull(), sText.toDoubleOrNull()); editing = false
+                    }
+                }
+                if (m != null) Box(Modifier.weight(1f)) {
+                    PrimaryButton("清除") { AppState.setMark(q.symbol, null, null); editing = false }
+                }
+            }
+            Label("達到目標價或跌破停損價時會推播通知（提醒中心可管理）。")
         }
     }
 }

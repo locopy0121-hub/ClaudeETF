@@ -49,6 +49,25 @@ object AppState {
         private set
     var online by mutableStateOf(true)
 
+    /** 首頁卡片順序與隱藏 */
+    val allHomeCards = listOf("assets" to "總資產與走勢", "alloc" to "資產配置", "movers" to "今日持股漲跌",
+        "session" to "美股交易時段", "index" to "主要指數", "source" to "資料來源")
+    val homeOrder = mutableStateListOf<String>()
+    val homeHidden = mutableStateListOf<String>()
+
+    fun homeCards(): List<String> = homeOrder.filter { it !in homeHidden }
+
+    fun toggleHomeCard(id: String) {
+        if (id in homeHidden) homeHidden.remove(id) else homeHidden.add(id)
+        save()
+    }
+
+    fun moveHomeCard(id: String, delta: Int) {
+        val i = homeOrder.indexOf(id); val j = i + delta
+        if (i < 0 || j < 0 || j >= homeOrder.size) return
+        homeOrder.removeAt(i); homeOrder.add(j, id); save()
+    }
+
     fun finishOnboarding() { onboarded = true; prefs?.edit()?.putBoolean("onboarded", true)?.apply() }
 
     fun updateTheme(mode: Int) { themeMode = mode; save() }
@@ -78,6 +97,7 @@ object AppState {
     val accounts = mutableStateListOf<Account>()
     val dcaPlans = mutableStateListOf<DcaPlan>()
     val groups = mutableStateListOf<WatchGroup>()
+    val marks = mutableStateMapOf<String, PriceMark>()
     /** 代號 → 目標配置 %（再平衡用） */
     val targets = mutableStateMapOf<String, Double>()
     /** 最近觸發的提醒（新到舊，最多 30 筆） */
@@ -97,6 +117,11 @@ object AppState {
         usdTwd = p.getFloat("usdTwd", 32.02f).toDouble()
         themeMode = p.getInt("themeMode", 1)
         onboarded = p.getBoolean("onboarded", false)
+        homeOrder.clear()
+        val savedOrder = p.getString("homeOrder", null)?.split(",")?.filter { id -> allHomeCards.any { it.first == id } } ?: emptyList()
+        homeOrder.addAll(savedOrder + allHomeCards.map { it.first }.filter { it !in savedOrder })
+        homeHidden.clear()
+        p.getString("homeHidden", null)?.split(",")?.filter { it.isNotBlank() }?.let { homeHidden.addAll(it) }
         fontScale = p.getFloat("fontScale", 1f)
         realizedTwdYtd = p.getFloat("realized", 56_800f).toDouble()
         dividendTwYtd = p.getFloat("divTw", 61_300f).toDouble()
@@ -182,6 +207,19 @@ object AppState {
                 }
             }
         }
+        marks.clear()
+        p.getString("marks", null)?.let { json ->
+            runCatching {
+                val o = JSONObject(json)
+                o.keys().forEach { k ->
+                    val m = o.getJSONObject(k)
+                    marks[k] = PriceMark(
+                        m.optDouble("t", Double.NaN).takeIf { !it.isNaN() }, m.optDouble("s", Double.NaN).takeIf { !it.isNaN() },
+                        m.optInt("ta", 0), m.optInt("sa", 0),
+                    )
+                }
+            }
+        }
         groups.clear()
         p.getString("groups", null)?.let { json ->
             runCatching {
@@ -218,6 +256,8 @@ object AppState {
             .putString("colorMode", colorMode.name)
             .putFloat("usdTwd", usdTwd.toFloat())
             .putInt("themeMode", themeMode)
+            .putString("homeOrder", homeOrder.joinToString(","))
+            .putString("homeHidden", homeHidden.joinToString(","))
             .putFloat("fontScale", fontScale)
             .putFloat("realized", realizedTwdYtd.toFloat())
             .putFloat("divTw", dividendTwYtd.toFloat())
@@ -249,6 +289,14 @@ object AppState {
                 dcaPlans.forEach {
                     put(JSONObject().put("id", it.id).put("s", it.symbol).put("a", it.amount).put("d", it.day)
                         .put("acc", it.account).put("on", it.enabled).put("done", it.lastDone).put("ntf", it.lastNotified))
+                }
+            }.toString())
+            .putString("marks", JSONObject().apply {
+                marks.forEach { (k, m) ->
+                    put(k, JSONObject().apply {
+                        m.target?.let { put("t", it) }; m.stop?.let { put("s", it) }
+                        put("ta", m.targetAlert); put("sa", m.stopAlert)
+                    })
                 }
             }.toString())
             .putString("groups", JSONArray().apply {
@@ -582,6 +630,44 @@ object AppState {
     fun markDcaNotified(id: Int) {
         val i = dcaPlans.indexOfFirst { it.id == id }
         if (i >= 0) { dcaPlans[i] = dcaPlans[i].copy(lastNotified = month()); save() }
+    }
+
+    // ---------- 目標價、停損價、分批 ----------
+
+    /** 設定目標價／停損價，並同步建立價格提醒（null = 清除） */
+    fun setMark(symbol: String, target: Double?, stop: Double?) {
+        val old = marks[symbol]
+        old?.let { alerts.removeAll { a -> a.id == it.targetAlert || a.id == it.stopAlert } }
+        var nextId = (alerts.maxOfOrNull { it.id } ?: 0) + 1
+        var ta = 0; var sa = 0
+        if (target != null && target > 0) { ta = nextId++; alerts.add(0, AlertRule(ta, symbol, AlertType.PRICE_ABOVE, target, true)) }
+        if (stop != null && stop > 0) { sa = nextId++; alerts.add(0, AlertRule(sa, symbol, AlertType.PRICE_BELOW, stop, true)) }
+        if (ta == 0 && sa == 0) marks.remove(symbol) else marks[symbol] = PriceMark(target, stop, ta, sa)
+        save()
+    }
+
+    /** 依交易紀錄以先進先出計算目前剩餘的各批成本 */
+    fun lots(symbol: String): List<Lot> {
+        val lots = ArrayList<Lot>()
+        for (t in trades.filter { it.symbol == symbol && it.origin != TradeOrigin.LEGACY }.sortedBy { Ledger.sortKey(it) }) {
+            when (t.type) {
+                TradeType.BUY -> if (t.shares > 0) lots += Lot(
+                    if (t.origin == TradeOrigin.OPENING) "期初" else t.date, t.shares,
+                    (t.shares * t.price + t.fee) / t.shares, t.fx, t.origin == TradeOrigin.OPENING,
+                )
+                TradeType.SELL -> {
+                    var left = t.shares
+                    while (left > 1e-9 && lots.isNotEmpty()) {
+                        val f = lots[0]
+                        if (f.shares <= left + 1e-9) { left -= f.shares; lots.removeAt(0) }
+                        else { lots[0] = f.copy(shares = f.shares - left); left = 0.0 }
+                    }
+                }
+                TradeType.SPLIT -> if (t.price > 0) for (i in lots.indices) lots[i] = lots[i].copy(shares = lots[i].shares * t.price, unitCost = lots[i].unitCost / t.price)
+                TradeType.DIVIDEND -> {}
+            }
+        }
+        return lots
     }
 
     // ---------- 自選群組與排序 ----------

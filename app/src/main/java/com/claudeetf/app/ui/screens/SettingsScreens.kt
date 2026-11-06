@@ -317,6 +317,24 @@ fun SettingsScreen(nav: NavController) {
                     }
                 }
             }
+            item {
+                Card(padding = 14.dp) {
+                    Text("首頁卡片", color = C.Text, fontSize = 14.sp)
+                    AppState.homeOrder.toList().forEach { id ->
+                        val name = AppState.allHomeCards.firstOrNull { it.first == id }?.second ?: id
+                        val shown = id !in AppState.homeHidden
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (shown) "☑" else "☐", color = if (shown) C.Primary else C.Muted, fontSize = 20.sp,
+                                modifier = Modifier.clickable { AppState.toggleHomeCard(id) }.padding(8.dp),
+                            )
+                            Text(name, Modifier.weight(1f), color = if (shown) C.Text else C.Muted, fontSize = 14.sp)
+                            Text("↑", color = C.Text, fontSize = 18.sp, modifier = Modifier.clickable { AppState.moveHomeCard(id, -1) }.padding(10.dp))
+                            Text("↓", color = C.Text, fontSize = 18.sp, modifier = Modifier.clickable { AppState.moveHomeCard(id, 1) }.padding(10.dp))
+                        }
+                    }
+                }
+            }
             item { SettingRow("美股時間", "台灣時間・自動夏冬令") }
             item { Group("帳戶與手續費") }
             items(AppState.accounts.toList(), key = { "acc-" + it.id }) { a -> AccountCard(a) }

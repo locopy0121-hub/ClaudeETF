@@ -53,8 +53,14 @@ fun MarketScreen(nav: NavController) {
     val s = rememberUsSession()
     val scope = rememberCoroutineScope()
     var board by remember { mutableStateOf<Load<MarketBoards.Board>>(Load.Loading) }
+    var global by remember { mutableStateOf<Load<List<Pair<String, MarketBoards.GlobalItem>>>>(Load.Loading) }
 
     LaunchedEffect(tab, reload) {
+        if (tab == 2) {
+            global = Load.Loading
+            global = runCatching { MarketBoards.global(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            return@LaunchedEffect
+        }
         board = Load.Loading
         board = runCatching { if (tab == 0) MarketBoards.us(reload > 0) else MarketBoards.tw(reload > 0) }
             .fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
@@ -78,8 +84,34 @@ fun MarketScreen(nav: NavController) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { Segmented(listOf("美股", "台股"), tab, { tab = it; moverTab = 0 }) }
-            if (tab == 0) {
+            item { Segmented(listOf("美股", "台股", "全球"), tab, { tab = it; moverTab = 0 }) }
+            if (tab == 2) {
+                when (val g = global) {
+                    is Load.Loading -> item { Label("載入全球市場中…", Modifier.padding(vertical = 16.dp)) }
+                    is Load.Err -> item { Text("全球市場載入失敗：" + g.message, color = C.Red, fontSize = 13.sp) }
+                    is Load.Ok -> {
+                        g.value.groupBy { it.first }.forEach { (group, rows) ->
+                            item { SectionTitle(group) }
+                            items(rows.map { it.second }.chunked(2)) { pair ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    pair.forEach { gi ->
+                                        Column(
+                                            Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(C.Card).padding(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                                        ) {
+                                            Label(gi.name)
+                                            NumText(Fmt.num(gi.price, if (gi.price >= 1000) 0 else 2), 16.sp, weight = FontWeight.Bold)
+                                            NumText(Fmt.signedPct(gi.changePct), 12.sp, Trend.fg(gi.changePct))
+                                        }
+                                    }
+                                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                }
+                            }
+                        }
+                        item { Label("資料來源：Yahoo Finance；期貨與加密貨幣為近乎 24 小時交易，漲跌以前一交易日收盤計算。", Modifier.padding(top = 6.dp)) }
+                    }
+                }
+            } else if (tab == 0) {
                 item {
                     Card(padding = 14.dp) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -111,7 +143,7 @@ fun MarketScreen(nav: NavController) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { IndexCard(it, Modifier.weight(1f)) } }
                 }
             }
-            boardSection(board, tab == 0, moverTab, { moverTab = it }, ::open)
+            if (tab != 2) boardSection(board, tab == 0, moverTab, { moverTab = it }, ::open)
             item {
                 Text(
                     "財經行事曆 ›", color = C.Primary, fontSize = 14.sp,

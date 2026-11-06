@@ -26,6 +26,36 @@ object MarketBoards {
         "XLU" to "公用事業", "XLB" to "原物料", "XLRE" to "房地產",
     )
 
+    data class GlobalItem(val name: String, val symbol: String, val price: Double, val changePct: Double, val unit: String)
+
+    /** 全球指數、原物料、加密貨幣（Yahoo Finance） */
+    private val globalList = listOf(
+        Triple("亞洲", "日經 225", "^N225"), Triple("亞洲", "韓國 KOSPI", "^KS11"),
+        Triple("亞洲", "香港恒生", "^HSI"), Triple("亞洲", "上證指數", "000001.SS"),
+        Triple("歐洲", "德國 DAX", "^GDAXI"), Triple("歐洲", "英國 FTSE 100", "^FTSE"),
+        Triple("美國期貨", "S&P 500 期貨", "ES=F"), Triple("美國期貨", "Nasdaq 期貨", "NQ=F"),
+        Triple("原物料", "黃金", "GC=F"), Triple("原物料", "WTI 原油", "CL=F"),
+        Triple("匯率", "美元／日圓", "JPY=X"), Triple("匯率", "歐元／美元", "EURUSD=X"),
+        Triple("加密貨幣", "比特幣", "BTC-USD"), Triple("加密貨幣", "以太幣", "ETH-USD"),
+    )
+
+    private var globalCache: Pair<Long, List<Pair<String, GlobalItem>>>? = null
+
+    suspend fun global(force: Boolean = false): List<Pair<String, GlobalItem>> = withContext(Dispatchers.IO) {
+        globalCache?.let { (t, g) -> if (!force && System.currentTimeMillis() - t < TTL) return@withContext g }
+        val out = globalList.mapNotNull { (group, name, sym) ->
+            runCatching { YahooApi.chart(sym).quote }.getOrNull()?.let { q ->
+                group to GlobalItem(
+                    name, sym, q.price, if (q.prevClose > 0) (q.price - q.prevClose) / q.prevClose * 100 else 0.0,
+                    when { sym.endsWith("-USD") || sym.endsWith("=F") && group == "原物料" -> "USD"; else -> "" },
+                )
+            }
+        }
+        if (out.isEmpty()) throw IllegalStateException("全球市場資料暫時無法取得")
+        globalCache = System.currentTimeMillis() to out
+        out
+    }
+
     private const val TTL = 5 * 60_000L
     private var usCache: Pair<Long, Board>? = null
     private var twCache: Pair<Long, Board>? = null
