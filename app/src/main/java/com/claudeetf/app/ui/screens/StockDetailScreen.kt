@@ -803,7 +803,7 @@ private fun LazyListScope.chipsTab(q: Quote, chips: Load<StockInfoRepo.Chips>) {
         is Load.Ok -> when (val c = chips.value) {
             is StockInfoRepo.Chips.Tw -> {
                 if (c.days.isEmpty()) {
-                    item { Label("查無三大法人資料。目前支援上市股票與 ETF（證交所 T86 日報，每日約 16:00 後更新）；上櫃證券尚未支援。") }
+                    item { Label("查無三大法人資料。上市來自證交所 T86、上櫃來自櫃買中心 OpenAPI（每日收盤後更新，上櫃只提供最新一日）。") }
                     return
                 }
                 val d0 = c.days.first()

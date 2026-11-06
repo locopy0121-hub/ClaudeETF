@@ -78,11 +78,18 @@ object TwInstitutional {
         repeat(10) {
             if (d.dayOfWeek != DayOfWeek.SATURDAY && d.dayOfWeek != DayOfWeek.SUNDAY) {
                 val map = runCatching { day(d) }.getOrNull()
-                if (!map.isNullOrEmpty()) return map
+                if (!map.isNullOrEmpty()) return withOtc(map)
             }
             d = d.minusDays(1)
         }
-        return emptyMap()
+        return withOtc(emptyMap())
+    }
+
+    /** 加入上櫃（櫃買中心 t187ap07_O 最新一日），上市資料優先 */
+    private fun withOtc(twse: Map<String, Day>): Map<String, Day> {
+        val otc = runCatching { TpexOpenData.institutional() }.getOrNull().orEmpty()
+        if (otc.isEmpty()) return twse
+        return otc + twse
     }
 
     /** 最近 n 個有資料的交易日（今天 16:00 前不查今天），由新到舊 */
@@ -98,8 +105,9 @@ object TwInstitutional {
                 val map = runCatching { day(d) }.getOrNull()
                 if (map != null && map.isNotEmpty()) {
                     val rec = map[code]
-                    // 最近一個交易日就查不到，代表不是上市證券（例如上櫃），直接結束
-                    if (rec != null) out += rec else if (out.isEmpty()) return emptyList()
+                    // 最近一個交易日就查不到，代表不是上市證券：改用櫃買中心（只有最新一日）
+                    if (rec != null) out += rec
+                    else if (out.isEmpty()) return runCatching { TpexOpenData.institutional()[code] }.getOrNull()?.let { listOf(it) } ?: emptyList()
                 }
             }
             d = d.minusDays(1)

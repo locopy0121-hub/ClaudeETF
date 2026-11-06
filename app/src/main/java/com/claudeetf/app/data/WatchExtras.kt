@@ -37,7 +37,7 @@ object WatchExtras {
     )
     private var twDay = ""
 
-    /** 當沖比、融資融券、月營收（上市股票，證交所 OpenAPI，每天一次） */
+    /** 當沖比、融資融券、月營收（上市：證交所 OpenAPI；上櫃：櫃買中心 OpenAPI，每天一次） */
     suspend fun loadTwDaily() {
         if (twDay == today() && AppState.twDaily.isNotEmpty()) return
         val syms = AppState.quotes.filter { it.market == Market.TW }.map { it.symbol }

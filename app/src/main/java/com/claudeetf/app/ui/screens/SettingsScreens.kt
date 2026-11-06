@@ -245,6 +245,13 @@ fun SettingsScreen(nav: NavController) {
     val scope = rememberCoroutineScope()
     var fxText by remember { mutableStateOf(AppState.usdTwd.toString()) }
     val version = remember { BuildConfigInfo.versionName(context) }
+    // 各區塊預設收合，點標題展開；同一次開啟 App 內記住展開狀態
+    val openGroups = androidx.compose.runtime.saveable.rememberSaveable(
+        saver = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<String>, String>(
+            save = { it.toList() }, restore = { it.toMutableStateList() },
+        ),
+    ) { mutableStateListOf<String>() }
+    val allGroups = listOf("行情資料來源", "帳本", "備份與匯入", "安全", "顯示", "帳戶與手續費", "提醒", "關於")
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("我的")
@@ -256,231 +263,253 @@ fun SettingsScreen(nav: NavController) {
                 Card(padding = 14.dp) {
                     Text("資料存在本機", color = C.Text, fontSize = 15.sp)
                     Label("持股 ${AppState.holdings.size} 檔 · 自選 ${AppState.quotes.size} 檔 · 交易紀錄 ${AppState.trades.size} 筆")
+                    Row {
+                        Text("全部展開", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable {
+                            openGroups.clear(); openGroups.addAll(allGroups)
+                        }.padding(end = 16.dp, top = 6.dp, bottom = 2.dp))
+                        Text("全部收合", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { openGroups.clear() }.padding(top = 6.dp, bottom = 2.dp))
+                    }
                 }
             }
 
-            item { Group("行情資料來源") }
-            item {
-                Card(padding = 14.dp) {
-                    Text("台股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Label("盤中來源")
-                    Segmented(listOf("僅用富果（預設）", "證交所為主"), if (AppState.twUseFugle) 0 else 1,
-                        { AppState.updateTwIntradaySource(if (it == 0) "fugle" else "twse") }, background = C.Bg)
-                    Label(
-                        if (AppState.twUseFugle) "盤中一律只用富果：WebSocket 串流與交易所同步，超出訂閱上限的股票改用富果 REST 輪流更新，不混用證交所。未填金鑰時暫用證交所即時。盤後使用證交所／櫃買收盤資料。"
-                        else "盤中以證交所即時行情為主（約每 5 秒），不開富果串流；證交所沒有回應的股票，有金鑰時改用富果補上。盤後使用證交所／櫃買收盤資料。"
-                    )
-                    KeyField(
-                        label = "富果 Fugle API 金鑰",
-                        initial = AppState.fugleKey,
-                        onSave = { AppState.updateFugleKey(it) },
-                        onTest = { MarketData.testFugle(it) },
-                    )
-                    Label("目前來源：" + MarketData.twSourcePlan())
-                    if (AppState.streamStatus.isNotBlank()) Label("串流：" + AppState.streamStatus, color = C.Text2)
-                    if (AppState.fugleKey.isNotBlank()) {
-                        // 每 5 秒隨即時更新重繪
-                        val tick = AppState.lastLiveAt
-                        Label("連線統計：" + com.claudeetf.app.data.remote.FugleStream.stats() + if (tick < 0) "" else "")
-                        var showStates by remember { mutableStateOf(false) }
-                        Text(if (showStates) "收合各檔狀態" else "查看各檔串流狀態 ›", color = C.Primary, fontSize = 12.sp,
-                            modifier = Modifier.clickable { showStates = !showStates }.padding(vertical = 4.dp))
-                        if (showStates) {
-                            val syms = AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol }
-                            com.claudeetf.app.data.remote.FugleStream.symbolStates(syms).forEach { (s, st, ok) ->
-                                Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
-                                    Text(s + " " + (AppState.quote(s)?.name ?: ""), Modifier.weight(1f), color = C.Text, fontSize = 12.sp, maxLines = 1)
-                                    Text(st, color = if (ok) C.Green else C.Muted, fontSize = 11.sp, maxLines = 1)
+            item { FoldHeader("行情資料來源", "台股盤中 " + (if (AppState.twUseFugle) "富果" else "證交所") + " · 期貨 " + mapOf("auto" to "自動", "fugle" to "富果", "taifex" to "期交所", "off" to "關閉")[AppState.futSource], "行情資料來源" in openGroups) { if ("行情資料來源" in openGroups) openGroups.remove("行情資料來源") else openGroups.add("行情資料來源") } }
+            if ("行情資料來源" in openGroups) {
+                item {
+                    Card(padding = 14.dp) {
+                        Text("台股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Label("盤中來源")
+                        Segmented(listOf("僅用富果（預設）", "證交所為主"), if (AppState.twUseFugle) 0 else 1,
+                            { AppState.updateTwIntradaySource(if (it == 0) "fugle" else "twse") }, background = C.Bg)
+                        Label(
+                            if (AppState.twUseFugle) "盤中一律只用富果：WebSocket 串流與交易所同步，超出訂閱上限的股票改用富果 REST 輪流更新，不混用證交所。未填金鑰時暫用證交所即時。盤後使用證交所／櫃買收盤資料。"
+                            else "盤中以證交所即時行情為主（約每 5 秒），不開富果串流；證交所沒有回應的股票，有金鑰時改用富果補上。盤後使用證交所／櫃買收盤資料。"
+                        )
+                        KeyField(
+                            label = "富果 Fugle API 金鑰",
+                            initial = AppState.fugleKey,
+                            onSave = { AppState.updateFugleKey(it) },
+                            onTest = { MarketData.testFugle(it) },
+                        )
+                        Label("目前來源：" + MarketData.twSourcePlan())
+                        if (AppState.streamStatus.isNotBlank()) Label("串流：" + AppState.streamStatus, color = C.Text2)
+                        if (AppState.fugleKey.isNotBlank()) {
+                            // 每 5 秒隨即時更新重繪
+                            val tick = AppState.lastLiveAt
+                            Label("連線統計：" + com.claudeetf.app.data.remote.FugleStream.stats() + if (tick < 0) "" else "")
+                            var showStates by remember { mutableStateOf(false) }
+                            Text(if (showStates) "收合各檔狀態" else "查看各檔串流狀態 ›", color = C.Primary, fontSize = 12.sp,
+                                modifier = Modifier.clickable { showStates = !showStates }.padding(vertical = 4.dp))
+                            if (showStates) {
+                                val syms = AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol }
+                                com.claudeetf.app.data.remote.FugleStream.symbolStates(syms).forEach { (s, st, ok) ->
+                                    Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+                                        Text(s + " " + (AppState.quote(s)?.name ?: ""), Modifier.weight(1f), color = C.Text, fontSize = 12.sp, maxLines = 1)
+                                        Text(st, color = if (ok) C.Green else C.Muted, fontSize = 11.sp, maxLines = 1)
+                                    }
                                 }
                             }
                         }
+                        AppState.sourceStatus["TW"]?.let { Label("最近更新：$it", color = C.Text2) }
                     }
-                    AppState.sourceStatus["TW"]?.let { Label("最近更新：$it", color = C.Text2) }
                 }
-            }
-            item {
-                Card(padding = 14.dp) {
-                    val fs = com.claudeetf.app.data.remote.FutStream
-                    Text("期貨（首頁台指期卡片）", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    val opts = listOf("auto" to "自動", "fugle" to "富果", "taifex" to "期交所", "off" to "關閉")
-                    Segmented(opts.map { it.second }, opts.indexOfFirst { it.first == AppState.futSource }.coerceAtLeast(0),
-                        { AppState.updateFutSource(opts[it].first) }, background = C.Bg)
-                    Label(
-                        when (AppState.futSource) {
-                            "fugle" -> "只用富果期權行情（WebSocket 串流）。需要富果有開通期貨的方案，基本方案會回覆不支援。"
-                            "taifex" -> "使用期交所 OpenAPI 每日期貨行情，免金鑰，收盤後更新（非盤中即時）。"
-                            "off" -> "不抓期貨資料，首頁期貨卡片只顯示提示。"
-                            else -> "有富果金鑰時先試富果；富果回覆方案不支援期貨或沒有金鑰時，自動改用期交所每日行情（收盤後更新）。"
+                item {
+                    Card(padding = 14.dp) {
+                        val fs = com.claudeetf.app.data.remote.FutStream
+                        Text("期貨（首頁台指期卡片）", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        val opts = listOf("auto" to "自動", "fugle" to "富果", "taifex" to "期交所", "off" to "關閉")
+                        Segmented(opts.map { it.second }, opts.indexOfFirst { it.first == AppState.futSource }.coerceAtLeast(0),
+                            { AppState.updateFutSource(opts[it].first) }, background = C.Bg)
+                        Label(
+                            when (AppState.futSource) {
+                                "fugle" -> "只用富果期權行情（WebSocket 串流）。需要富果有開通期貨的方案，基本方案會回覆不支援。"
+                                "taifex" -> "使用期交所 OpenAPI 每日期貨行情，免金鑰，收盤後更新（非盤中即時）。"
+                                "off" -> "不抓期貨資料，首頁期貨卡片只顯示提示。"
+                                else -> "有富果金鑰時先試富果；富果回覆方案不支援期貨或沒有金鑰時，自動改用期交所每日行情（收盤後更新）。"
+                            }
+                        )
+                        Label("目前使用：" + when (fs.effectiveSource()) { "fugle" -> "富果"; "taifex" -> "期交所每日行情"; else -> "關閉" } +
+                            if (fs.fugleUnsupported) "（富果方案不支援期貨）" else "", color = C.Text2)
+                        if (fs.fugleUnsupported) {
+                            Text("重新測試富果期貨", color = C.Primary, fontSize = 13.sp,
+                                modifier = Modifier.clickable { fs.fugleUnsupported = false }.padding(vertical = 8.dp))
                         }
-                    )
-                    Label("目前使用：" + when (fs.effectiveSource()) { "fugle" -> "富果"; "taifex" -> "期交所每日行情"; else -> "關閉" } +
-                        if (fs.fugleUnsupported) "（富果方案不支援期貨）" else "", color = C.Text2)
-                    if (fs.fugleUnsupported) {
-                        Text("重新測試富果期貨", color = C.Primary, fontSize = 13.sp,
-                            modifier = Modifier.clickable { fs.fugleUnsupported = false }.padding(vertical = 8.dp))
                     }
                 }
-            }
-            item {
-                Card(padding = 14.dp) {
-                    Text("美股・指數", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Label("使用 Yahoo Finance，免金鑰；含當日走勢、道瓊、S&P 500、那斯達克、費半、VIX、加權指數、10 年債與美元指數。")
-                    var yahooTest by remember { mutableStateOf<String?>(null) }
-                    Text(
-                        "測試 Yahoo 連線", color = C.Primary, fontSize = 13.sp,
-                        modifier = Modifier.clickable { scope.launch { yahooTest = MarketData.testYahoo() } }
-                            .padding(vertical = 10.dp),
-                    )
-                    yahooTest?.let { Text(it, color = if (it.startsWith("連線成功")) C.Primary else C.Red, fontSize = 12.sp) }
-                    Label("選填：Yahoo 抓不到某檔時，改用 Finnhub 備援。")
-                    KeyField(
-                        label = "Finnhub API 金鑰（選填）",
-                        initial = AppState.finnhubKey,
-                        onSave = { AppState.updateFinnhubKey(it) },
-                        onTest = { MarketData.testFinnhub(it) },
-                    )
-                    AppState.sourceStatus["US"]?.let { Label("最近更新：$it", color = C.Text2) }
-                }
-            }
-            item {
-                Card(padding = 14.dp) {
-                    Text("美元匯率 USD/TWD", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Label("目前 " + AppState.usdTwd + "（" + AppState.fxSource + "）")
-                    AppState.sourceStatus["FX"]?.let { Label(it, color = C.Text2) }
-                    OutlinedTextField(
-                        value = fxText,
-                        onValueChange = {
-                            fxText = it
-                            it.toDoubleOrNull()?.let { v -> AppState.updateUsdTwd(v) }
-                        },
-                        label = { Text("手動輸入（下次自動更新時會被台銀匯率取代）") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        colors = fieldColors(),
-                    )
-                }
-            }
-            item {
-                PrimaryButton(if (AppState.refreshing) "更新中…" else "立即更新全部行情") {
-                    scope.launch {
-                        MarketData.refreshAll()
-                        fxText = AppState.usdTwd.toString()
+                item {
+                    Card(padding = 14.dp) {
+                        Text("美股・指數", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Label("使用 Yahoo Finance，免金鑰；含當日走勢、道瓊、S&P 500、那斯達克、費半、VIX、加權指數、10 年債與美元指數。")
+                        var yahooTest by remember { mutableStateOf<String?>(null) }
+                        Text(
+                            "測試 Yahoo 連線", color = C.Primary, fontSize = 13.sp,
+                            modifier = Modifier.clickable { scope.launch { yahooTest = MarketData.testYahoo() } }
+                                .padding(vertical = 10.dp),
+                        )
+                        yahooTest?.let { Text(it, color = if (it.startsWith("連線成功")) C.Primary else C.Red, fontSize = 12.sp) }
+                        Label("選填：Yahoo 抓不到某檔時，改用 Finnhub 備援。")
+                        KeyField(
+                            label = "Finnhub API 金鑰（選填）",
+                            initial = AppState.finnhubKey,
+                            onSave = { AppState.updateFinnhubKey(it) },
+                            onTest = { MarketData.testFinnhub(it) },
+                        )
+                        AppState.sourceStatus["US"]?.let { Label("最近更新：$it", color = C.Text2) }
                     }
                 }
-            }
-
-            item { Group("帳本") }
-            item {
-                val n = remember(AppState.trades.size) { com.claudeetf.app.ui.screens.HealthCheck.run() }
-                SettingRow("資料健檢", if (n.isEmpty()) "正常 ›" else "${n.size} 個項目 ›") { nav.navigate(Routes.HEALTH) }
-            }
-            item { LedgerCard() }
-
-            item { Group("備份與匯入") }
-            item { DataCard() }
-
-            item { Group("安全") }
-            item {
-                var msg by remember { mutableStateOf<String?>(null) }
-                val act = context as? com.claudeetf.app.MainActivity
-                Card(padding = 14.dp) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("App 安全鎖", color = C.Text, fontSize = 14.sp)
-                            Label("開啟 App 或離開超過 1 分鐘後，需指紋或裝置密碼解鎖；最近使用畫面不顯示內容")
-                        }
-                        Switch(
-                            checked = AppState.appLock,
-                            onCheckedChange = { on ->
-                                if (on && act?.deviceSecure() == false) {
-                                    msg = "請先在手機「設定 › 安全性」設定螢幕鎖（密碼、圖形或指紋）"
-                                } else {
-                                    AppState.updateAppLock(on)
-                                    msg = if (on) "已開啟，下次開啟 App 時需要解鎖" else "已關閉"
-                                    act?.window?.let { w ->
-                                        val f = android.view.WindowManager.LayoutParams.FLAG_SECURE
-                                        if (on) w.setFlags(f, f) else w.clearFlags(f)
-                                    }
-                                }
+                item {
+                    Card(padding = 14.dp) {
+                        Text("美元匯率 USD/TWD", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Label("目前 " + AppState.usdTwd + "（" + AppState.fxSource + "）")
+                        AppState.sourceStatus["FX"]?.let { Label(it, color = C.Text2) }
+                        OutlinedTextField(
+                            value = fxText,
+                            onValueChange = {
+                                fxText = it
+                                it.toDoubleOrNull()?.let { v -> AppState.updateUsdTwd(v) }
                             },
-                            colors = SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary,
-                                uncheckedTrackColor = C.Border, uncheckedThumbColor = C.Muted, uncheckedBorderColor = C.Border),
+                            label = { Text("手動輸入（下次自動更新時會被台銀匯率取代）") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            colors = fieldColors(),
                         )
                     }
-                    msg?.let { Label(it, color = C.Primary) }
+                }
+                item {
+                    PrimaryButton(if (AppState.refreshing) "更新中…" else "立即更新全部行情") {
+                        scope.launch {
+                            MarketData.refreshAll()
+                            fxText = AppState.usdTwd.toString()
+                        }
+                    }
                 }
             }
 
-            item { Group("顯示") }
-            item {
-                Card(padding = 14.dp) {
-                    Text("主題", color = C.Text, fontSize = 14.sp)
-                    Segmented(listOf("跟隨系統", "深色", "淺色"), AppState.themeMode, { AppState.updateTheme(it) }, background = C.Bg)
-                    Text("字級", color = C.Text, fontSize = 14.sp)
-                    val scales = listOf(0.9f, 1f, 1.15f, 1.3f)
-                    Segmented(
-                        listOf("小", "標準", "大", "特大"),
-                        scales.indexOfFirst { kotlin.math.abs(it - AppState.fontScale) < 0.01f }.coerceAtLeast(1),
-                        { AppState.updateFontScale(scales[it]) },
-                        background = C.Bg,
-                    )
+            item { FoldHeader("帳本", "交易紀錄 ${AppState.trades.size} 筆 · 資料健檢", "帳本" in openGroups) { if ("帳本" in openGroups) openGroups.remove("帳本") else openGroups.add("帳本") } }
+            if ("帳本" in openGroups) {
+                item {
+                    val n = remember(AppState.trades.size) { com.claudeetf.app.ui.screens.HealthCheck.run() }
+                    SettingRow("資料健檢", if (n.isEmpty()) "正常 ›" else "${n.size} 個項目 ›") { nav.navigate(Routes.HEALTH) }
                 }
+                item { LedgerCard() }
             }
-            item {
-                Card(padding = 14.dp) {
-                    Text("漲跌配色", color = C.Text, fontSize = 14.sp)
-                    Segmented(
-                        listOf("台式 紅漲綠跌", "美式 綠漲紅跌"),
-                        if (AppState.colorMode == ColorMode.TW) 0 else 1,
-                        { AppState.updateColorMode(if (it == 0) ColorMode.TW else ColorMode.US) },
-                        background = C.Bg,
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Label("預覽", Modifier.weight(1f))
-                        ChangePill(1.25); HGap(6.dp); ChangePill(-0.84)
-                    }
-                }
+
+            item { FoldHeader("備份與匯入", "匯出、匯入與備份", "備份與匯入" in openGroups) { if ("備份與匯入" in openGroups) openGroups.remove("備份與匯入") else openGroups.add("備份與匯入") } }
+            if ("備份與匯入" in openGroups) {
+                item { DataCard() }
             }
-            item {
-                Card(padding = 14.dp) {
-                    var picking by remember { mutableStateOf(false) }
-                    if (picking) AddHomeCardPicker { picking = false }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("首頁卡片", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
-                        Text("＋ 新增指數／個股卡片", color = C.Primary, fontSize = 13.sp,
-                            modifier = Modifier.clickable { picking = true }.padding(8.dp))
-                    }
-                    Label("勾選要顯示的卡片，用 ↑ ↓ 調整順序；指數與個股卡片可按 ✕ 移除")
-                    AppState.homeOrder.toList().forEach { id ->
-                        val name = AppState.homeCardName(id)
-                        val shown = id !in AppState.homeHidden
+
+            item { FoldHeader("安全", if (AppState.appLock) "安全鎖已開啟" else "安全鎖未開啟", "安全" in openGroups) { if ("安全" in openGroups) openGroups.remove("安全") else openGroups.add("安全") } }
+            if ("安全" in openGroups) {
+                item {
+                    var msg by remember { mutableStateOf<String?>(null) }
+                    val act = context as? com.claudeetf.app.MainActivity
+                    Card(padding = 14.dp) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                if (shown) "☑" else "☐", color = if (shown) C.Primary else C.Muted, fontSize = 20.sp,
-                                modifier = Modifier.clickable { AppState.toggleHomeCard(id) }.padding(8.dp),
+                            Column(Modifier.weight(1f)) {
+                                Text("App 安全鎖", color = C.Text, fontSize = 14.sp)
+                                Label("開啟 App 或離開超過 1 分鐘後，需指紋或裝置密碼解鎖；最近使用畫面不顯示內容")
+                            }
+                            Switch(
+                                checked = AppState.appLock,
+                                onCheckedChange = { on ->
+                                    if (on && act?.deviceSecure() == false) {
+                                        msg = "請先在手機「設定 › 安全性」設定螢幕鎖（密碼、圖形或指紋）"
+                                    } else {
+                                        AppState.updateAppLock(on)
+                                        msg = if (on) "已開啟，下次開啟 App 時需要解鎖" else "已關閉"
+                                        act?.window?.let { w ->
+                                            val f = android.view.WindowManager.LayoutParams.FLAG_SECURE
+                                            if (on) w.setFlags(f, f) else w.clearFlags(f)
+                                        }
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary,
+                                    uncheckedTrackColor = C.Border, uncheckedThumbColor = C.Muted, uncheckedBorderColor = C.Border),
                             )
-                            Text(name, Modifier.weight(1f), color = if (shown) C.Text else C.Muted, fontSize = 14.sp)
-                            Text("⇈", color = C.Text, fontSize = 16.sp, modifier = Modifier.clickable { AppState.moveHomeCardTop(id) }.padding(8.dp))
-                            Text("↑", color = C.Text, fontSize = 18.sp, modifier = Modifier.clickable { AppState.moveHomeCard(id, -1) }.padding(10.dp))
-                            Text("↓", color = C.Text, fontSize = 18.sp, modifier = Modifier.clickable { AppState.moveHomeCard(id, 1) }.padding(10.dp))
-                            if (AppState.isCustomCard(id)) Text("✕", color = C.Red, fontSize = 16.sp, modifier = Modifier.clickable { AppState.removeHomeCard(id) }.padding(10.dp))
+                        }
+                        msg?.let { Label(it, color = C.Primary) }
+                    }
+                }
+            }
+
+            item { FoldHeader("顯示", "主題、字級、配色、首頁卡片", "顯示" in openGroups) { if ("顯示" in openGroups) openGroups.remove("顯示") else openGroups.add("顯示") } }
+            if ("顯示" in openGroups) {
+                item {
+                    Card(padding = 14.dp) {
+                        Text("主題", color = C.Text, fontSize = 14.sp)
+                        Segmented(listOf("跟隨系統", "深色", "淺色"), AppState.themeMode, { AppState.updateTheme(it) }, background = C.Bg)
+                        Text("字級", color = C.Text, fontSize = 14.sp)
+                        val scales = listOf(0.9f, 1f, 1.15f, 1.3f)
+                        Segmented(
+                            listOf("小", "標準", "大", "特大"),
+                            scales.indexOfFirst { kotlin.math.abs(it - AppState.fontScale) < 0.01f }.coerceAtLeast(1),
+                            { AppState.updateFontScale(scales[it]) },
+                            background = C.Bg,
+                        )
+                    }
+                }
+                item {
+                    Card(padding = 14.dp) {
+                        Text("漲跌配色", color = C.Text, fontSize = 14.sp)
+                        Segmented(
+                            listOf("台式 紅漲綠跌", "美式 綠漲紅跌"),
+                            if (AppState.colorMode == ColorMode.TW) 0 else 1,
+                            { AppState.updateColorMode(if (it == 0) ColorMode.TW else ColorMode.US) },
+                            background = C.Bg,
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Label("預覽", Modifier.weight(1f))
+                            ChangePill(1.25); HGap(6.dp); ChangePill(-0.84)
                         }
                     }
-                    Text("指數卡片顯示內容", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-                    IndexCardOptions(null)
                 }
+                item {
+                    Card(padding = 14.dp) {
+                        var picking by remember { mutableStateOf(false) }
+                        if (picking) AddHomeCardPicker { picking = false }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("首頁卡片", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+                            Text("＋ 新增指數／個股卡片", color = C.Primary, fontSize = 13.sp,
+                                modifier = Modifier.clickable { picking = true }.padding(8.dp))
+                        }
+                        Label("勾選要顯示的卡片，用 ↑ ↓ 調整順序；指數與個股卡片可按 ✕ 移除")
+                        AppState.homeOrder.toList().forEach { id ->
+                            val name = AppState.homeCardName(id)
+                            val shown = id !in AppState.homeHidden
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    if (shown) "☑" else "☐", color = if (shown) C.Primary else C.Muted, fontSize = 20.sp,
+                                    modifier = Modifier.clickable { AppState.toggleHomeCard(id) }.padding(8.dp),
+                                )
+                                Text(name, Modifier.weight(1f), color = if (shown) C.Text else C.Muted, fontSize = 14.sp)
+                                Text("⇈", color = C.Text, fontSize = 16.sp, modifier = Modifier.clickable { AppState.moveHomeCardTop(id) }.padding(8.dp))
+                                Text("↑", color = C.Text, fontSize = 18.sp, modifier = Modifier.clickable { AppState.moveHomeCard(id, -1) }.padding(10.dp))
+                                Text("↓", color = C.Text, fontSize = 18.sp, modifier = Modifier.clickable { AppState.moveHomeCard(id, 1) }.padding(10.dp))
+                                if (AppState.isCustomCard(id)) Text("✕", color = C.Red, fontSize = 16.sp, modifier = Modifier.clickable { AppState.removeHomeCard(id) }.padding(10.dp))
+                            }
+                        }
+                        Text("指數卡片顯示內容", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                        IndexCardOptions(null)
+                    }
+                }
+                item { SettingRow("美股時間", "台灣時間・自動夏冬令") }
             }
-            item { SettingRow("美股時間", "台灣時間・自動夏冬令") }
-            item { Group("帳戶與手續費") }
-            items(AppState.accounts.toList(), key = { "acc-" + it.id }) { a -> AccountCard(a) }
-            item { AddAccountRow() }
-            item { Group("提醒") }
-            item { SettingRow("提醒中心", "${AppState.alerts.count { it.enabled }} 項開啟 ›") { nav.navigate(Routes.ALERTS) } }
-            item { Group("關於") }
-            item { SettingRow("版本", version) }
-            item { SettingRow("錯誤紀錄", if (com.claudeetf.app.util.CrashLog.read(context) != null) "有紀錄 ›" else "無 ›") { nav.navigate(Routes.ERRORS) } }
-            item { SettingRow("重新看使用引導", "›") { nav.navigate(Routes.WELCOME) } }
+            item { FoldHeader("帳戶與手續費", "${AppState.accounts.size} 個帳戶", "帳戶與手續費" in openGroups) { if ("帳戶與手續費" in openGroups) openGroups.remove("帳戶與手續費") else openGroups.add("帳戶與手續費") } }
+            if ("帳戶與手續費" in openGroups) {
+                items(AppState.accounts.toList(), key = { "acc-" + it.id }) { a -> AccountCard(a) }
+                item { AddAccountRow() }
+            }
+            item { FoldHeader("提醒", "${AppState.alerts.count { it.enabled }} 項開啟", "提醒" in openGroups) { if ("提醒" in openGroups) openGroups.remove("提醒") else openGroups.add("提醒") } }
+            if ("提醒" in openGroups) {
+                item { SettingRow("提醒中心", "${AppState.alerts.count { it.enabled }} 項開啟 ›") { nav.navigate(Routes.ALERTS) } }
+            }
+            item { FoldHeader("關於", version, "關於" in openGroups) { if ("關於" in openGroups) openGroups.remove("關於") else openGroups.add("關於") } }
+            if ("關於" in openGroups) {
+                item { SettingRow("版本", version) }
+                item { SettingRow("錯誤紀錄", if (com.claudeetf.app.util.CrashLog.read(context) != null) "有紀錄 ›" else "無 ›") { nav.navigate(Routes.ERRORS) } }
+                item { SettingRow("重新看使用引導", "›") { nav.navigate(Routes.WELCOME) } }
+            }
             item { Label("金鑰只存在這支手機，不會上傳到其他地方。", Modifier.padding(4.dp)) }
         }
     }
@@ -552,6 +581,22 @@ fun PrimaryButton(text: String, onClick: () -> Unit) {
 @Composable
 private fun Group(text: String) {
     Text(text, color = C.Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+}
+
+/** 可收合的區塊標題：收合時顯示摘要 */
+@Composable
+private fun FoldHeader(title: String, summary: String?, open: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (open) C.Bg else C.Card)
+            .clickable(onClick = onToggle).padding(horizontal = 14.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = if (open) C.Primary else C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            if (!open && !summary.isNullOrBlank()) Label(summary)
+        }
+        Text(if (open) "▲" else "▼", color = C.Muted, fontSize = 12.sp)
+    }
 }
 
 @Composable

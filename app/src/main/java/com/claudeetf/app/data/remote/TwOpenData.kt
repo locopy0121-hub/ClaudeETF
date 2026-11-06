@@ -83,7 +83,9 @@ object TwOpenData {
     }
 
     fun monthlyRevenue(code: String): MonthlyRevenue? {
-        val o = dataset("/opendata/t187ap05_L").rowFor(code) ?: return null
+        // 上市找不到時改查上櫃（櫃買中心 t187ap05_O）
+        val o = runCatching { dataset("/opendata/t187ap05_L").rowFor(code) }.getOrNull()
+            ?: return runCatching { TpexOpenData.revenue()[code] }.getOrNull()
         return MonthlyRevenue(
             month = rocMonth(o.find("資料年月")),
             revenueK = toNum(o.find("當月營收", exclude = "累計")),
@@ -110,6 +112,8 @@ object TwOpenData {
                 toNum(o.find("融券", "今日餘額")), toNum(o.find("融券", "前日餘額")),
             )
         }
+        // 上櫃（櫃買中心 t187ap06_O），上市資料優先
+        runCatching { TpexOpenData.margin() }.getOrNull()?.forEach { (k, v) -> if (k !in out) out[k] = v }
         return out
     }
 
