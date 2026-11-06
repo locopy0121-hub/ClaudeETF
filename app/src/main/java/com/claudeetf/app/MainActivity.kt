@@ -146,6 +146,9 @@ class MainActivity : ComponentActivity() {
                 delay(3_000L) // 先讓行情載入
                 runCatching { com.claudeetf.app.data.DividendCalendar.refresh() }
                 runCatching { com.claudeetf.app.alerts.AlertEngine.checkDividendDays(applicationContext) }
+                // 配息現金流（下一筆入帳、本月明細）與入帳提醒
+                runCatching { com.claudeetf.app.data.DividendFlow.refresh() }
+                runCatching { com.claudeetf.app.alerts.AlertEngine.checkPayDays(applicationContext) }
             }
         }
         // 線上更新：每次回到 App（前景）時檢查 GitHub 最新版本，距上次超過 15 分鐘才重新查詢

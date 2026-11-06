@@ -436,7 +436,7 @@ fun ScoreBadge(q: Quote) {
         Text("指數 ", color = C.Text2, fontSize = 11.sp, maxLines = 1)
         NumText(r?.let { "${it.score}%" } ?: "…", 14.sp, color, FontWeight.Bold)
         r?.let {
-            it.band?.let { b -> Text(" " + b.zoneName, color = zoneColor(b.zone), fontSize = 11.sp, maxLines = 1) }
+            // 光譜區間已移到代號下方的標籤列
             val ratio = it.verdict?.ratio ?: InvestAnalysis.suggestedRatio(it.score)
             if (k != null) {
                 val (word, now) = com.claudeetf.app.data.KlineAnalysis.combined(ratio, k.entry)

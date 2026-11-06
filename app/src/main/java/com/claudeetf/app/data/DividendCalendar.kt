@@ -2,6 +2,8 @@ package com.claudeetf.app.data
 
 import com.claudeetf.app.data.remote.Http
 import com.claudeetf.app.data.remote.YahooExtra
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -47,7 +49,8 @@ object DividendCalendar {
     data class Estimate(val gross: Double, val nhi: Double, val withholding: Double, val net: Double, val stockShares: Double)
 
     private var day = ""
-    var loading = false
+    // 狀態要能通知畫面，否則載入完成後畫面仍停在「查詢中…」
+    var loading by androidx.compose.runtime.mutableStateOf(false)
         private set
 
     fun lastBuyDay(ex: LocalDate): LocalDate {

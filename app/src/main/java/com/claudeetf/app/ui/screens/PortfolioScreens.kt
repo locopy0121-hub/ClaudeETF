@@ -694,13 +694,18 @@ fun DividendScreen(nav: NavController) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // 配息現金流：下一筆預估入帳、本月入帳明細、持股配息、配息試算
+            item { DivNextCard(nav) }
+            item { DivMonthCard(nav) }
+            item { DivHoldingList(nav) }
+            item { DivSimulatorCard() }
             item {
                 Card(padding = 14.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("持股即將配息", Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text("持股即將除權息", Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         val scope = rememberCoroutineScope()
                         Text("重新整理", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clickable {
-                            scope.launch { runCatching { com.claudeetf.app.data.DividendCalendar.refresh(force = true) } }
+                            scope.launch { runCatching { com.claudeetf.app.data.DividendFlow.refresh(force = true) } }
                         }.padding(4.dp))
                     }
                     UpcomingHoldingDividends(nav)

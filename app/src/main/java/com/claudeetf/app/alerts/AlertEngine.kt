@@ -368,6 +368,23 @@ object AlertEngine {
      * 持股除權息提醒：最後買進日當天、除息日前一天各通知一次（每檔每天一次）。
      * 記錄在提醒中心的通知紀錄，重開 App 不重複。
      */
+    /** 股息發放日 11:00 後：「今日入帳」通知（每檔每次一次） */
+    fun checkPayDays(context: Context) {
+        if (!AppState.divPayAlert) return
+        val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Taipei"))
+        if (now.toLocalTime() < java.time.LocalTime.of(11, 0)) return
+        for (e in com.claudeetf.app.data.DividendFlow.events.toList()) {
+            if (e.payDate != now.toLocalDate() || e.eligibleShares <= 0 || e.symbol in AppState.divPayMuted) continue
+            val title = "${e.symbol} 今日股息入帳"
+            if (AppState.alertHistory.any { it.text.startsWith(title) && java.time.Instant.ofEpochMilli(it.time).atZone(now.zone).toLocalDate() == now.toLocalDate() }) continue
+            val amt = (if (e.usd) "US$" + Fmt.num(e.net, 2) else "NT$" + Fmt.num(e.net))
+            val text = "${e.name}：${Fmt.shares(e.eligibleShares)} 股 × 每單位 ${Fmt.num(e.perUnit, 4).trimEnd('0').trimEnd('.')}，預估入帳 $amt" +
+                (if (e.nhi > 0) "（已扣二代健保 ${Fmt.num(e.nhi)}）" else "") + (if (e.payEstimated) "；發放日為推估，以券商入帳為準" else "")
+            AppState.logNotice("$title｜$text", System.currentTimeMillis())
+            notify(context, 6500 + (e.symbol.hashCode() and 0xfff), title, text)
+        }
+    }
+
     fun checkDividendDays(context: Context) {
         val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei"))
         val md = java.time.format.DateTimeFormatter.ofPattern("M/d")
@@ -431,6 +448,11 @@ class AlertWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
     override suspend fun doWork(): Result {
         AppState.init(applicationContext)
         runCatching { AlertEngine.checkAppUpdate(applicationContext) }
+        // 股息入帳提醒：背景也更新一次配息現金流
+        if (AppState.divPayAlert && AppState.holdings.isNotEmpty()) runCatching {
+            com.claudeetf.app.data.DividendFlow.refresh()
+            AlertEngine.checkPayDays(applicationContext)
+        }
         val summaries = (AppState.dailySummary || AppState.monthlyReport) && AppState.holdings.isNotEmpty()
         if (AppState.alerts.none { it.enabled } && !summaries && AppState.dcaPlans.none { it.enabled }) return Result.success()
         runCatching {

@@ -285,7 +285,15 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
 @Composable
 private fun EtfTagRow(q: Quote) {
     val T = com.claudeetf.app.data.EtfTags
-    if (!T.isEtf(q)) return
+    // 股價光譜區間（與投資分析共用結果）：個股也顯示這個標籤
+    LaunchedEffect(q.symbol) {
+        if (com.claudeetf.app.data.InvestAnalysis.cached(q.symbol) == null) runCatching { com.claudeetf.app.data.InvestAnalysis.analyze(q) }
+    }
+    val band = com.claudeetf.app.data.InvestAnalysis.results[q.symbol]?.band
+    if (!T.isEtf(q)) {
+        if (band != null) Row(Modifier.padding(top = 2.dp)) { EtfChip("光譜 " + band.zoneName, zoneColor(band.zone)) { } }
+        return
+    }
     LaunchedEffect(q.symbol) { T.ensureFreq(q) }
     val tags = T.typeTags(q)
     val freq = T.divFreq[q.symbol]
@@ -302,6 +310,7 @@ private fun EtfTagRow(q: Quote) {
             }) { info = t.text }
         }
         val y = T.annualYield(q.symbol, q.price)
+        band?.let { b -> EtfChip("光譜 " + b.zoneName, zoneColor(b.zone)) { info = "__band" } }
         EtfChip(
             (freq ?: "配息…") + (y?.let { " · 年化 " + Fmt.num(it, 1) + "%" } ?: ""),
             if (freq == null || freq == "不配息" || freq == "尚未配息") C.Muted else androidx.compose.ui.graphics.Color(0xFFE6C34A),
@@ -311,9 +320,13 @@ private fun EtfTagRow(q: Quote) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { info = null },
             containerColor = C.Card,
-            title = { Text(if (key == "__div") "配息方式：" + (freq ?: "載入中") else key, color = C.Text, fontSize = 16.sp) },
+            title = { Text(if (key == "__div") "配息方式：" + (freq ?: "載入中") else if (key == "__band") "股價光譜：" + (band?.zoneName ?: "") else key, color = C.Text, fontSize = 16.sp) },
             text = {
-                if (key != "__div") Text(T.explain(key), color = C.Text2, fontSize = 14.sp)
+                if (key == "__band") Text(band?.let { b ->
+                    "股價位於近一年趨勢通道的「" + b.zoneName + "」區（偏離趨勢 " + (if (b.z >= 0) "+" else "") + Fmt.num(b.z, 1) + "σ）。" +
+                        "趨勢價 " + Fmt.price(b.trend) + "；詳見 概覽 › 光譜。"
+                } ?: "", color = C.Text2, fontSize = 14.sp)
+                else if (key != "__div") Text(T.explain(key), color = C.Text2, fontSize = 14.sp)
                 else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     val list = T.divs[q.symbol].orEmpty()
                     val y = T.annualYield(q.symbol, q.price)

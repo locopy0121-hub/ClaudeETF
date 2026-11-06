@@ -237,6 +237,13 @@ object AppState {
     /** 美股盤中更新頻率（毫秒）；0 = 即時（Finnhub 逐筆串流，沒有金鑰時改為每秒輪詢） */
     var usRefreshMs by mutableStateOf(5_000L)
     fun updateUsRefreshMs(v: Long) { usRefreshMs = v; save() }
+    /** 股息發放日入帳提醒（11:00 後） */
+    var divPayAlert by mutableStateOf(true)
+    /** 不提醒入帳的代號 */
+    val divPayMuted = mutableStateListOf<String>()
+    fun updateDivPayAlert(on: Boolean) { divPayAlert = on; save() }
+    fun toggleDivPayMuted(symbol: String) { if (!divPayMuted.remove(symbol)) divPayMuted.add(symbol); save() }
+
     /** 自選個股（卡片／清單）顯示格式 */
     var watchStyle by mutableStateOf(WatchStyle())
     fun updateWatchStyle(ws: WatchStyle) { watchStyle = ws; save() }
@@ -439,6 +446,8 @@ object AppState {
         usRefreshMs = p.getLong("usRefreshMs", 5_000L)
         autoUpdateCheck = p.getBoolean("autoUpdateCheck", true)
         watchStyle = WatchStyle.fromJson(p.getString("watchStyle", null))
+        divPayAlert = p.getBoolean("divPayAlert", true)
+        divPayMuted.clear(); divPayMuted.addAll((p.getString("divPayMuted", "") ?: "").split(",").filter { it.isNotBlank() })
         priceBoxShow = p.getBoolean("priceBoxShow", true)
         priceBoxLabel = p.getBoolean("priceBoxLabel", true)
         priceBoxFont = p.getString("priceBoxFont", "mono") ?: "mono"
@@ -643,6 +652,8 @@ object AppState {
             .putLong("usRefreshMs", usRefreshMs)
             .putBoolean("autoUpdateCheck", autoUpdateCheck)
             .putString("watchStyle", watchStyle.toJson())
+            .putBoolean("divPayAlert", divPayAlert)
+            .putString("divPayMuted", divPayMuted.joinToString(","))
             .putBoolean("priceBoxShow", priceBoxShow)
             .putBoolean("priceBoxLabel", priceBoxLabel)
             .putString("priceBoxFont", priceBoxFont)
