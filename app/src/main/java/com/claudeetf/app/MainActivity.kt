@@ -162,6 +162,7 @@ class MainActivity : ComponentActivity() {
                         runCatching { MarketData.refreshLive() }
                     }
                     if (live) runCatching { AlertEngine.checkRapid(applicationContext) }
+                    if (live) runCatching { com.claudeetf.app.widget.WidgetUpdater.updateThrottled(applicationContext) }
                     delay(if (live) 5_000L else 60_000L)
                 }
             }

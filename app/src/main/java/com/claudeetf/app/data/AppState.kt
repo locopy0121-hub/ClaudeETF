@@ -124,6 +124,14 @@ object AppState {
 
     /** 美股延長盤：代號 → (盤前／盤後, 價格, 漲跌%, 時間) */
     data class ExtQuote(val label: String, val price: Double, val changePct: Double, val time: Long)
+
+    /** 當日高低與成交量（股），自選欄位與小工具使用 */
+    data class DayStat(val high: Double?, val low: Double?, val volume: Double?, val at: Long)
+    val dayStats = mutableStateMapOf<String, DayStat>()
+
+    /** 自選清單中間欄：spark 走勢、volume 成交量、amp 振幅、pe 本益比、pnl 持股損益 */
+    var watchColumn by mutableStateOf("spark")
+    fun updateWatchColumn(c: String) { watchColumn = c; save() }
     val extended = mutableStateMapOf<String, ExtQuote>()
 
     /** 富果串流狀態文字 */
@@ -205,6 +213,7 @@ object AppState {
         homeHidden.clear()
         p.getString("homeHidden", null)?.split(",")?.filter { it.isNotBlank() }?.let { homeHidden.addAll(it) }
         fontScale = p.getFloat("fontScale", 1f)
+        watchColumn = p.getString("watchColumn", "spark") ?: "spark"
         realizedTwdYtd = p.getFloat("realized", 56_800f).toDouble()
         dividendTwYtd = p.getFloat("divTw", 61_300f).toDouble()
         dividendUsGrossYtd = p.getFloat("divUs", 1_120.73f).toDouble()
@@ -353,6 +362,7 @@ object AppState {
             .putString("homeOrder", homeOrder.joinToString(","))
             .putString("homeHidden", homeHidden.joinToString(","))
             .putFloat("fontScale", fontScale)
+            .putString("watchColumn", watchColumn)
             .putFloat("realized", realizedTwdYtd.toFloat())
             .putFloat("divTw", dividendTwYtd.toFloat())
             .putFloat("divUs", dividendUsGrossYtd.toFloat())
@@ -497,6 +507,10 @@ object AppState {
             }
         }
         if (live) recordTick(old.symbol, rq.price)
+        if (rq.high != null || rq.low != null || rq.volume != null) {
+            val prevStat = dayStats[old.symbol]
+            dayStats[old.symbol] = DayStat(rq.high ?: prevStat?.high, rq.low ?: prevStat?.low, rq.volume ?: prevStat?.volume, now)
+        }
         quotes[i] = old.copy(
             name = if (old.name == old.symbol && rq.name != null) rq.name else old.name,
             price = rq.price,

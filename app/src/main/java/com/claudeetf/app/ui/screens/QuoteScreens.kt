@@ -55,7 +55,7 @@ fun WatchlistScreen(nav: NavController) {
     val scope = rememberCoroutineScope()
     var addMsg by remember { mutableStateOf<String?>(null) }
     val group = if (filter.startsWith("g")) AppState.groups.firstOrNull { "g" + it.id == filter } else null
-    val sortNames = listOf("自訂", "漲幅", "跌幅", "代號", "價格")
+    val sortNames = listOf("自訂", "漲幅", "跌幅", "代號", "價格", "成交量", "振幅")
     val base = AppState.quotes.filter { q ->
         (editing && group != null) || when (filter) {
             "tw" -> q.market == Market.TW
@@ -70,6 +70,8 @@ fun WatchlistScreen(nav: NavController) {
         2 -> base.sortedBy { it.changePct }
         3 -> base.sortedBy { it.symbol }
         4 -> base.sortedByDescending { it.price * AppState.fxFor(it.market) }
+        5 -> base.sortedByDescending { (AppState.dayStats[it.symbol]?.volume ?: 0.0) * it.price * AppState.fxFor(it.market) }
+        6 -> base.sortedByDescending { amplitude(it) ?: -1.0 }
         else -> base
     }
 
@@ -157,6 +159,12 @@ fun WatchlistScreen(nav: NavController) {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChipText("熱度圖", heat) { heat = !heat }
                         sortNames.forEachIndexed { i, n -> FilterChipText(n, sort == i && !heat) { sort = i; heat = false } }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Label("欄位", Modifier.padding(end = 6.dp))
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        watchColumns.forEach { (id, n) -> FilterChipText(n, AppState.watchColumn == id) { AppState.updateWatchColumn(id) } }
                     }
                 }
             }
@@ -265,7 +273,7 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
                 HGap(6.dp); Text(sourceText(q.source, q.updatedAt), color = C.Muted, fontSize = 10.sp, maxLines = 1)
             }
         }
-        Sparkline(q.spark, Trend.fg(q.change), Modifier.size(width = 60.dp, height = 24.dp))
+        WatchCell(q)
         HGap(10.dp)
         Column(Modifier.widthIn(min = 96.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             NumText(if (q.price > 0) Fmt.price(q.price) else "—", 15.sp)
@@ -281,6 +289,49 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
         }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
+}
+
+val watchColumns = listOf("spark" to "走勢", "volume" to "成交量", "amp" to "振幅", "pe" to "本益比", "pnl" to "持股損益")
+
+/** 當日振幅 %：(最高 − 最低) ÷ 昨收 */
+fun amplitude(q: Quote): Double? {
+    val d = AppState.dayStats[q.symbol] ?: return null
+    val hi = d.high ?: return null
+    val lo = d.low ?: return null
+    if (q.prevClose <= 0 || hi < lo) return null
+    return (hi - lo) / q.prevClose * 100
+}
+
+/** 自選清單中間欄，依設定顯示不同資訊 */
+@Composable
+private fun WatchCell(q: Quote) {
+    val m = Modifier.size(width = 72.dp, height = 30.dp)
+    when (AppState.watchColumn) {
+        "volume" -> CellText(AppState.dayStats[q.symbol]?.volume?.let { volumeText(it, q.market) } ?: "—", "量", m)
+        "amp" -> CellText(amplitude(q)?.let { Fmt.num(it, 2) + "%" } ?: "—", "振幅", m)
+        "pe" -> CellText(q.stats?.pe?.takeIf { it.isNotBlank() } ?: "—", "本益比", m)
+        "pnl" -> {
+            val h = AppState.holdings.firstOrNull { it.symbol == q.symbol }
+            if (h == null || q.price <= 0) CellText("—", "未持有", m)
+            else {
+                val pl = (q.price - h.avgCost) * h.shares
+                val pct = if (h.avgCost > 0) (q.price / h.avgCost - 1) * 100 else 0.0
+                Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                    NumText(com.claudeetf.app.ui.mask(Fmt.signed(pl, if (q.market == Market.US) 2 else 0)), 12.sp, Trend.fg(pl))
+                    Text(Fmt.signedPct(pct), color = Trend.fg(pl), fontSize = 10.sp, maxLines = 1)
+                }
+            }
+        }
+        else -> Sparkline(q.spark, Trend.fg(q.change), Modifier.size(width = 60.dp, height = 24.dp))
+    }
+}
+
+@Composable
+private fun CellText(value: String, caption: String, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+        NumText(value, 12.sp)
+        Text(caption, color = C.Muted, fontSize = 10.sp, maxLines = 1)
+    }
 }
 
 fun sourceText(src: QuoteSource, at: Long): String {

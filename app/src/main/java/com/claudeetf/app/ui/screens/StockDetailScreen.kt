@@ -180,7 +180,18 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             item { ChartBlock(history, range, q, chartType, mas, sub) }
             item { Segmented(tabs.map { it.label }, tabIdx, { tabIdx = it }) }
             when (tab) {
-                Tab.OVERVIEW -> { tradingSection(q, trading); overviewTab(q, fund); peersSection(nav, peers) }
+                Tab.OVERVIEW -> {
+                    tradingSection(q, trading)
+                    (history as? Load.Ok<YahooExtra.History>)?.value?.let { h ->
+                        val opt = ranges[range]
+                        val start = opt.days?.let { d ->
+                            val cutoff = System.currentTimeMillis() - d * 24 * 3600 * 1000
+                            h.times.indexOfFirst { it >= cutoff }.takeIf { it >= 0 }
+                        } ?: 0
+                        item { VolumeProfileCard(q, h, start, opt.label) }
+                    }
+                    overviewTab(q, fund); peersSection(nav, peers)
+                }
                 Tab.CHIPS -> chipsTab(q, chips)
                 Tab.FIN -> financialsTab(q, fund)
                 Tab.HOLD -> holdingsTab(q, holdings)
