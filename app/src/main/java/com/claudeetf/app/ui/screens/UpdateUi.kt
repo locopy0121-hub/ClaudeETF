@@ -37,10 +37,65 @@ private fun sizeText(b: Long) = if (b <= 0) "" else "%.1f MB".format(b / 1048576
 /** 開啟 App 時發現新版本：跳出更新提示 */
 @Composable
 fun UpdatePrompt() {
+    UpdatedDialog()
     if (!AppUpdater.prompt) return
     val ctx = LocalContext.current
     val r = AppUpdater.latest ?: return
     UpdateDialog(r, onLater = { AppUpdater.skip(ctx) })
+}
+
+/** 線上更新完成後第一次開啟：顯示「已更新至 vX」與這版更新內容 */
+@Composable
+private fun UpdatedDialog() {
+    val v = AppUpdater.justUpdated ?: return
+    val ctx = LocalContext.current
+    // 說明要等版本清單載入；還沒有就抓一次
+    LaunchedEffect(v) { if (AppUpdater.notesFor(v) == null) AppUpdater.check(ctx, auto = true, minGapMs = 0L, popup = false) }
+    val notes = AppUpdater.notesFor(v)?.let { cleanNotes(it) }
+    AlertDialog(
+        onDismissRequest = { AppUpdater.justUpdated = null },
+        containerColor = C.Card,
+        title = { Text("✓ 已更新至 v$v", color = C.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Label("線上更新成功，持股與設定都已保留。")
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = 260.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg)
+                        .verticalScroll(rememberScrollState()).padding(10.dp),
+                ) {
+                    Text("這版更新", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(notes ?: "載入更新內容中…", color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp)
+                }
+            }
+        },
+        confirmButton = { Text("好", color = C.Primary, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable { AppUpdater.justUpdated = null }.padding(12.dp)) },
+    )
+}
+
+/** 我的 › 關於：版本紀錄（最近 15 版） */
+@Composable
+fun ReleaseHistoryCard() {
+    var open by remember { mutableStateOf(false) }
+    val list = AppUpdater.releases.filter { it.tag.startsWith("v1.") || it.tag.startsWith("v2.") }.ifEmpty { AppUpdater.releases }
+    Card(padding = 14.dp) {
+        Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
+            Text("版本紀錄", Modifier.weight(1f), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Label(if (list.isEmpty()) "檢查更新後顯示" else "${list.size} 版 " + if (open) "▲" else "▼")
+        }
+        if (open) list.forEach { r ->
+            val first = cleanNotes(r.notes).lines().firstOrNull { it.isNotBlank() } ?: r.name
+            var more by remember(r.tag) { mutableStateOf(false) }
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable { more = !more }.padding(10.dp)) {
+                Row {
+                    Text(r.tag.removePrefix("v"), Modifier.weight(1f), color = C.Primary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Label(r.publishedAt.take(10).replace("-", "/"))
+                }
+                Text(if (more) cleanNotes(r.notes) else first, color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp,
+                    maxLines = if (more) Int.MAX_VALUE else 2)
+            }
+        }
+    }
 }
 
 @Composable

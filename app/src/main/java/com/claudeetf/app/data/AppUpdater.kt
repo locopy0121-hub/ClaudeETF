@@ -45,6 +45,28 @@ object AppUpdater {
         private set
     /** 是否要在首頁跳出更新提示（使用者按「稍後」後本次不再跳） */
     var prompt by mutableStateOf(false)
+    /** 最近的版本（新到舊），供「版本紀錄」顯示 */
+    var releases by mutableStateOf<List<Release>>(emptyList())
+        private set
+    /** 剛完成更新：顯示「已更新至 vX」視窗（值為新版本號） */
+    var justUpdated by mutableStateOf<String?>(null)
+
+    /** App 啟動時呼叫：版本與上次執行不同 → 代表剛更新完成 */
+    fun detectUpdated(context: Context) {
+        val p = context.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE)
+        val cur = currentVersion(context)
+        val last = p.getString("lastRunVersion", "") ?: ""
+        // 線上更新下載的 APK 還在 → 剛透過線上更新安裝完成（1.0.3 之前沒有記錄 lastRunVersion 也能判斷）
+        val dir = File(context.cacheDir, "updates")
+        val viaOta = dir.listFiles()?.any { it.name.contains(cur.removeSuffix("-dev")) } == true
+        if ((last.isNotEmpty() && last != cur && patchOf(cur) > patchOf(last)) || (last.isEmpty() && viaOta)) justUpdated = cur
+        // 安裝完成後清掉下載的 APK，節省空間
+        if (last != cur) dir.listFiles()?.forEach { it.delete() }
+        p.edit().putString("lastRunVersion", cur).apply()
+    }
+
+    /** 某版本的更新說明（版本紀錄已載入時） */
+    fun notesFor(version: String): String? = releases.firstOrNull { it.tag.removePrefix("v").removeSuffix("-dev") == version.removeSuffix("-dev") }?.notes
 
     fun currentPatch(context: Context): Int = patchOf(currentVersion(context))
 
@@ -108,6 +130,7 @@ object AppUpdater {
             // 以發布時間最新的一版為準
             val newest = list.maxByOrNull { it.publishedAt }
             latest = newest
+            releases = list.sortedByDescending { it.publishedAt }
             prefs.edit().putLong("lastCheck", now).apply()
             lastCheckAt = now
             newest?.let { save(prefs, it) }
