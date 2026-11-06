@@ -61,20 +61,25 @@ fun NewsReader(n: YahooExtra.News, onClose: () -> Unit) {
         runCatching { withContext(Dispatchers.IO) { RssNews.article(n.link) } }
             .onSuccess { paras = it }.onFailure { err = it.friendly() }
     }
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(C.Bg)) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        // 全螢幕閱讀：避開狀態列與底部導覽列，最後一段才能完整捲到
+        Column(Modifier.fillMaxSize().background(C.Bg).systemBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Label(listOf(n.publisher, newsTime(n.time)).filter { it.isNotBlank() }.joinToString(" · "), Modifier.weight(1f))
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, contentDescription = "關閉", tint = C.Text) }
             }
             LazyColumn(
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp),
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item { Text(n.title, color = C.Text, fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold) }
                 val body = paras
                 when {
-                    body != null -> items(body) { p -> Text(p, color = C.Text, fontSize = 16.sp, lineHeight = 26.sp) }
+                    body != null -> {
+                        items(body) { p -> Text(p, color = C.Text, fontSize = 16.sp, lineHeight = 26.sp) }
+                        item { Label("— 全文完 —", Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally).padding(top = 8.dp)) }
+                    }
                     else -> {
                         if (n.summary.isNotBlank()) item { Text(n.summary, color = C.Text, fontSize = 16.sp, lineHeight = 26.sp) }
                         item { Label(err?.let { "無法載入全文（$it），以上為 RSS 摘要" } ?: "載入全文中…") }

@@ -86,8 +86,11 @@ object RssNews {
         articleCache[link]?.let { return it }
         val html = Http.get(link, mapOf("User-Agent" to UA, "Accept" to "text/html"), timeoutMs = 20_000)
         // Yahoo 文章本文在 caas-body；其他網站取 <article> 或整頁
-        val body = Regex("class=\"caas-body\"[^>]*>(.*?)</div>\\s*</div>", RegexOption.DOT_MATCHES_ALL).find(html)?.groupValues?.get(1)
-            ?: Regex("<article[^>]*>(.*?)</article>", RegexOption.DOT_MATCHES_ALL).find(html)?.groupValues?.get(1)
+        // 本文可能含圖片等巢狀 div，不用 </div> 截斷：從 caas-body 開始一路取到文章結尾標記
+        val body = html.indexOf("caas-body").takeIf { it >= 0 }?.let { start ->
+            val ends = listOf("caas-readmore", "</article>", "caas-share", "caas-da").map { html.indexOf(it, start) }.filter { it > start }
+            html.substring(start, ends.minOrNull() ?: html.length)
+        } ?: Regex("<article[^>]*>(.*?)</article>", RegexOption.DOT_MATCHES_ALL).find(html)?.groupValues?.get(1)
             ?: html
         val paras = Regex("<p[^>]*>(.*?)</p>", RegexOption.DOT_MATCHES_ALL).findAll(body)
             .map { plain(it.groupValues[1]) }
