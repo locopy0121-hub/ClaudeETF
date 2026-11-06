@@ -112,10 +112,18 @@ object ChatEngine {
         load()
         running = true
         io.execute { ChatCrypto.warmUp() }
-        if (ChatPrefs.useNearby) runCatching { NearbyTransport.start(appCtx) }.onFailure { status = "附近連線無法啟動：" + (it.message ?: "") }
+        // 附近直連需要藍牙、定位、附近裝置權限；沒授權就先不啟動，避免 8034 等錯誤
+        if (ChatPrefs.useNearby && hasNearbyPermissions(appCtx)) runCatching { NearbyTransport.start(appCtx) }.onFailure { status = "附近連線無法啟動：" + (it.message ?: "") }
         if (ChatPrefs.useInternet) runCatching { WebRtcTransport.start(appCtx) }.onFailure { status = "跨網連線無法啟動：" + (it.message ?: "") }
         refreshStatus()
     }
+
+    /** 附近直連所需權限是否都已授權 */
+    fun hasNearbyPermissions(ctx: Context): Boolean = buildList {
+        if (android.os.Build.VERSION.SDK_INT >= 31) { add(android.Manifest.permission.BLUETOOTH_SCAN); add(android.Manifest.permission.BLUETOOTH_ADVERTISE); add(android.Manifest.permission.BLUETOOTH_CONNECT) }
+        if (android.os.Build.VERSION.SDK_INT >= 33) add(android.Manifest.permission.NEARBY_WIFI_DEVICES)
+        add(android.Manifest.permission.ACCESS_COARSE_LOCATION); add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+    }.all { androidx.core.content.ContextCompat.checkSelfPermission(ctx, it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
 
     fun stop() {
         runCatching { NearbyTransport.stop() }
@@ -136,6 +144,7 @@ object ChatEngine {
             !running -> "已停止"
             n > 0 -> "已連線 $n 位成員（" + links.values.map { it.via }.distinct().joinToString("、") { if (it == "nearby") "附近" else "網路" } + "）"
             ChatPrefs.useInternet && !ChatPrefs.useNearby -> "尚無連線：用「邀請」與成員交換邀請碼"
+            ChatPrefs.useNearby && !hasNearbyPermissions(appCtx) -> "附近直連尚未授權（藍牙、定位、附近裝置）"
             else -> "搜尋附近成員中…；不在附近可用「邀請」跨網連線"
         }
     }
