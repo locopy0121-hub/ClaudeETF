@@ -288,7 +288,7 @@ fun ChatSettingsCard(nav: NavController) {
                 Label("P2P 直連（藍牙／Wi-Fi），不經伺服器；需在彼此附近")
             }
             androidx.compose.material3.Switch(checked = ChatPrefs.enabled, onCheckedChange = { on ->
-                ChatPrefs.setEnabled(on)
+                ChatPrefs.updateEnabled(on)
                 if (!on) ChatEngine.stop()
             })
         }
@@ -298,10 +298,10 @@ fun ChatSettingsCard(nav: NavController) {
         OutlinedTextField(gid, { gid = it }, label = { Text("群聊 ID（同 ID 的成員互連）") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("儲存", color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable {
-                ChatPrefs.setUserName(name)
-                val okId = ChatPrefs.setUserId(uid)
+                ChatPrefs.updateUserName(name)
+                val okId = ChatPrefs.updateUserId(uid)
                 val groupChanged = gid.trim() != ChatPrefs.groupId
-                ChatPrefs.setGroupId(gid)
+                ChatPrefs.updateGroupId(gid)
                 msg = if (!okId) "代號需為英數 4–12 碼，其餘已儲存" else "已儲存" + if (groupChanged) "，已切換群組" else ""
                 uid = ChatPrefs.userId
                 if (ChatEngine.running) ChatEngine.restart(ctx)

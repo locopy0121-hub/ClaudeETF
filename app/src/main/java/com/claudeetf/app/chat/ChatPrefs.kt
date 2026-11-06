@@ -39,14 +39,14 @@ object ChatPrefs {
         e.apply()
     }
 
-    fun setEnabled(on: Boolean) { enabled = on; put("enabled", on) }
-    fun setUserName(n: String) { userName = n.trim().replace("|", "／").take(20); put("userName", userName) }
+    fun updateEnabled(on: Boolean) { enabled = on; put("enabled", on) }
+    fun updateUserName(n: String) { userName = n.trim().replace("|", "／").take(20); put("userName", userName) }
     /** 使用者代號：英數 4–12 碼 */
-    fun setUserId(id: String): Boolean {
+    fun updateUserId(id: String): Boolean {
         val v = id.trim().uppercase().filter { it.isLetterOrDigit() }
         if (v.length !in 4..12) return false
         userId = v; put("userId", v); return true
     }
     /** 群聊 ID：同一個 ID 的成員互相連線 */
-    fun setGroupId(g: String) { groupId = g.trim().replace("|", "").take(24); put("groupId", groupId) }
+    fun updateGroupId(g: String) { groupId = g.trim().replace("|", "").take(24); put("groupId", groupId) }
 }
