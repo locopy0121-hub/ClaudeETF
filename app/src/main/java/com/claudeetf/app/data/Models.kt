@@ -211,7 +211,8 @@ data class AlertRule(
 
     companion object {
         fun trimNum(v: Double): String =
-            if (v == Math.floor(v)) v.toLong().toString() else java.math.BigDecimal(v).stripTrailingZeros().toPlainString()
+            // BigDecimal.valueOf 用最短十進位表示（6.85 不會變成 6.8499999…），最多 4 位小數
+            java.math.BigDecimal.valueOf(v).setScale(4, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
     }
 }
 

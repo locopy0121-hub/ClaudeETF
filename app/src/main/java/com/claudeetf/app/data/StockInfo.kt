@@ -118,9 +118,14 @@ object StockInfoRepo {
         // 今天已有 K 棒（盤中或已收盤）→ 用前一根；尚未開盤 → 最後一根就是前一交易日
         val k = if (day(valid.last()) == today) valid.getOrNull(valid.size - 2) else valid.last()
         k ?: return@withContext null
-        val hi = h.highs[k].toDouble(); val lo = h.lows[k].toDouble()
+        // Yahoo 為 Float，先取 4 位消除誤差；台股三關依升降單位無條件捨去
+        fun clean(v: Float) = java.math.BigDecimal.valueOf(v.toDouble()).setScale(4, java.math.RoundingMode.HALF_UP).toDouble()
+        val hi = clean(h.highs[k]); val lo = clean(h.lows[k])
         val r = hi - lo
-        val kp = KeyPrices(lo + r * 1.382, (hi + lo) / 2, hi - r * 1.382, hi, lo, day(k).toString())
+        val tw = q.market == Market.TW
+        val etf = q.isEtf || q.symbol.startsWith("00")
+        fun px(v: Double) = if (tw) com.claudeetf.app.util.TwSession.snap(v, etf) else v
+        val kp = KeyPrices(px(lo + r * 1.382), px((hi + lo) / 2), px(hi - r * 1.382), hi, lo, day(k).toString())
         keyCache[q.symbol] = System.currentTimeMillis() to kp
         kp
     }

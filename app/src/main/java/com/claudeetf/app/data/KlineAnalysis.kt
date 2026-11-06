@@ -466,7 +466,15 @@ object KlineAnalysis {
                         cs[cs.size - 1] = l.copy(c = q.price, h = max(l.h, q.price), l = min(l.l, q.price))
                 }
             }
-            analyze(cs, if (weekly) "週 K" else "日 K", if (weekly) 4 else 5)
+            analyze(cs, if (weekly) "週 K" else "日 K", if (weekly) 4 else 5)?.let { res ->
+                // 台股：操作計畫的價位依證交所升降單位對齊
+                if (q.market != Market.TW || res.plan == null) res else {
+                    val etf = q.isEtf || q.symbol.startsWith("00")
+                    fun s(v: Double) = com.claudeetf.app.util.TwSession.snap(v, etf)
+                    val p = res.plan
+                    res.copy(plan = p.copy(entryMin = s(p.entryMin), entryMax = s(p.entryMax), stop = s(p.stop), tp1 = s(p.tp1), tp2 = s(p.tp2)))
+                }
+            }
         }
         if (cache.size > 200) cache.clear()
         cache[key] = r

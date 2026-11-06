@@ -52,6 +52,16 @@ object TwSession {
     }
 
     /** 漲停價與跌停價（±10%，依升降單位向內取整） */
+    /**
+     * 依證交所升降單位對齊價格（無條件捨去到最近的升降單位）。
+     * 先四捨五入到 4 位消除浮點誤差（Yahoo 7.7399998 視為 7.74）。
+     */
+    fun snap(v: Double, etf: Boolean): Double {
+        if (v <= 0 || v.isNaN()) return v
+        val x = BigDecimal.valueOf(v).setScale(4, RoundingMode.HALF_UP).toDouble()
+        return roundTo(x, tick(x, etf), RoundingMode.DOWN)
+    }
+
     fun limits(prevClose: Double, etf: Boolean): Pair<Double, Double> {
         if (prevClose <= 0) return 0.0 to 0.0
         val upRaw = prevClose * 1.1
