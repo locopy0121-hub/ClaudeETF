@@ -1031,7 +1031,7 @@ private fun TapeCard(q: Quote) {
     Card(padding = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("逐筆成交", Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Label(if (streaming) "● 富果串流" else "證交所即時（約每 5 秒）")
+            Label(if (com.claudeetf.app.data.remote.FugleStream.tradesLive(q.symbol)) "● 富果逐筆" else if (streaming) "● 富果串流" else "證交所即時（約每 5 秒）")
         }
         Row {
             Label("時間", Modifier.weight(1f)); Label("價格", Modifier.weight(1f)); Label("張數", Modifier.weight(0.8f)); Label("內外", Modifier.weight(0.5f))
@@ -1108,7 +1108,8 @@ private fun liveMerge(history: Load<YahooExtra.History>, range: Int, q: Quote): 
 private fun LazyListScope.tapeTab(q: Quote) {
     val list = AppState.tape[q.symbol].orEmpty()
     val streaming = com.claudeetf.app.data.remote.FugleStream.isStreaming(q.symbol)
-    item { SectionTitle("成交明細", if (streaming) "● 富果串流同步" else "證交所／富果即時") }
+    val tradesLive = com.claudeetf.app.data.remote.FugleStream.tradesLive(q.symbol)
+    item { SectionTitle("成交明細", if (tradesLive) "● 富果逐筆推播（不漏筆）" else if (streaming) "● 富果串流（每次推播的最新成交）" else "證交所／富果即時") }
     if (list.isEmpty()) {
         item { Label("盤中開啟 App 後開始累積逐筆成交；目前尚無資料。", Modifier.padding(vertical = 12.dp)) }
         return

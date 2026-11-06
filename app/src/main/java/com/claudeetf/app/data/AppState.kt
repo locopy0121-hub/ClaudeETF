@@ -134,7 +134,7 @@ object AppState {
     data class DayStat(val high: Double?, val low: Double?, val volume: Double?, val at: Long)
     val dayStats = mutableStateMapOf<String, DayStat>()
 
-    /** 逐筆成交明細（最新在前，每檔最多 200 筆，跨日清空） */
+    /** 逐筆成交明細（最新在前，每檔最多 1500 筆，跨日清空） */
     val tape = mutableStateMapOf<String, List<TapeTick>>()
     fun recordTape(symbol: String, t: TapeTick) {
         if (t.lots <= 0 || t.price <= 0) return
@@ -143,7 +143,7 @@ object AppState {
         val old = tape[symbol].orEmpty().let { l -> if (l.isNotEmpty() && day(l.first().time) != day(t.time)) emptyList() else l }
         if (old.any { it.time == t.time && it.price == t.price && it.lots == t.lots }) return
         if (old.isNotEmpty() && t.time < old.first().time) return
-        tape[symbol] = (listOf(t) + old).take(200)
+        tape[symbol] = (listOf(t) + old).take(1500)
     }
 
     /** 持股產業（代號 → 產業），存在本機 */

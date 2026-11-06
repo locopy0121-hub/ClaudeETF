@@ -106,6 +106,7 @@ object FugleStream {
             }
             focusSwap()
             pump()
+            ensureTrades()
         }
     }
 
@@ -128,6 +129,7 @@ object FugleStream {
             }
             focusSwap(); pump()
         }
+        ensureTrades()
     }
 
     private fun prioritize(symbols: List<String>): List<String> {
@@ -169,6 +171,33 @@ object FugleStream {
         synchronized(subscribed) {
             subscribed.clear(); queue.clear(); subIds.clear(); rejected.clear()
             awaiting = null; limitHit = false
+            tradesSymbol = ""; tradesId = null; tradesPending = false; tradesFailed = ""
+        }
+    }
+
+    // ---- 正在看的個股另訂 trades 頻道：每一筆成交都推播，逐筆明細不漏筆 ----
+    @Volatile private var tradesSymbol = ""
+    @Volatile private var tradesId: String? = null
+    @Volatile private var tradesPending = false
+    /** 訂閱 trades 失敗的代號（方案不支援或超過上限），不再重試 */
+    @Volatile private var tradesFailed = ""
+
+    /** 目前是否以 trades 頻道逐筆同步 */
+    fun tradesLive(symbol: String): Boolean = authed && tradesSymbol == symbol && tradesId != null
+
+    private fun ensureTrades() {
+        val w = ws ?: return
+        if (!authed) return
+        val f = focus
+        synchronized(subscribed) {
+            if (awaiting != null || tradesPending) return
+            if (tradesSymbol.isNotEmpty() && tradesSymbol != f) {
+                tradesId?.let { id -> w.send(JSONObject().put("event", "unsubscribe").put("data", JSONObject().put("id", id)).toString()) }
+                tradesSymbol = ""; tradesId = null
+            }
+            if (f.isBlank() || f == tradesSymbol || f == tradesFailed) return
+            tradesSymbol = f; tradesPending = true
+            w.send(JSONObject().put("event", "subscribe").put("data", JSONObject().put("channel", "trades").put("symbol", f)).toString())
         }
     }
 
@@ -233,6 +262,10 @@ object FugleStream {
             }
             "subscribed" -> {
                 val d = o.optJSONObject("data")
+                if (d?.optString("channel") == "trades" || (tradesPending && d?.optString("channel").isNullOrBlank() && awaiting == null)) {
+                    synchronized(subscribed) { tradesPending = false; tradesId = d?.optString("id")?.ifBlank { null } ?: "?" }
+                    return
+                }
                 val sym = d?.optString("symbol")?.ifBlank { null } ?: awaiting
                 synchronized(subscribed) {
                     if (sym != null) {
@@ -250,6 +283,9 @@ object FugleStream {
                     wanted = false
                     main.post { AppState.streamStatus = "富果金鑰驗證失敗，改用證交所即時" }
                     webSocket.close(1000, "auth failed")
+                } else if (tradesPending) {
+                    // trades 頻道訂閱失敗：維持 aggregates 的最新成交，不影響報價同步
+                    synchronized(subscribed) { tradesPending = false; tradesFailed = tradesSymbol; tradesSymbol = ""; tradesId = null }
                 } else {
                     // 被拒的就是剛送出的那一檔；訊息提到上限時，其餘排隊的也不再送
                     val limit = listOf("limit", "exceed", "maximum", "上限", "超過").any { msg.contains(it, true) }
@@ -266,6 +302,19 @@ object FugleStream {
                 }
             }
             "data" -> {
+                if (o.optString("channel") == "trades") {
+                    val d = o.optJSONObject("data") ?: return
+                    val sym = d.optString("symbol").ifBlank { return }
+                    fun n(k: String): Double? = d.optDouble(k, Double.NaN).takeIf { !it.isNaN() }
+                    val p = n("price") ?: return
+                    val size = n("size") ?: return
+                    val tm = d.optLong("time", 0L).let { if (it > 100_000_000_000_000L) it / 1000 else it }.takeIf { it > 0 } ?: System.currentTimeMillis()
+                    val bid = n("bid")?.takeIf { it > 0 }
+                    val ask = n("ask")?.takeIf { it > 0 }
+                    val side = when { ask != null && p >= ask -> 1; bid != null && p <= bid -> -1; else -> 0 }
+                    main.post { AppState.recordTape(sym, com.claudeetf.app.data.TapeTick(tm, p, size, side)) }
+                    return
+                }
                 if (o.optString("channel") != "aggregates") return
                 val d = o.optJSONObject("data") ?: return
                 val sym = d.optString("symbol").ifBlank { return }
@@ -311,7 +360,7 @@ object FugleStream {
                     com.claudeetf.app.data.TapeTick(tm, p, size, side)
                 }
                 main.post {
-                    tape?.let { AppState.recordTape(sym, it) }
+                    if (!tradesLive(sym)) tape?.let { AppState.recordTape(sym, it) }
                     books[sym] = book
                     totals[sym] = tot
                     AppState.applyRemote(rq, QuoteSource.FUGLE_STREAM, minOf(updated, System.currentTimeMillis()), live = true)
