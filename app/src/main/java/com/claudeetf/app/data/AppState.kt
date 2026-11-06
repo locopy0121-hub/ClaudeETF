@@ -76,7 +76,29 @@ object AppState {
 
     /** 首頁卡片順序與隱藏 */
     val allHomeCards = listOf("assets" to "總資產與走勢", "alloc" to "資產配置", "movers" to "今日持股漲跌",
-        "session" to "美股交易時段", "index" to "主要指數", "source" to "資料來源", "goal" to "資產目標")
+        "session" to "美股交易時段", "index" to "主要指數", "source" to "資料來源", "goal" to "資產目標",
+        "pnlsplit" to "今日損益（台股／美股）", "watch" to "自選前五檔", "holdings" to "持股前五大",
+        "keys" to "持股三關位置", "divcal" to "持股除息行事曆", "alerts" to "最近通知", "fx" to "匯率與總經")
+    /** v0.1.45 新增的固定卡片：舊使用者預設隱藏，到設定勾選 */
+    private val newHomeCards = setOf("pnlsplit", "watch", "holdings", "keys", "divcal", "alerts", "fx")
+
+    /** 自訂卡片：idx:代號（指數）、stk:代號（個股） */
+    fun isCustomCard(id: String) = id.startsWith("idx:") || id.startsWith("stk:")
+
+    fun homeCardName(id: String): String = when {
+        id.startsWith("idx:") -> id.removePrefix("idx:").let { s -> (twIndices + usIndices + macro).firstOrNull { it.symbol == s }?.name ?: s } + "（指數）"
+        id.startsWith("stk:") -> id.removePrefix("stk:").let { s -> s + " " + (quote(s)?.name ?: "") + "（個股）" }
+        else -> allHomeCards.firstOrNull { it.first == id }?.second ?: id
+    }
+
+    fun addHomeCard(id: String) {
+        if (id in homeOrder) { homeHidden.remove(id); save(); return }
+        homeOrder.add(0, id); save()
+    }
+
+    fun removeHomeCard(id: String) {
+        homeOrder.remove(id); homeHidden.remove(id); save()
+    }
     val homeOrder = mutableStateListOf<String>()
     val homeHidden = mutableStateListOf<String>()
 
@@ -266,10 +288,19 @@ object AppState {
         locked = appLock
         lastBackupAt = p.getLong("lastBackupAt", 0L)
         homeOrder.clear()
-        val savedOrder = p.getString("homeOrder", null)?.split(",")?.filter { id -> allHomeCards.any { it.first == id } } ?: emptyList()
-        homeOrder.addAll(savedOrder + allHomeCards.map { it.first }.filter { it !in savedOrder })
+        val rawOrder = p.getString("homeOrder", null)
+        val savedOrder = rawOrder?.split(",")?.filter { id -> isCustomCard(id) || allHomeCards.any { it.first == id } } ?: emptyList()
+        val missing = allHomeCards.map { it.first }.filter { it !in savedOrder }
+        homeOrder.addAll(savedOrder + missing)
         homeHidden.clear()
         p.getString("homeHidden", null)?.split(",")?.filter { it.isNotBlank() }?.let { homeHidden.addAll(it) }
+        // 新加入的固定卡片：預設隱藏（不打亂既有首頁），到「我的 › 首頁卡片」勾選
+        missing.filter { it in newHomeCards }.forEach { if (it !in homeHidden) homeHidden.add(it) }
+        // 一次性：首頁最上方加入加權指數大卡（可在設定移除）
+        if (!p.getBoolean("homeTwiiAdded", false)) {
+            if ("idx:^TWII" !in homeOrder) homeOrder.add(0, "idx:^TWII")
+            p.edit().putBoolean("homeTwiiAdded", true).apply()
+        }
         fontScale = p.getFloat("fontScale", 1f)
         watchColumn = p.getString("watchColumn", "spark") ?: "spark"
         watchColumn2 = p.getString("watchColumn2", "") ?: ""

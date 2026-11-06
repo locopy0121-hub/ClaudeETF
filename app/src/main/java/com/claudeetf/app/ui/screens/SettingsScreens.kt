@@ -421,9 +421,16 @@ fun SettingsScreen(nav: NavController) {
             }
             item {
                 Card(padding = 14.dp) {
-                    Text("首頁卡片", color = C.Text, fontSize = 14.sp)
+                    var picking by remember { mutableStateOf(false) }
+                    if (picking) AddHomeCardPicker { picking = false }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("首頁卡片", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+                        Text("＋ 新增指數／個股卡片", color = C.Primary, fontSize = 13.sp,
+                            modifier = Modifier.clickable { picking = true }.padding(8.dp))
+                    }
+                    Label("勾選要顯示的卡片，用 ↑ ↓ 調整順序；指數與個股卡片可按 ✕ 移除")
                     AppState.homeOrder.toList().forEach { id ->
-                        val name = AppState.allHomeCards.firstOrNull { it.first == id }?.second ?: id
+                        val name = AppState.homeCardName(id)
                         val shown = id !in AppState.homeHidden
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
@@ -433,6 +440,7 @@ fun SettingsScreen(nav: NavController) {
                             Text(name, Modifier.weight(1f), color = if (shown) C.Text else C.Muted, fontSize = 14.sp)
                             Text("↑", color = C.Text, fontSize = 18.sp, modifier = Modifier.clickable { AppState.moveHomeCard(id, -1) }.padding(10.dp))
                             Text("↓", color = C.Text, fontSize = 18.sp, modifier = Modifier.clickable { AppState.moveHomeCard(id, 1) }.padding(10.dp))
+                            if (AppState.isCustomCard(id)) Text("✕", color = C.Red, fontSize = 16.sp, modifier = Modifier.clickable { AppState.removeHomeCard(id) }.padding(10.dp))
                         }
                     }
                 }

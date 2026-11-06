@@ -184,6 +184,13 @@ fun HomeScreen(nav: NavController) {
                     }
                     "movers" -> item { HoldingMovers(nav) }
                     "goal" -> item { GoalCard() }
+                    "pnlsplit" -> item { PnlSplitCard() }
+                    "watch" -> item { WatchTopCard(nav) }
+                    "holdings" -> item { HoldingsTopCard(nav) }
+                    "keys" -> item { KeysCard(nav) }
+                    "divcal" -> item { DivCalCard(nav) }
+                    "alerts" -> item { AlertsCard(nav) }
+                    "fx" -> item { FxCard(nav) }
                     "index" -> {
                     val idx = listOf(AppState.twIndices[0]) + AppState.usIndices.filter {
                         it.name in listOf("S&P 500", "Nasdaq", "費城半導體")
@@ -194,11 +201,15 @@ fun HomeScreen(nav: NavController) {
                         }
                     }
                     }
+                    else -> when {
+                        card.startsWith("idx:") -> item(key = card) { IndexBigCard(nav, card.removePrefix("idx:")) }
+                        card.startsWith("stk:") -> item(key = card) { StockBigCard(nav, card.removePrefix("stk:")) }
+                    }
                 }
             }
             item {
                 Text(
-                    "自訂首頁卡片 ›", color = C.Muted, fontSize = 12.sp,
+                    "新增／自訂首頁卡片（指數、個股、自選、持股、除息…）›", color = C.Primary, fontSize = 12.sp,
                     modifier = Modifier.clickable { nav.navigate(Routes.SETTINGS) }.padding(vertical = 4.dp),
                 )
             }
