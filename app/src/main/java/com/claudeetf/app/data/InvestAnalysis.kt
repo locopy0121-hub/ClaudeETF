@@ -37,6 +37,21 @@ object InvestAnalysis {
         val low: Double?,
     )
 
+    /** ETF 沒有分析師評等，改看配息、填息、流動性、規模、費用率與折溢價 */
+    data class EtfInfo(
+        val yieldPct: Double?,
+        /** 近 2 年填息次數／配息次數 */
+        val filled: Int?,
+        val divCount: Int?,
+        val avgFillDays: Double?,
+        /** 近 20 日平均成交量（台股：張；美股：股） */
+        val avgVolume: Double?,
+        val assets: Double?,
+        val expensePct: Double?,
+        val nav: Double?,
+        val premiumPct: Double?,
+    )
+
     data class Result(
         val score: Int,
         val label: String,
@@ -44,6 +59,7 @@ object InvestAnalysis {
         val factors: List<Factor>,
         val at: Long,
         val analyst: Analyst? = null,
+        val etf: EtfInfo? = null,
     )
 
     /** Compose 可觀察：個股頁標題徽章與分析卡片共用 */
@@ -194,6 +210,75 @@ object InvestAnalysis {
         return Factor("風險", clamp(score), 5, "年化波動 " + "%.1f".format(vol) + "%")
     }
 
+    fun isEtf(q: Quote, quoteType: String? = null) =
+        q.isEtf || (q.market == Market.TW && q.symbol.startsWith("00")) || quoteType.equals("ETF", true)
+
+    private suspend fun etfInfo(q: Quote, h: YahooExtra.History, price: Double): EtfInfo {
+        val div = runCatching { StockInfoRepo.dividends(q) }.getOrNull()
+        val sum = runCatching { YahooExtra.summary(StockInfoRepo.yahooSymbol(q), listOf("summaryDetail", "defaultKeyStatistics", "fundProfile")) }.getOrNull()
+        fun raw(mod: String, k: String) = sum?.optJSONObject(mod)?.optJSONObject(k)?.optDouble("raw", Double.NaN)?.takeIf { !it.isNaN() && it > 0 }
+        val vols = h.volumes.takeLast(20).filter { it > 0 }
+        val avgVol = vols.takeIf { it.isNotEmpty() }?.average()?.let { if (q.market == Market.TW) it / 1000 else it }
+        val nav = raw("summaryDetail", "navPrice")
+        val expense = sum?.optJSONObject("fundProfile")?.optJSONObject("feesExpensesInvestment")?.optJSONObject("annualReportExpenseRatio")
+            ?.optDouble("raw", Double.NaN)?.takeIf { !it.isNaN() && it > 0 }?.let { it * 100 }
+        val filled = div?.fillDays?.values
+        return EtfInfo(
+            yieldPct = div?.yieldPct,
+            filled = filled?.count { it != null },
+            divCount = filled?.size?.takeIf { it > 0 },
+            avgFillDays = filled?.filterNotNull()?.takeIf { it.isNotEmpty() }?.average(),
+            avgVolume = avgVol,
+            assets = raw("summaryDetail", "totalAssets") ?: raw("defaultKeyStatistics", "totalAssets"),
+            expensePct = expense,
+            nav = nav,
+            premiumPct = nav?.let { (price / it - 1) * 100 },
+        )
+    }
+
+    private fun etfFactors(e: EtfInfo, q: Quote): List<Factor> {
+        val out = ArrayList<Factor>()
+        // 配息：殖利率＋填息率
+        if (e.yieldPct != null || e.divCount != null) {
+            val parts = ArrayList<Double>(); val notes = ArrayList<String>()
+            e.yieldPct?.let { y ->
+                parts += when { y >= 7 -> 80.0; y >= 5 -> 72.0; y >= 3 -> 60.0; y >= 1 -> 48.0; else -> 40.0 }
+                notes += "殖利率 " + "%.2f".format(y) + "%"
+            }
+            if (e.divCount != null && e.filled != null) {
+                parts += 30.0 + 60.0 * e.filled / e.divCount
+                notes += "填息 ${e.filled}/${e.divCount}" + (e.avgFillDays?.let { "（平均 " + "%.0f".format(it) + " 天）" } ?: "")
+            }
+            if (parts.isNotEmpty()) out += Factor("配息", clamp(parts.average()), 10, notes.joinToString("、"))
+        }
+        // 流動性：日均量
+        e.avgVolume?.let { v ->
+            val tw = q.market == Market.TW
+            val score = if (tw) when { v >= 10_000 -> 85.0; v >= 3_000 -> 72.0; v >= 1_000 -> 60.0; v >= 200 -> 45.0; else -> 30.0 }
+            else when { v >= 5e6 -> 85.0; v >= 1e6 -> 72.0; v >= 2e5 -> 58.0; v >= 5e4 -> 45.0; else -> 30.0 }
+            out += Factor("流動性", clamp(score), 5, "近 20 日均量 " + (if (tw) "%,.0f 張".format(v) else "%,.0f 股".format(v)) + if (score < 50) "，買賣價差可能較大" else "")
+        }
+        // 規模與費用率
+        if (e.assets != null || e.expensePct != null) {
+            val parts = ArrayList<Double>(); val notes = ArrayList<String>()
+            e.expensePct?.let { x ->
+                parts += when { x <= 0.2 -> 85.0; x <= 0.5 -> 70.0; x <= 1.0 -> 52.0; else -> 35.0 }
+                notes += "費用率 " + "%.2f".format(x) + "%"
+            }
+            e.assets?.let { a ->
+                parts += when { a >= 1e10 -> 80.0; a >= 1e9 -> 65.0; a >= 1e8 -> 50.0; else -> 35.0 }
+                notes += "規模 " + if (a >= 1e8) "%,.0f 億".format(a / 1e8) else "%,.0f 萬".format(a / 1e4)
+            }
+            out += Factor("規模費用", clamp(parts.average()), 5, notes.joinToString("、"))
+        }
+        // 折溢價：溢價過高代表買貴
+        e.premiumPct?.let { p ->
+            val score = when { p > 2 -> 25.0; p > 1 -> 40.0; p > 0.3 -> 55.0; p >= -0.3 -> 72.0; p >= -1 -> 70.0; else -> 60.0 }
+            out += Factor("折溢價", clamp(score), 10, (if (p >= 0) "溢價 " else "折價 ") + "%.2f".format(kotlin.math.abs(p)) + "%（淨值 " + "%.2f".format(e.nav) + "）")
+        }
+        return out
+    }
+
     suspend fun analyze(q: Quote): Result = withContext(Dispatchers.IO) {
         cached(q.symbol)?.let { return@withContext it }
         val h = YahooExtra.history(StockInfoRepo.yahooSymbol(q), "1y")
@@ -201,8 +286,10 @@ object InvestAnalysis {
         val price = q.price.takeIf { it > 0 } ?: raw.lastOrNull()?.toDouble() ?: throw IllegalStateException("沒有 ${q.symbol} 的價格")
         // 最後一根換成目前行情價，盤中分數會跟著現價走
         val c = if (raw.isNotEmpty()) raw.dropLast(1) + price.toFloat() else raw
-        val an = analyst(q)
-        val factors = listOfNotNull(
+        // 個股看分析師共識；ETF 沒有分析師，改用 ETF 指標
+        val etf = if (isEtf(q)) etfInfo(q, h, price) else null
+        val an = if (etf == null) analyst(q) else null
+        val factors = (etf?.let { etfFactors(it, q) } ?: emptyList()) + listOfNotNull(
             analystFactor(an, price),
             trendFactor(c, price, q.symbol),
             momentumFactor(c),
@@ -216,7 +303,7 @@ object InvestAnalysis {
         val wsum = factors.sumOf { it.weight }
         val score = (factors.sumOf { it.score * it.weight }.toDouble() / wsum).roundToInt()
         val (label, advice) = label(score)
-        Result(score, label, advice, factors, System.currentTimeMillis(), an).also { r -> withContext(Dispatchers.Main) { results[q.symbol] = r } }
+        Result(score, label, advice, factors, System.currentTimeMillis(), an, etf).also { r -> withContext(Dispatchers.Main) { results[q.symbol] = r } }
     }
 
 }

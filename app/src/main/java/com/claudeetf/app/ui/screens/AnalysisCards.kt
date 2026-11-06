@@ -106,6 +106,34 @@ fun AnalysisCard(q0: Quote) {
             if (a.high != null && a.low != null) Label("目標價區間 " + Fmt.price(a.low) + "～" + Fmt.price(a.high) + "（1 強力買進～5 強力賣出）")
         }
 
+        r.etf?.let { e ->
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(C.Bg))
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("ETF 指標", Modifier.weight(1f), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Label("ETF 無分析師評等")
+            }
+            val tw = q.market == Market.TW
+            val cells = listOfNotNull(
+                InfoCell("殖利率", e.yieldPct?.let { Fmt.num(it, 2) + "%" }),
+                InfoCell("填息", if (e.divCount != null && e.filled != null) "${e.filled} / ${e.divCount} 次" else null),
+                InfoCell("平均填息", e.avgFillDays?.let { Fmt.num(it, 0) + " 天" }),
+                InfoCell("日均量", e.avgVolume?.let { if (tw) Fmt.num(it) + " 張" else Fmt.num(it / 1e6, 2) + "M" }),
+                InfoCell("規模", e.assets?.let { if (it >= 1e8) Fmt.num(it / 1e8) + " 億" else Fmt.num(it / 1e4) + " 萬" }),
+                InfoCell("費用率", e.expensePct?.let { Fmt.num(it, 2) + "%" }),
+                InfoCell("淨值", e.nav?.let { Fmt.price(it) }),
+                InfoCell("折溢價", e.premiumPct?.let { (if (it >= 0) "溢價 " else "折價 ") + Fmt.num(kotlin.math.abs(it), 2) + "%" }),
+            ).filter { it.value != null }
+            if (cells.isEmpty()) Label("暫無 ETF 指標資料")
+            cells.chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    row.forEach { KeyValue(it.label, it.value!!, modifier = Modifier.weight(1f)) }
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+
         if (expanded) {
             Spacer(Modifier.height(6.dp))
             r.factors.forEach { f ->
@@ -126,11 +154,13 @@ fun AnalysisCard(q0: Quote) {
                 modifier = Modifier.clickable { AppState.updateShowScoreBadge(!AppState.showScoreBadge) }.padding(4.dp))
         }
         Text(
-            "依趨勢、動能、估值、52 週位置、法人籌碼、分析師、大盤環境與波動度計算的參考分數，缺資料的項目不計入。僅供參考，不構成投資建議。",
+            (if (r.etf != null) "ETF 依趨勢、動能、52 週位置、法人籌碼、配息與填息、流動性、規模費用、折溢價、大盤環境與波動度計算" else "依趨勢、動能、估值、52 週位置、法人籌碼、分析師、大盤環境與波動度計算") + "的參考分數，缺資料的項目不計入。僅供參考，不構成投資建議。",
             color = C.Muted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp),
         )
     }
 }
+
+private data class InfoCell(val label: String, val value: String?)
 
 @Composable
 private fun FactorLine(tag: String, f: InvestAnalysis.Factor, color: Color) {
