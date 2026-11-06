@@ -35,8 +35,27 @@ object FugleStream {
     private val lastData = HashMap<String, Long>()
     private var retry = 0
 
-    /** 五檔（代號 → 買、賣），個股頁可直接使用 */
-    val books = HashMap<String, Pair<List<Pair<Double, Double>>, List<Pair<Double, Double>>>>()
+    /** 五檔（代號 → 買、賣）與當日統計，個股頁直接觀察（只在主執行緒寫入） */
+    val books = androidx.compose.runtime.mutableStateMapOf<String, Pair<List<Pair<Double, Double>>, List<Pair<Double, Double>>>>()
+
+    data class Totals(val volumeLots: Double?, val value: Double?, val transactions: Double?, val atBid: Double?, val atAsk: Double?, val avg: Double?)
+    val totals = androidx.compose.runtime.mutableStateMapOf<String, Totals>()
+
+    // ---- 連線統計 ----
+    @Volatile var messages = 0L
+    @Volatile var bytes = 0L
+    @Volatile var reconnects = 0
+    @Volatile var connectedAt = 0L
+
+    fun stats(): String {
+        if (!authed) return if (reconnects > 0) "未連線 · 已重連 $reconnects 次" else "未連線"
+        val mins = (System.currentTimeMillis() - connectedAt) / 60_000
+        val kb = bytes / 1024.0
+        return "已連線 $mins 分鐘 · 推播 $messages 筆 · " +
+            (if (kb >= 1024) String.format("%.1f MB", kb / 1024) else String.format("%.0f KB", kb)) +
+            " · 訂閱 ${synchronized(subscribed) { subscribed.size }} 檔" + (if (rejected.isNotEmpty()) "（${rejected.size} 檔超出上限）" else "") +
+            (if (reconnects > 0) " · 重連 $reconnects 次" else "")
+    }
 
     fun isStreaming(symbol: String): Boolean {
         // 尚未收到第一筆推播前，仍由證交所即時補上
@@ -76,6 +95,8 @@ object FugleStream {
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                messages++
+                bytes += text.length
                 runCatching { handle(webSocket, JSONObject(text)) }
             }
 
@@ -100,6 +121,7 @@ object FugleStream {
             // 斷線重連：2、4、8…最多 60 秒
             val delayMs = minOf(60_000L, 2_000L shl minOf(retry, 5))
             retry++
+            reconnects++
             main.postDelayed({ if (wanted && ws == null) connect() }, delayMs)
         }
     }
@@ -122,6 +144,7 @@ object FugleStream {
             "authenticated" -> {
                 authed = true
                 retry = 0
+                connectedAt = System.currentTimeMillis()
                 val syms = AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol }
                 main.post { AppState.streamStatus = "富果串流已連線" }
                 subscribe(syms.filter { it !in rejected })
@@ -163,8 +186,17 @@ object FugleStream {
                 val updated = d.optLong("lastUpdated", 0L).let { if (it > 100_000_000_000_000L) it / 1000 else it }
                     .takeIf { it > 0 } ?: System.currentTimeMillis()
                 synchronized(lastData) { lastData[sym] = System.currentTimeMillis() }
+                val tot = Totals(
+                    t?.optDouble("tradeVolume", Double.NaN)?.takeIf { !it.isNaN() },
+                    t?.optDouble("tradeValue", Double.NaN)?.takeIf { !it.isNaN() },
+                    t?.optDouble("transaction", Double.NaN)?.takeIf { !it.isNaN() },
+                    t?.optDouble("tradeVolumeAtBid", Double.NaN)?.takeIf { !it.isNaN() },
+                    t?.optDouble("tradeVolumeAtAsk", Double.NaN)?.takeIf { !it.isNaN() },
+                    n("avgPrice"),
+                )
                 main.post {
                     books[sym] = book
+                    totals[sym] = tot
                     AppState.applyRemote(rq, QuoteSource.FUGLE_STREAM, minOf(updated, System.currentTimeMillis()), live = true)
                     AppState.lastLiveAt = System.currentTimeMillis()
                     AppState.streamStatus = "富果串流同步中（${synchronized(lastData) { lastData.size }} 檔）"

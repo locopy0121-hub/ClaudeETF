@@ -104,6 +104,10 @@ object AppState {
     var finnhubKey by mutableStateOf("")
         private set
     var refreshing by mutableStateOf(false)
+    /** 美股延長盤：代號 → (盤前／盤後, 價格, 漲跌%, 時間) */
+    data class ExtQuote(val label: String, val price: Double, val changePct: Double, val time: Long)
+    val extended = mutableStateMapOf<String, ExtQuote>()
+
     /** 富果串流狀態文字 */
     var streamStatus by mutableStateOf("")
 

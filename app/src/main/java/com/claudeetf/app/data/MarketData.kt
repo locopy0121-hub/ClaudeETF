@@ -203,6 +203,15 @@ object MarketData {
                 QuoteSource.YAHOO, if (q.time > 0) minOf(q.time, now) else now, live = true,
             )
             done += sym
+            // 盤前（PRE）、盤後（POST、POSTPOST）價格另外保存
+            val st = q.state.uppercase()
+            val ext = when {
+                st.startsWith("PRE") && q.prePrice != null -> AppState.ExtQuote("盤前", q.prePrice, q.preChangePct ?: 0.0, q.extTime)
+                st.startsWith("POST") && q.postPrice != null -> AppState.ExtQuote("盤後", q.postPrice, q.postChangePct ?: 0.0, q.extTime)
+                st == "CLOSED" && q.postPrice != null && q.postPrice != q.price -> AppState.ExtQuote("盤後", q.postPrice, q.postChangePct ?: 0.0, q.extTime)
+                else -> null
+            }
+            if (ext != null) AppState.extended[sym] = ext else AppState.extended.remove(sym)
         }
         if (live && done.isNotEmpty()) {
             AppState.setStatus("US", clockSec(now) + " Yahoo 即時 ${done.size}/${symbols.size} 檔")

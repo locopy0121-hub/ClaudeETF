@@ -225,6 +225,17 @@ private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info
             )
         }
         if (q.market == Market.US) {
+            AppState.extended[q.symbol]?.let { e ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(e.label, color = C.OnPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(C.Tw).padding(horizontal = 6.dp, vertical = 1.dp))
+                    HGap(8.dp)
+                    NumText(Fmt.price(e.price), 16.sp, weight = FontWeight.Bold)
+                    HGap(8.dp)
+                    NumText(Fmt.signedPct(e.changePct), 13.sp, Trend.fg(e.changePct))
+                    if (e.time > 0) { HGap(8.dp); Label(Fmt.time(e.time)) }
+                }
+            }
             Label("≈ NT$ " + Fmt.num(q.price * AppState.usdTwd) + " · 匯率 " + Fmt.num(AppState.usdTwd, 2))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Dot(phaseColor(session.phase), 7.dp); HGap(6.dp)
@@ -539,6 +550,13 @@ private fun TaxCard(q: Quote, lastDiv: Double?) {
 // ---------------- 當日交易 ----------------
 
 private fun LazyListScope.tradingSection(q: Quote, t: Load<StockInfoRepo.Trading>) {
+    // 富果串流：五檔、成交量值、內外盤即時推送
+    if (q.market == Market.TW && com.claudeetf.app.data.remote.FugleStream.books.containsKey(q.symbol)) {
+        item { SectionTitle("當日交易", "● 富果串流同步") }
+        item { StreamTrading(q) }
+        item { SectionTitle("基本資料") }
+        return
+    }
     item { SectionTitle("當日交易", (t as? Load.Ok<StockInfoRepo.Trading>)?.value?.source) }
     when (t) {
         is Load.Loading -> loading("載入當日交易中…")
@@ -900,5 +918,25 @@ private fun NoteCard(q: Quote) {
         } else {
             Label("記下買進理由與停利停損計畫，之後回顧更客觀。")
         }
+    }
+}
+
+@Composable
+private fun StreamTrading(q: Quote) {
+    val book = com.claudeetf.app.data.remote.FugleStream.books[q.symbol]
+    val tot = com.claudeetf.app.data.remote.FugleStream.totals[q.symbol]
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Column(Modifier.weight(1f)) {
+                KeyValue("成交量", tot?.volumeLots?.let { Fmt.num(it) + " 張" } ?: "—")
+                KeyValue("成交筆數", tot?.transactions?.let { Fmt.num(it) } ?: "—")
+            }
+            Column(Modifier.weight(1f)) {
+                KeyValue("成交金額", tot?.value?.let { if (it >= 1e8) Fmt.num(it / 1e8, 2) + " 億" else Fmt.num(it / 1e4) + " 萬" } ?: "—")
+                KeyValue("均價", tot?.avg?.let { Fmt.price(it) } ?: "—")
+            }
+        }
+        if (tot?.atBid != null && tot.atAsk != null) InOutBar(tot.atBid, tot.atAsk)
+        if (book != null && (book.first.isNotEmpty() || book.second.isNotEmpty())) OrderBook(book.first, book.second)
     }
 }

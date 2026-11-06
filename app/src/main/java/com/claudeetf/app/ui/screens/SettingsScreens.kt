@@ -246,6 +246,11 @@ fun SettingsScreen(nav: NavController) {
                     )
                     Label("目前來源：" + MarketData.twSourcePlan())
                     if (AppState.streamStatus.isNotBlank()) Label("串流：" + AppState.streamStatus, color = C.Text2)
+                    if (AppState.fugleKey.isNotBlank()) {
+                        // 每 5 秒隨即時更新重繪
+                        val tick = AppState.lastLiveAt
+                        Label("連線統計：" + com.claudeetf.app.data.remote.FugleStream.stats() + if (tick < 0) "" else "")
+                    }
                     AppState.sourceStatus["TW"]?.let { Label("最近更新：$it", color = C.Text2) }
                 }
             }

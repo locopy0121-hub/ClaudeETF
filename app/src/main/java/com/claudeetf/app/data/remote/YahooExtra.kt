@@ -179,7 +179,9 @@ object YahooExtra {
     // ---------------- 批次即時報價 ----------------
 
     data class LiveQuote(val symbol: String, val name: String?, val price: Double, val prevClose: Double,
-                         val open: Double?, val high: Double?, val low: Double?, val volume: Double?, val time: Long, val state: String)
+                         val open: Double?, val high: Double?, val low: Double?, val volume: Double?, val time: Long, val state: String,
+                         val prePrice: Double? = null, val preChangePct: Double? = null,
+                         val postPrice: Double? = null, val postChangePct: Double? = null, val extTime: Long = 0L)
 
     /** v7 批次報價（需 crumb），一次最多 50 檔 */
     fun quotes(symbols: List<String>): List<LiveQuote> {
@@ -199,6 +201,9 @@ object YahooExtra {
                     o.raw("regularMarketVolume"),
                     ((o.raw("regularMarketTime") ?: 0.0) * 1000).toLong(),
                     o.optString("marketState"),
+                    o.raw("preMarketPrice"), o.raw("preMarketChangePercent"),
+                    o.raw("postMarketPrice"), o.raw("postMarketChangePercent"),
+                    (((o.raw("postMarketTime") ?: o.raw("preMarketTime")) ?: 0.0) * 1000).toLong(),
                 )
             }
         }
