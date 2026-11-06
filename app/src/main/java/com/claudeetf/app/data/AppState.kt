@@ -24,6 +24,7 @@ object AppState {
     private var prefs: SharedPreferences? = null
 
     var colorMode by mutableStateOf(ColorMode.TW)
+        private set
     /** 自訂漲／跌／平顏色（ARGB）；0 = 使用台式或美式預設 */
     var customUp by mutableStateOf(0L)
     var customDown by mutableStateOf(0L)
@@ -32,7 +33,6 @@ object AppState {
         when (which) { "up" -> customUp = argb; "down" -> customDown = argb; else -> customFlat = argb }
         save()
     }
-        private set
     var usdTwd by mutableDoubleStateOf(32.02)
         private set
     var realizedTwdYtd by mutableDoubleStateOf(56_800.0)
