@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -209,6 +211,36 @@ fun StockChart(
             }
             maLines.forEach { (m, l) -> drawSeries(l, from, n, ::x, ::y, MA_COLORS[m] ?: C.Muted) }
             sel?.let { s -> crosshair(x(s), y(h.closes[s])) }
+
+            // ---- 價格座標與標線數值（讓三關、昨收與走勢的相對位置一目了然） ----
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                textSize = 10.sp.toPx()
+                typeface = android.graphics.Typeface.MONOSPACE
+            }
+            val nc = drawContext.canvas.nativeCanvas
+            fun fmt(v: Float) = Fmt.price(v.toDouble())
+            fun text(t: String, xPos: Float, yPos: Float, color: Color, right: Boolean) {
+                paint.color = color.toArgb()
+                paint.textAlign = if (right) android.graphics.Paint.Align.RIGHT else android.graphics.Paint.Align.LEFT
+                // 底色避免和曲線重疊看不清楚
+                val tw = paint.measureText(t)
+                val left = if (right) xPos - tw - 2 else xPos - 2
+                paint.color = C.Bg.copy(alpha = 0.75f).toArgb()
+                nc.drawRect(left, yPos - paint.textSize, left + tw + 4, yPos + 3, paint)
+                paint.color = color.toArgb()
+                nc.drawText(t, xPos, yPos, paint)
+            }
+            val th = paint.textSize
+            fun ty(v: Float) = (y(v) - 3).coerceIn(th, ht - 3)
+            // 左側：Y 軸上下限與昨收
+            text(fmt(hi), 2f, th, C.Muted, false)
+            text(fmt(lo), 2f, ht - 3, C.Muted, false)
+            basePrice?.let { text("昨收 " + fmt(it), 2f, ty(it), C.Gray, false) }
+            // 右側：各關價
+            levels.forEach { l -> text(l.label + " " + fmt(l.value), w - 2, ty(l.value), l.color, true) }
+            // 最新價標籤（接在曲線最後一點）
+            val lp = h.closes[n - 1]
+            text(fmt(lp), (x(n - 1) + 6).coerceAtMost(w - 60), (y(lp) + th / 2).coerceIn(th, ht - 3), lineColor, false)
         }
 
         // ---- 副圖 ----
