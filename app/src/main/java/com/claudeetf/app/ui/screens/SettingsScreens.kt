@@ -251,7 +251,7 @@ fun SettingsScreen(nav: NavController) {
             save = { it.toList() }, restore = { it.toMutableStateList() },
         ),
     ) { mutableStateListOf<String>() }
-    val allGroups = listOf("行情資料來源", "帳本", "備份與匯入", "安全", "顯示", "帳戶與手續費", "提醒", "關於")
+    val allGroups = listOf("行情資料來源", "新聞來源", "帳本", "備份與匯入", "安全", "顯示", "帳戶與手續費", "提醒", "關於")
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("我的")
@@ -385,6 +385,10 @@ fun SettingsScreen(nav: NavController) {
                 }
             }
 
+            item { FoldHeader("新聞來源", com.claudeetf.app.data.remote.RssNews.enabled().joinToString("、") { it.name }.ifBlank { "未選擇（使用 Yahoo股市、Google 新聞）" }, "新聞來源" in openGroups) { if ("新聞來源" in openGroups) openGroups.remove("新聞來源") else openGroups.add("新聞來源") } }
+            if ("新聞來源" in openGroups) {
+                item { NewsSourcesCard() }
+            }
             item { FoldHeader("帳本", "交易紀錄 ${AppState.trades.size} 筆 · 資料健檢", "帳本" in openGroups) { if ("帳本" in openGroups) openGroups.remove("帳本") else openGroups.add("帳本") } }
             if ("帳本" in openGroups) {
                 item {
@@ -584,6 +588,61 @@ fun PrimaryButton(text: String, onClick: () -> Unit) {
 @Composable
 private fun Group(text: String) {
     Text(text, color = C.Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+}
+
+/** 新聞來源多選、各來源載入狀態、自訂 RSS */
+@Composable
+private fun NewsSourcesCard() {
+    val rss = com.claudeetf.app.data.remote.RssNews
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    var testMsg by remember { mutableStateOf<String?>(null) }
+    Card(padding = 14.dp) {
+        Label("勾選的來源會合併顯示在個股「新聞」分頁與首頁財經新聞卡片，重複的新聞自動去除，依時間排序。點新聞在 App 內閱讀全文。")
+        rss.builtIn.forEach { src ->
+            val on = src.id in AppState.newsSources
+            Row(Modifier.fillMaxWidth().clickable { AppState.toggleNewsSource(src.id) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (on) "☑" else "☐", color = if (on) C.Primary else C.Muted, fontSize = 20.sp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(src.name, color = C.Text, fontSize = 14.sp)
+                    val st = rss.status[src.id]
+                    val sub = listOfNotNull(src.note.ifBlank { null }, st).joinToString(" · ")
+                    if (sub.isNotBlank()) Label(sub, color = if (st?.contains("失敗") == true || st?.contains("沒有內容") == true) C.Red else C.Muted)
+                }
+            }
+        }
+        if (AppState.customFeeds.isNotEmpty()) Text("自訂 RSS", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+        AppState.customFeeds.toList().forEach { (n, u) ->
+            val id = "c:$n"
+            val on = id in AppState.newsSources
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (on) "☑" else "☐", color = if (on) C.Primary else C.Muted, fontSize = 20.sp,
+                    modifier = Modifier.clickable { AppState.toggleNewsSource(id) })
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(n, color = C.Text, fontSize = 14.sp, maxLines = 1)
+                    Label(rss.status[id] ?: u, color = if (rss.status[id]?.contains("失敗") == true) C.Red else C.Muted)
+                }
+                Text("刪除", color = C.Red, fontSize = 12.sp, modifier = Modifier.clickable { AppState.removeCustomFeed(n) }.padding(8.dp))
+            }
+        }
+        Text("新增自訂 RSS", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        OutlinedTextField(name, { name = it }, label = { Text("名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
+        OutlinedTextField(url, { url = it; testMsg = null }, label = { Text("RSS 網址（https://…）") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("測試", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable(enabled = url.startsWith("http")) {
+                testMsg = "測試中…"
+                scope.launch { testMsg = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { rss.test(name.ifBlank { "自訂" }, url.trim()) } }
+            }.padding(vertical = 10.dp).padding(end = 20.dp))
+            Text("加入", color = C.Primary, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(enabled = url.startsWith("http")) {
+                AppState.addCustomFeed(name, url); name = ""; url = ""; testMsg = "已加入並勾選"
+            }.padding(vertical = 10.dp))
+        }
+        testMsg?.let { Label(it, color = if (it.startsWith("成功") || it.startsWith("已加入")) C.Primary else C.Text2) }
+        Label("各來源的狀態在開啟新聞後更新；顯示「失敗」或「沒有內容」代表該媒體 RSS 網址已變更，可取消勾選或改用自訂 RSS。")
+    }
 }
 
 /** 可收合的區塊標題：收合時顯示摘要 */

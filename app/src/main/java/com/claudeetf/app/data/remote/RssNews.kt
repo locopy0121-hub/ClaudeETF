@@ -24,6 +24,78 @@ object RssNews {
         "research" to "研究報導", "column" to "專家專欄", "funds-news" to "基金動態", "personal-finance" to "小資理財",
     )
 
+    /**
+     * 新聞來源（我的 › 新聞來源 可多選）。
+     * market：一般財經新聞 RSS；stock：個股專屬 RSS（沒有時用 market 過濾代號與名稱）
+     */
+    data class Source(
+        val id: String,
+        val name: String,
+        val market: String?,
+        val stock: ((Quote) -> String?)? = null,
+        val usOnly: Boolean = false,
+        val note: String = "",
+    )
+
+    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+
+    val builtIn = listOf(
+        Source("yahoo", "Yahoo股市", "https://tw.stock.yahoo.com/rss?category=news",
+            { q -> if (q.market == Market.TW) "https://tw.stock.yahoo.com/rss?s=${q.symbol}" else null }, note = "全文可在 App 內閱讀"),
+        Source("google", "Google 新聞", "https://news.google.com/rss/search?q=${enc("台股 財經")}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+            { q -> "https://news.google.com/rss/search?q=" + enc(q.symbol + " " + q.name + if (q.market == Market.TW) " 股" else " stock") + "&hl=zh-TW&gl=TW&ceid=TW:zh-Hant" },
+            note = "彙整各家媒體；多數只有摘要"),
+        Source("cna", "中央社 財經", "https://feeds.feedburner.com/rsscna/finance"),
+        Source("ltn", "自由財經", "https://news.ltn.com.tw/rss/business.xml"),
+        Source("udn", "經濟日報 證券", "https://money.udn.com/rssfeed/news/1001/5590?ch=money"),
+        Source("moneydj", "MoneyDJ 理財網", "https://www.moneydj.com/KMDJ/RssCenter.aspx?svc=NR&fno=1&arg=MB010000"),
+        Source("yahoous", "Yahoo Finance（美股）", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EGSPC&region=US&lang=en-US",
+            { q -> if (q.market == Market.US) "https://feeds.finance.yahoo.com/rss/2.0/headline?s=${enc(q.symbol)}&region=US&lang=en-US" else null },
+            usOnly = true, note = "美股個股新聞"),
+    )
+
+    /** 目前啟用的來源（內建＋自訂 RSS） */
+    fun enabled(): List<Source> {
+        val st = com.claudeetf.app.data.AppState
+        return builtIn.filter { it.id in st.newsSources } +
+            st.customFeeds.filter { "c:" + it.first in st.newsSources }.map { (n, u) -> Source("c:$n", n, u) }
+    }
+
+    /** 各來源最近一次載入結果（設定頁顯示） */
+    val status = androidx.compose.runtime.mutableStateMapOf<String, String>()
+
+    private fun stamp() = java.time.LocalTime.now(java.time.ZoneId.of("Asia/Taipei")).format(DateTimeFormatter.ofPattern("HH:mm"))
+
+    private fun load(src: Source, url: String): List<YahooExtra.News> {
+        val r = runCatching { parse(Http.get(url, headers, timeoutMs = 20_000), src.name) }
+        val list = r.getOrDefault(emptyList())
+        val msg = r.exceptionOrNull()?.let { "失敗：" + it.friendly() } ?: if (list.isEmpty()) "沒有內容（網址可能已變更）" else "${list.size} 則"
+        android.os.Handler(android.os.Looper.getMainLooper()).post { status[src.id] = stamp() + " " + msg }
+        return list
+    }
+
+    /** 測試單一來源（設定頁） */
+    fun test(name: String, url: String): String {
+        val r = runCatching { parse(Http.get(url, headers, timeoutMs = 20_000), name) }
+        return r.exceptionOrNull()?.let { "失敗：" + it.friendly() } ?: r.getOrNull()!!.let { if (it.isEmpty()) "讀得到但沒有新聞項目（不是 RSS？）" else "成功：${it.size} 則，最新「${it.first().title.take(20)}」" }
+    }
+
+    /** 所有啟用來源合併的財經新聞（首頁卡片） */
+    fun merged(count: Int = 40): List<YahooExtra.News> = parallel(enabled().filter { !it.usOnly || enabled().size == 1 }) { src -> src.market?.let { load(src, it) }.orEmpty() }
+        .let { dedupe(it) }.take(count)
+
+    private fun <T> parallel(list: List<Source>, f: (Source) -> List<T>): List<T> {
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(6, maxOf(1, list.size)))
+        try {
+            return list.map { s -> pool.submit<List<T>> { runCatching { f(s) }.getOrDefault(emptyList()) } }.flatMap { it.get() }
+        } finally { pool.shutdown() }
+    }
+
+    private fun normTitle(t: String) = t.replace(Regex("[\\s　「」『』:：,，.。!！?？\\-–—|｜]"), "").take(24)
+
+    private fun dedupe(list: List<YahooExtra.News>) =
+        list.distinctBy { it.link }.distinctBy { normTitle(it.title) }.sortedByDescending { it.time }
+
     /** HTML／實體字元 → 純文字 */
     fun plain(html: String): String {
         val noScript = html.replace(Regex("<(script|style)[^>]*>.*?</\\1>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), "")
@@ -58,25 +130,25 @@ object RssNews {
 
     fun category(cat: String): List<YahooExtra.News> = feed("https://tw.stock.yahoo.com/rss?category=$cat", "Yahoo股市")
 
-    /** 個股新聞（RSS），由新到舊 */
-    fun stock(q: Quote, count: Int = 20): List<YahooExtra.News> {
-        val list = if (q.market == Market.US) {
-            feed("https://feeds.finance.yahoo.com/rss/2.0/headline?s=${URLEncoder.encode(q.symbol, "UTF-8")}&region=US&lang=en-US", "Yahoo Finance")
-        } else {
-            feed("https://tw.stock.yahoo.com/rss?s=${q.symbol}", "Yahoo股市").ifEmpty {
-                // 個股 RSS 沒資料：從分類 RSS 找標題或摘要提到代號、名稱的新聞
-                val name = q.name.takeIf { it != q.symbol && it.length >= 2 }
-                listOf("news", "tw-market", "research").flatMap { category(it) }.filter { n ->
-                    n.title.contains(q.symbol) || n.summary.contains(q.symbol) ||
-                        (name != null && (n.title.contains(name) || n.summary.contains(name)))
+    /** 個股新聞：所有啟用來源合併、去重，由新到舊 */
+    fun stock(q: Quote, count: Int = 30): List<YahooExtra.News> {
+        val name = q.name.takeIf { it != q.symbol && it.length >= 2 }
+        fun mentions(n: YahooExtra.News) = n.title.contains(q.symbol, true) || n.summary.contains(q.symbol, true) ||
+            (name != null && (n.title.contains(name) || n.summary.contains(name)))
+        val srcs = enabled().ifEmpty { builtIn.filter { it.id == "yahoo" || it.id == "google" } }
+        val all = parallel(srcs) { src ->
+            val own = src.stock?.invoke(q)
+            when {
+                own != null -> load(src, own).ifEmpty {
+                    // Yahoo 個股 RSS 沒資料：改從分類新聞過濾
+                    if (src.id == "yahoo") listOf("news", "tw-market", "research").flatMap { category(it) }.filter(::mentions) else emptyList()
                 }
+                src.usOnly && q.market != Market.US -> emptyList()
+                src.market != null -> load(src, src.market).filter(::mentions)
+                else -> emptyList()
             }
         }
-        val out = list.ifEmpty {
-            val kw = URLEncoder.encode(q.symbol + " " + q.name + if (q.market == Market.TW) " 股" else " stock", "UTF-8")
-            feed("https://news.google.com/rss/search?q=$kw&hl=zh-TW&gl=TW&ceid=TW:zh-Hant", "Google 新聞")
-        }
-        return out.distinctBy { it.link }.sortedByDescending { it.time }.take(count)
+        return dedupe(all).take(count)
     }
 
     private val articleCache = HashMap<String, List<String>>()

@@ -93,13 +93,13 @@ fun NewsReader(n: YahooExtra.News, onClose: () -> Unit) {
 /** 首頁卡片：Yahoo股市 RSS 分類新聞 */
 @Composable
 fun NewsCard() {
-    var cat by remember { mutableStateOf(RssNews.categories.first().first) }
+    var cat by remember { mutableStateOf("mine") }
     var list by remember(cat) { mutableStateOf<List<YahooExtra.News>?>(null) }
     var open by remember { mutableStateOf<YahooExtra.News?>(null) }
     var showAll by remember { mutableStateOf(false) }
     LaunchedEffect(cat) {
         while (true) {
-            list = runCatching { withContext(Dispatchers.IO) { RssNews.category(cat) } }.getOrDefault(list ?: emptyList())
+            list = runCatching { withContext(Dispatchers.IO) { if (cat == "mine") RssNews.merged() else RssNews.category(cat) } }.getOrDefault(list ?: emptyList())
             kotlinx.coroutines.delay(10 * 60_000L)
         }
     }
@@ -107,7 +107,7 @@ fun NewsCard() {
     Card {
         Text("財經新聞", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            RssNews.categories.forEach { (k, name) ->
+            (listOf("mine" to "我的來源") + RssNews.categories.map { it.first to "Yahoo " + it.second }).forEach { (k, name) ->
                 val on = k == cat
                 Text(name, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
                     modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
@@ -127,6 +127,6 @@ fun NewsCard() {
         }
         if ((l?.size ?: 0) > 5) Text(if (showAll) "收合" else "更多 ›", color = C.Primary, fontSize = 12.sp,
             modifier = Modifier.clickable { showAll = !showAll }.padding(vertical = 4.dp))
-        Label("來源：Yahoo股市 RSS，點標題在 App 內閱讀")
+        Label(if (cat == "mine") "來源：" + RssNews.enabled().joinToString("、") { it.name } + "（我的 › 新聞來源 設定）" else "來源：Yahoo股市 RSS；點標題在 App 內閱讀")
     }
 }

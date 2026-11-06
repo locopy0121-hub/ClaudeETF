@@ -198,6 +198,19 @@ object AppState {
     /** 持股排序（0 市值、1 今日損益、2 今日漲跌、3 報酬率、4 代號） */
     var holdingSort by mutableIntStateOf(0)
     fun updateHoldingSort(i: Int) { holdingSort = i; save() }
+    /** 新聞來源（RssNews.builtIn 的 id，自訂來源為 c:名稱） */
+    val newsSources = mutableStateListOf("yahoo", "google")
+    /** 自訂 RSS：名稱 → 網址 */
+    val customFeeds = mutableStateListOf<Pair<String, String>>()
+    fun toggleNewsSource(id: String) { if (id in newsSources) newsSources.remove(id) else newsSources.add(id); save() }
+    fun addCustomFeed(name: String, url: String) {
+        val n = name.trim().ifBlank { "自訂 ${customFeeds.size + 1}" }
+        customFeeds.removeAll { it.first == n }; customFeeds.add(n to url.trim())
+        if ("c:$n" !in newsSources) newsSources.add("c:$n")
+        save()
+    }
+    fun removeCustomFeed(name: String) { customFeeds.removeAll { it.first == name }; newsSources.remove("c:$name"); save() }
+
     /** 個股頁標題顯示投資分析指數 */
     var showScoreBadge by mutableStateOf(true)
     fun updateShowScoreBadge(on: Boolean) { showScoreBadge = on; save() }
@@ -368,6 +381,15 @@ object AppState {
         futSource = p.getString("futSource", "auto") ?: "auto"
         showTradeMarks = p.getBoolean("showTradeMarks", true)
         showScoreBadge = p.getBoolean("showScoreBadge", true)
+        p.getString("newsSources", null)?.let { j ->
+            runCatching { val a = JSONArray(j); newsSources.clear(); for (k in 0 until a.length()) newsSources.add(a.getString(k)) }
+        }
+        p.getString("customFeeds", null)?.let { j ->
+            runCatching {
+                val a = JSONArray(j); customFeeds.clear()
+                for (k in 0 until a.length()) a.optJSONObject(k)?.let { o -> customFeeds.add(o.optString("n") to o.optString("u")) }
+            }
+        }
         heatSize = p.getInt("heatSize", 0)
         heatColor = p.getInt("heatColor", 0)
         heatLabel = p.getInt("heatLabel", 0)
@@ -550,6 +572,8 @@ object AppState {
             .putString("futSource", futSource)
             .putBoolean("showTradeMarks", showTradeMarks)
             .putBoolean("showScoreBadge", showScoreBadge)
+            .putString("newsSources", JSONArray(newsSources.toList()).toString())
+            .putString("customFeeds", JSONArray().apply { customFeeds.forEach { put(JSONObject().put("n", it.first).put("u", it.second)) } }.toString())
             .putInt("heatSize", heatSize)
             .putInt("heatColor", heatColor)
             .putInt("heatLabel", heatLabel)
