@@ -223,12 +223,14 @@ object WebRtcTransport : ChatEngine.ChatTransport {
 
     /** 邀請者：產生邀請碼（10 分鐘內有效） */
     fun createInvite(done: (String) -> Unit, fail: (String) -> Unit) {
+        // 清掉過期、沒連上的舊邀請
+        sessions.values.filter { !it.open && System.currentTimeMillis() - it.created > 10 * 60_000 }.forEach { close(it) }
         val sid = UUID.randomUUID().toString().take(12)
         val s = newSession(sid, offerer = true) ?: return fail("WebRTC 尚未啟動")
         states[sid] = "等待對方回覆碼"
         createLocal(s, offer = true, done = { d ->
             done(pack(PREFIX_INVITE, JSONObject().put("sid", sid).put("g", ChatPrefs.groupId)
-                .put("u", ChatPrefs.userId).put("n", ChatPrefs.userName).put("sdp", d.description)
+                .put("gn", ChatPrefs.groupName).put("u", ChatPrefs.userId).put("n", ChatPrefs.userName).put("sdp", d.description)
                 .put("exp", System.currentTimeMillis() + 10 * 60_000)))
         }, fail = { e -> fail("產生邀請失敗：$e"); close(s) })
     }
@@ -238,7 +240,7 @@ object WebRtcTransport : ChatEngine.ChatTransport {
         val o = unpack(PREFIX_INVITE, code) ?: return fail("邀請碼格式不正確")
         if (o.optLong("exp") < System.currentTimeMillis()) return fail("邀請碼已過期（10 分鐘），請對方重新產生")
         val g = o.optString("g")
-        if (g != ChatPrefs.groupId) ChatPrefs.updateGroupId(g)   // 加入對方的群組
+        if (g != ChatPrefs.groupId) ChatPrefs.enterGroup(g, o.optString("gn").ifBlank { g }, null)   // 加入對方的群組
         val sid = o.optString("sid")
         val s = newSession(sid, offerer = false) ?: return fail("WebRTC 尚未啟動")
         s.remoteUser = o.optString("u")

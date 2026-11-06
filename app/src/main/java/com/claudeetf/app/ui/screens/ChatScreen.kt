@@ -79,18 +79,22 @@ fun ChatScreen(nav: NavController) {
     val ctx = LocalContext.current
     var permMsg by remember { mutableStateOf<String?>(null) }
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
-        if (!res.values.all { it }) permMsg = "未授權附近裝置／藍牙／定位：只能用「邀請」跨網連線"
-        ChatEngine.start(ctx)
+        if (!res.values.all { it }) permMsg = "未授權附近裝置／藍牙／定位：看不到附近群組，只能用「邀請」跨網連線"
+        if (ChatPrefs.groupId.isNotBlank()) ChatEngine.start(ctx)
+        else if (res.values.all { it }) runCatching { com.claudeetf.app.chat.NearbyTransport.browse(ctx) }
     }
     DisposableEffect(Unit) {
         ChatEngine.viewing = true; ChatEngine.unread = 0
         onDispose { ChatEngine.viewing = false }
     }
     // 只有「附近」連線需要藍牙、定位權限；只用跨網時直接啟動
-    fun connect() { if (ChatPrefs.useNearby) permLauncher.launch(chatPermissions()) else ChatEngine.start(ctx) }
+    fun connect() { if (ChatPrefs.useNearby) permLauncher.launch(chatPermissions()) else if (ChatPrefs.groupId.isNotBlank()) ChatEngine.start(ctx) }
     LaunchedEffect(ChatPrefs.enabled, ChatPrefs.groupId) {
-        if (ChatPrefs.enabled && ChatPrefs.groupId.isNotBlank() && !ChatEngine.running) connect()
+        // 有群組就連線；還沒有群組就先搜尋附近群組（顯示清單）
+        if (ChatPrefs.enabled && !ChatEngine.running) connect()
     }
+    var groups by remember { mutableStateOf(false) }
+    if (groups) GroupsDialog(onClose = { groups = false }) { groups = false }
     var inviting by remember { mutableStateOf(false) }
     if (inviting) InviteDialog { inviting = false }
     var text by remember { mutableStateOf("") }
@@ -110,7 +114,13 @@ fun ChatScreen(nav: NavController) {
     viewer?.let { path -> ImageViewer(path) { viewer = null } }
 
     Column(Modifier.fillMaxSize().background(C.Bg).imePadding()) {
-        TopBar("群聊 · " + ChatPrefs.groupId.ifBlank { "未設定" }, onBack = { nav.popBackStack() }) {
+        TopBar(ChatPrefs.groupName.ifBlank { ChatPrefs.groupId }.ifBlank { "群聊" }, onBack = { nav.popBackStack() }) {
+            if (ChatPrefs.enabled) Text(
+                "群組", color = C.Text, fontSize = 13.sp,
+                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(C.Card).clickable { groups = true }
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            )
+            Spacer(Modifier.width(6.dp))
             Text(
                 "👥 ${ChatEngine.peers.size + if (ChatEngine.running) 1 else 0}", color = C.Text, fontSize = 13.sp,
                 modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(C.Card).clickable { showPeers = !showPeers }
@@ -125,10 +135,18 @@ fun ChatScreen(nav: NavController) {
             )
             Spacer(Modifier.width(8.dp))
         }
-        if (!ChatPrefs.enabled || ChatPrefs.groupId.isBlank()) {
+        if (!ChatPrefs.enabled) {
             Column(Modifier.fillMaxWidth().padding(24.dp)) {
                 Text("群聊尚未開啟", color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Label("到「我的 › 群聊」開啟功能，設定名稱與群聊 ID。同一個群聊 ID 的手機在附近（藍牙／Wi-Fi 範圍內）會自動互連，不經過任何伺服器。")
+                Label("到「我的 › 群聊」打開群聊功能並設定顯示名稱。")
+            }
+            return@Column
+        }
+        if (ChatPrefs.groupId.isBlank()) {
+            // 還沒加入群組：直接顯示群組清單
+            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(16.dp)) {
+                permMsg?.let { Label(it, color = C.Red) }
+                GroupsPanel { }
             }
             return@Column
         }
@@ -322,8 +340,8 @@ fun ChatSettingsCard(nav: NavController) {
                 ChatPrefs.updateUserName(name)
                 val okId = ChatPrefs.updateUserId(uid)
                 val groupChanged = gid.trim() != ChatPrefs.groupId
-                ChatPrefs.updateGroupId(gid)
-                ChatPrefs.updateGroupPassword(pw)
+                if (gid.isNotBlank()) ChatPrefs.enterGroup(gid.trim(), if (groupChanged) gid.trim() else ChatPrefs.groupName.ifBlank { gid.trim() }, pw)
+                else ChatPrefs.updateGroupPassword(pw)
                 msg = if (!okId) "代號需為英數 4–12 碼，其餘已儲存" else "已儲存" + if (groupChanged) "，已切換群組" else ""
                 uid = ChatPrefs.userId
                 if (ChatEngine.running) ChatEngine.restart(ctx)
@@ -440,7 +458,7 @@ private fun InviteDialog(onClose: () -> Unit) {
             Label("連線不經伺服器：只用公用 STUN 查詢公網位址，訊息由手機間直接傳送並以群組密碼加密。若雙方網路都無法打洞（部分行動網路），可改經其他已連線成員轉送。")
             com.claudeetf.app.chat.WebRtcTransport.states.takeIf { it.isNotEmpty() }?.let { st ->
                 Spacer(Modifier.height(6.dp))
-                st.values.forEach { Label("· $it") }
+                st.values.groupingBy { it }.eachCount().forEach { (k, n) -> Label("· $k" + if (n > 1) " ×$n" else "") }
             }
         }
     }
@@ -459,4 +477,109 @@ private fun CodePanel(code: String, title: String, onCopy: () -> Unit, onShare: 
         }
         Label("長度 ${code.length} 字")
     }
+}
+
+
+/** 群組清單：附近的群組（自動發現）、加入過的群組、建立新群組 */
+@Composable
+private fun GroupsDialog(onClose: () -> Unit, onJoined: () -> Unit) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp).clip(RoundedCornerShape(18.dp)).background(C.Bg).padding(16.dp)
+            .verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("群組", Modifier.weight(1f), color = C.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text("關閉", color = C.Muted, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onClose).padding(6.dp))
+            }
+            GroupsPanel(onJoined)
+        }
+    }
+}
+
+@Composable
+private fun GroupsPanel(onJoined: () -> Unit) {
+    val ctx = LocalContext.current
+    val nearby = com.claudeetf.app.chat.NearbyTransport
+    var pwFor by remember { mutableStateOf<com.claudeetf.app.chat.NearbyTransport.NearbyGroup?>(null) }
+    var pwText by remember { mutableStateOf("") }
+    var creating by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+    var newPw by remember { mutableStateOf("") }
+    var newPublic by remember { mutableStateOf(true) }
+    var msg by remember { mutableStateOf<String?>(null) }
+
+    fun join(id: String, name: String, pw: String?) {
+        ChatPrefs.enterGroup(id, name, pw)
+        ChatEngine.restart(ctx)
+        msg = "已加入「$name」"
+        onJoined()
+    }
+
+    // 附近的群組
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+        Text("附近的群組", Modifier.weight(1f), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Label(if (nearby.browsing) "● 搜尋中" else "未搜尋", color = if (nearby.browsing) C.Green else C.Muted)
+    }
+    Label("附近（藍牙／Wi-Fi 範圍內）有人在用群聊時，他所在的公開群組會自動出現在這裡，點一下即可加入，不需要邀請。")
+    val list = nearby.directory.values.sortedByDescending { it.members.size }
+    if (list.isEmpty()) Label(if (nearby.browsing) "目前附近沒有公開群組" else "需要「附近裝置」、藍牙與定位權限才能搜尋", Modifier.padding(vertical = 8.dp))
+    list.forEach { g ->
+        val here = g.id == ChatPrefs.groupId
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp)).background(C.Card)
+                .clickable(enabled = !here) { if (g.locked) { pwFor = g; pwText = "" } else join(g.id, g.name, "") }
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text((if (g.locked) "🔒 " else "") + g.name, color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Label("ID ${g.id} · 附近 ${g.members.size} 人")
+            }
+            Text(if (here) "目前群組" else "加入", color = if (here) C.Muted else C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
+        if (pwFor?.id == g.id) {
+            OutlinedTextField(pwText, { pwText = it }, label = { Text("群組密碼") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                colors = fieldColors(), visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+            Text("確認加入", color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { join(g.id, g.name, pwText); pwFor = null }.padding(vertical = 8.dp))
+        }
+    }
+
+    // 加入過的群組
+    val mine = ChatPrefs.joined.toList()
+    if (mine.isNotEmpty()) {
+        Text("我的群組", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
+        mine.forEach { (id, name) ->
+            val here = id == ChatPrefs.groupId
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(name, color = if (here) C.Primary else C.Text, fontSize = 14.sp, maxLines = 1)
+                    Label("ID $id")
+                }
+                if (here) Label("目前群組")
+                else {
+                    Text("切換", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { join(id, name, null) }.padding(8.dp))
+                    Text("移除", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { ChatPrefs.forgetGroup(id) }.padding(8.dp))
+                }
+            }
+        }
+    }
+
+    // 建立群組
+    Text(if (creating) "建立群組" else "＋ 建立群組", color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+        modifier = Modifier.clickable { creating = !creating }.padding(top = 14.dp, bottom = 4.dp))
+    if (creating) {
+        OutlinedTextField(newName, { newName = it }, label = { Text("群組名稱（12 字內）") }, singleLine = true, modifier = Modifier.fillMaxWidth(), colors = fieldColors())
+        OutlinedTextField(newPw, { newPw = it }, label = { Text("群組密碼（選填，有密碼才能看懂訊息）") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            colors = fieldColors(), visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+        OptToggle("公開在附近群組清單", newPublic) { newPublic = it }
+        Text("建立並加入", color = C.Primary, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable(enabled = newName.isNotBlank()) {
+                ChatPrefs.enterGroup(ChatPrefs.newGroupId(), newName, newPw, newPublic)
+                ChatEngine.restart(ctx)
+                creating = false; msg = "已建立「${ChatPrefs.groupName}」（ID ${ChatPrefs.groupId}）"
+                onJoined()
+            }.padding(vertical = 10.dp))
+    }
+    msg?.let { Label(it, color = C.Primary) }
+    Label("不在附近的成員：進群組後按「邀請」用邀請碼跨網加入。", Modifier.padding(top = 10.dp))
 }
