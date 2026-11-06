@@ -796,6 +796,7 @@ fun AnalysisScreen(nav: NavController) {
                     }
                 }
             }
+            mvCostSection()
             concentrationSection()
             statsSection()
             tagSection()
@@ -978,6 +979,60 @@ private fun androidx.compose.foundation.lazy.LazyListScope.tagSection() {
                 }
             }
             Label("金額皆為台幣；一筆交易有多個標籤時會分別計入")
+        }
+    }
+}
+
+// ---------------- 持股成本與市值走勢 ----------------
+
+private fun androidx.compose.foundation.lazy.LazyListScope.mvCostSection() {
+    val pts = AppState.mvCostHistory.entries.sortedBy { it.key }.map { it.key to it.value }
+    item { SectionTitle("成本與市值走勢", if (pts.size >= 2) "${pts.size} 天" else null) }
+    item {
+        Card(padding = 14.dp) {
+            if (pts.size < 2) {
+                Label("每天開啟 App 會記錄持股市值與成本，累積兩天後顯示走勢")
+                return@Card
+            }
+            val mv = pts.map { it.second.first.toFloat() }
+            val cost = pts.map { it.second.second.toFloat() }
+            val hi = (mv + cost).max(); val lo = (mv + cost).min()
+            val up = Trend.fg(1.0); val down = Trend.fg(-1.0)
+            androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(140.dp)) {
+                val w = size.width; val h = size.height
+                val range = (hi - lo).takeIf { it > 0 } ?: 1f
+                fun x(i: Int) = if (pts.size == 1) 0f else i * w / (pts.size - 1)
+                fun y(v: Float) = h - (v - lo) / range * h * 0.9f - h * 0.05f
+                // 市值高於成本的區段塗色（獲利／虧損）
+                for (i in 0 until pts.size - 1) {
+                    val path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(x(i), y(mv[i])); lineTo(x(i + 1), y(mv[i + 1])); lineTo(x(i + 1), y(cost[i + 1])); lineTo(x(i), y(cost[i])); close()
+                    }
+                    drawPath(path, (if (mv[i] + mv[i + 1] >= cost[i] + cost[i + 1]) up else down).copy(alpha = 0.15f))
+                }
+                fun line(v: List<Float>, c: androidx.compose.ui.graphics.Color, dashed: Boolean) {
+                    val p = androidx.compose.ui.graphics.Path()
+                    v.forEachIndexed { i, f -> if (i == 0) p.moveTo(x(i), y(f)) else p.lineTo(x(i), y(f)) }
+                    drawPath(p, c, style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = 2.dp.toPx(),
+                        pathEffect = if (dashed) androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)) else null,
+                    ))
+                }
+                line(cost, C.Gray, true)
+                line(mv, C.Primary, false)
+            }
+            Row {
+                Label(pts.first().first, Modifier.weight(1f)); Label(pts.last().first)
+            }
+            val (lastMv, lastCost) = pts.last().second
+            val (firstMv, firstCost) = pts.first().second
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Label("— 市值 " + mask(Fmt.num(lastMv)), color = C.Primary)
+                Label("- - 成本 " + mask(Fmt.num(lastCost)))
+            }
+            val pl = lastMv - lastCost
+            val chg = (lastMv - lastCost) - (firstMv - firstCost)
+            Label("未實現 " + mask(Fmt.signed(pl)) + " · 區間內未實現變化 " + mask(Fmt.signed(chg)), color = Trend.fg(pl))
         }
     }
 }

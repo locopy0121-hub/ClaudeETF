@@ -462,6 +462,10 @@ object AppState {
         p.getString("nav", null)?.let { json ->
             runCatching { val o = JSONObject(json); o.keys().forEach { k -> navHistory[k] = o.getDouble(k) } }
         }
+        mvCostHistory.clear()
+        p.getString("mvCost", null)?.let { json ->
+            runCatching { val o = JSONObject(json); o.keys().forEach { k -> o.getJSONArray(k).let { a -> mvCostHistory[k] = a.getDouble(0) to a.getDouble(1) } } }
+        }
 
         // 交易中新增過的股票也要放回行情清單
         for (h in holdings) ensureQuote(h.symbol, h.avgCost)
@@ -540,6 +544,7 @@ object AppState {
             }.toString())
             .putString("targets", JSONObject().apply { targets.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("nav", JSONObject().apply { navHistory.forEach { (k, v) -> put(k, v) } }.toString())
+            .putString("mvCost", JSONObject().apply { mvCostHistory.forEach { (k, v) -> put(k, org.json.JSONArray().put(v.first).put(v.second)) } }.toString())
             .apply()
     }
 
@@ -1036,6 +1041,7 @@ object AppState {
     /** 清除示意資料：持股、交易、股息與已實現歸零，保留自選清單與設定 */
     fun clearSampleData() {
         navHistory.clear()
+        mvCostHistory.clear()
         applyLedger(emptyList(), LedgerBase(0.0, year(), 0.0, 0.0, 0.0))
         alertHistory.clear()
         save()
@@ -1069,6 +1075,8 @@ object AppState {
 
     /** 日期（yyyy-MM-dd）→ 總資產（台幣） */
     val navHistory = mutableStateMapOf<String, Double>()
+    /** 日期 → (持股市值, 持股成本) */
+    val mvCostHistory = mutableStateMapOf<String, Pair<Double, Double>>()
 
     fun recordNav() {
         val total = totalAssetsTwd()
@@ -1076,6 +1084,10 @@ object AppState {
         val key = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei")).toString()
         navHistory[key] = Math.round(total).toDouble()
         if (navHistory.size > 900) navHistory.keys.sorted().take(navHistory.size - 900).forEach { navHistory.remove(it) }
+        // 持股市值與成本（台幣）：分析頁「成本與市值走勢」
+        val mv = totalMarketValueTwd(); val cost = totalCostTwd()
+        if (mv > 0 || cost > 0) mvCostHistory[key] = Math.round(mv).toDouble() to Math.round(cost).toDouble()
+        if (mvCostHistory.size > 900) mvCostHistory.keys.sorted().take(mvCostHistory.size - 900).forEach { mvCostHistory.remove(it) }
         save()
     }
 
