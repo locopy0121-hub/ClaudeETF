@@ -169,6 +169,7 @@ enum class AlertType(val label: String, val isPrice: Boolean, val unit: String) 
     RAPID("5 分鐘急漲急跌", true, "%"),
     BIG_TRADE("逐筆大單", true, "張"),
     KEY_LEVEL("三關突破跌破", true, ""),
+    ENTRY_SIGNAL("進場訊號變化", true, ""),
 }
 
 data class AlertRule(
@@ -190,6 +191,7 @@ data class AlertRule(
             AlertType.RAPID -> (if (symbol.isBlank()) "全部持股" else symbol) + " 5 分鐘內漲跌 ≥ ${trimNum(value)}%"
             AlertType.BIG_TRADE -> (if (symbol.isBlank()) "全部台股持股" else symbol) + " 單筆成交 ≥ ${trimNum(value)} 張"
             AlertType.KEY_LEVEL -> (if (symbol.isBlank()) "全部持股" else symbol) + " 突破／跌破三關價"
+            AlertType.ENTRY_SIGNAL -> (if (symbol.isBlank()) "全部持股與自選" else symbol) + " K 線進場建議改變"
             AlertType.PRICE_ABOVE, AlertType.PRICE_BELOW -> "$symbol ${type.label} ${trimNum(value)}"
             AlertType.CHANGE_UP, AlertType.CHANGE_DOWN -> "$symbol ${type.label} ${trimNum(value)}%"
             AlertType.EARNINGS, AlertType.EXDIV -> "$symbol ${type.label} ${trimNum(value)} 天"
@@ -201,6 +203,7 @@ data class AlertRule(
             AlertType.RAPID -> "盤中即時偵測（App 開著時），同一檔 30 分鐘內不重複"
             AlertType.BIG_TRADE -> "依逐筆成交即時偵測（App 開著時），同一檔 10 分鐘內不重複"
             AlertType.KEY_LEVEL -> "現價穿越上關、中關、下關時推播（App 開著時），同一檔 15 分鐘內不重複"
+            AlertType.ENTRY_SIGNAL -> "進場建議改變時推播（例：觀望 → 可分批進場），盤中與背景更新時檢查，同一檔 30 分鐘內不重複"
             AlertType.EARNINGS -> "依 Yahoo 公布的財報日"
             AlertType.EXDIV -> "依 Yahoo 公布的除息日"
             else -> "盤中與背景更新時檢查，每天最多通知一次"

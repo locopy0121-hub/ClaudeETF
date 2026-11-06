@@ -123,6 +123,7 @@ object AlertEngine {
                 AlertType.US_OPEN -> usOpen(a, todayKey)
                 AlertType.EARNINGS, AlertType.EXDIV -> event(a, today)
                 AlertType.RAPID, AlertType.BIG_TRADE, AlertType.KEY_LEVEL -> null // 由 checkRapid 即時偵測
+                AlertType.ENTRY_SIGNAL -> { runCatching { checkEntrySignals(context, a, now) }; null }
                 else -> price(a, todayKey, today)
             }
             if (result != null) {
@@ -271,6 +272,52 @@ object AlertEngine {
         checkKeyLevels(context, now)
     }
 
+    /** 進場訊號提醒的對象：指定代號，或全部持股＋自選 */
+    fun entryTargets(a: AlertRule): List<String> =
+        if (a.symbol.isNotBlank()) listOf(a.symbol)
+        else (AppState.holdings.map { it.symbol } + AppState.quotes.map { it.symbol }).distinct().take(40)
+
+    /**
+     * 進場建議改變：重算日 K 分析（含最新報價），與上次記錄的等級比較。
+     * lastFired 存「代號=等級@時間」，第一次只記錄不通知；同一檔 30 分鐘內不重複。
+     */
+    suspend fun checkEntrySignals(context: Context, a: AlertRule, now: Long) {
+        val marks = HashMap<String, Pair<Int, Long>>()
+        a.lastFired.split(";").forEach { e ->
+            val sym = e.substringBefore("=", "").ifBlank { return@forEach }
+            val lv = e.substringAfter("=").substringBefore("@").toIntOrNull() ?: return@forEach
+            marks[sym] = lv to (e.substringAfter("@", "0").toLongOrNull() ?: 0L)
+        }
+        val fired = ArrayList<String>()
+        var changed = false
+        for (sym in entryTargets(a)) {
+            val q = AppState.quote(sym) ?: continue
+            if (q.price <= 0 || q.source == QuoteSource.SAMPLE) continue
+            val r = com.claudeetf.app.data.KlineAnalysis.load(q, false) ?: continue
+            val lv = r.entry.level
+            val prev = marks[sym]
+            if (prev == null) { marks[sym] = lv to 0L; changed = true; continue }
+            if (prev.first == lv || now - prev.second < 30 * 60_000) continue
+            marks[sym] = lv to now; changed = true
+            val names = mapOf(2 to "建議進場", 1 to "可分批進場", 0 to "觀望", -1 to "暫不進場", -2 to "不宜進場")
+            val held = AppState.holdings.any { it.symbol == sym && it.shares > 0 }
+            val text = "${q.symbol} ${q.name} 進場建議：${names[prev.first] ?: prev.first} → ${r.entry.label}" +
+                "（${r.dir.label} ${r.strength}，現價 ${Fmt.price(q.price)}）" + (if (held) "\n已持有：" + r.entry.holderTip else "") +
+                "\n" + r.entry.reason
+            notify(context, 7000 + (sym.hashCode() and 0xfff), "${q.symbol} " + (if (lv > prev.first) "訊號轉強" else "訊號轉弱") + "：" + r.entry.label, text)
+            fired += text
+        }
+        if (!changed) return
+        val key = marks.entries.joinToString(";") { it.key + "=" + it.value.first + "@" + it.value.second }
+        if (fired.isEmpty()) {
+            val i = AppState.alerts.indexOfFirst { it.id == a.id }
+            if (i >= 0) { AppState.alerts[i] = AppState.alerts[i].copy(lastFired = key); AppState.persist() }
+        } else {
+            AppState.markFired(a.id, key, fired.first(), now)
+            fired.drop(1).forEach { AppState.logNotice(it, now) }
+        }
+    }
+
     /** 三關區間：0 跌破下關、1 下關～中關、2 中關～上關、3 站上上關 */
     private val lastZone = HashMap<String, Int>()
 
@@ -378,8 +425,9 @@ class AlertWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                 (summaries && AppState.holdingsOf(TW).isNotEmpty())
             val needsUs = AppState.alerts.any { it.enabled && it.isPrice && it.market == US } ||
                 (summaries && AppState.holdingsOf(US).isNotEmpty())
-            if (needsTw) MarketData.refreshTw()
-            if (needsUs) MarketData.refreshUs()
+            val entry = AppState.alerts.any { it.enabled && it.type == AlertType.ENTRY_SIGNAL }
+            if (needsTw || entry) MarketData.refreshTw()
+            if (needsUs || entry) MarketData.refreshUs()
             AppState.persist()
         }
         AlertEngine.check(applicationContext)

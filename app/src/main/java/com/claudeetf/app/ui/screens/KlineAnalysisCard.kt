@@ -175,6 +175,16 @@ fun KlineAnalysisCard(q0: Quote) {
             r.reasons.forEach { Text("・$it", color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp) }
         }
 
+        // ---- 進場訊號提醒 ----
+        val hasAlert = AppState.alerts.any { it.type == com.claudeetf.app.data.AlertType.ENTRY_SIGNAL && it.enabled && (it.symbol == q.symbol || it.symbol.isBlank()) }
+        Text(
+            if (hasAlert) "✓ 已設進場訊號變化提醒" else "＋ 進場建議改變時通知我",
+            color = if (hasAlert) C.Muted else C.Primary, fontSize = 12.sp,
+            modifier = Modifier.padding(top = 6.dp).clickable(enabled = !hasAlert) {
+                AppState.addAlert(q.symbol, com.claudeetf.app.data.AlertType.ENTRY_SIGNAL, 0.0)
+            }.padding(vertical = 4.dp),
+        )
+
         // ---- 操作計畫 ----
         r.plan?.let { p -> PlanBox(p, dc) } ?: Label("訊號中性：建議觀望，等待帶量突破壓力或跌破支撐再決定方向。", Modifier.padding(top = 8.dp))
 
