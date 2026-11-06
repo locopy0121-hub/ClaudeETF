@@ -337,7 +337,10 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
         TradeType.SPLIT -> 0.0
     }
     val fee = if (feeEdited && tType != TradeType.DIVIDEND) feeText.toDoubleOrNull() ?: 0.0 else autoFee
-    val tax = if (tType == TradeType.SELL && !isUs) (amount * (if (isEtf) 0.001 else 0.003)).roundToLong().toDouble() else 0.0
+    var dayTradeSet by remember { mutableStateOf<Boolean?>(null) }
+    val dayTrade = dayTradeSet ?: TaxRules.looksLikeDayTrade(sym, date, editing?.id ?: -1)
+    val taxRule = if (!isUs) TaxRules.sellTaxRate(sym, date, dayTrade) else 0.0 to ""
+    val tax = if (tType == TradeType.SELL && !isUs) TaxRules.sellTax(sym, amount, date, dayTrade) else 0.0
     val total = when (tType) {
         TradeType.BUY -> amount + fee
         TradeType.SELL -> amount - fee - tax
@@ -447,9 +450,16 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
                         (AppState.account(effAccount)?.let { a ->
                             if (isUs) "${a.name}：手續費 ${Fmt.num(a.usRate * 100, 3)}%，最低 $${Fmt.num(a.usMinFee, 2)}"
                             else "${a.name}：0.1425% × ${Fmt.num(a.discount * 10, 2)} 折，最低 ${Fmt.num(a.minFee)} 元"
-                        } ?: "") + if (isUs) "；美股免交易稅" else "；賣出證交稅 股票 0.3%、ETF 0.1%",
+                        } ?: "") + if (isUs) "；美股免交易稅" else if (tType == TradeType.SELL) "；" + taxRule.second + "（元以下捨去）" else "",
                         Modifier.padding(top = 4.dp),
                     )
+                    if (!isUs && tType == TradeType.SELL && !TaxRules.isTwEtf(sym)) {
+                        Text(
+                            (if (dayTrade) "☑" else "☐") + " 現股當沖（證交稅 0.15%）",
+                            color = if (dayTrade) C.Primary else C.Muted, fontSize = 13.sp,
+                            modifier = Modifier.clickable { dayTradeSet = !dayTrade }.padding(vertical = 6.dp),
+                        )
+                    }
                     }
                 }
             }

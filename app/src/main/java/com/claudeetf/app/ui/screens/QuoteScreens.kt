@@ -466,7 +466,8 @@ private fun QuickTradeDialog(q: Quote, onDismiss: () -> Unit) {
     val amount = n * p
     val fee = AppState.feeFor(acc?.id ?: 0, q.market, amount)
     val etf = q.isEtf || q.symbol.startsWith("00")
-    val tax = if (sell && !us) Math.round(amount * (if (etf) 0.001 else 0.003)).toDouble() else 0.0
+    val today = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+    val tax = if (sell && !us) com.claudeetf.app.data.TaxRules.sellTax(q.symbol, amount, today, com.claudeetf.app.data.TaxRules.looksLikeDayTrade(q.symbol, today)) else 0.0
     val held = AppState.holdings.firstOrNull { it.symbol == q.symbol }?.shares ?: 0.0
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,

@@ -87,6 +87,38 @@ object TaxRules {
 
     fun isAutoDetected(symbol: String) = !AppState.taxKindOverride.containsKey(symbol)
 
+    /** 台股 ETF：代號 00 開頭、報價標示 ETF，或稅務類別為 ETF */
+    fun isTwEtf(symbol: String): Boolean {
+        if (symbol.startsWith("00")) return true
+        if (AppState.quote(symbol)?.isEtf == true) return true
+        return kindOf(symbol) in setOf(TaxKind.TW_ETF_EQUITY, TaxKind.TW_ETF_OPTION, TaxKind.TW_ETF_BOND, TaxKind.TW_ETF_OVERSEAS)
+    }
+
+    /**
+     * 台股賣出證券交易稅：(稅率, 說明)。
+     * 股票 0.3%、現股當沖 0.15%（減半至 2027/12/31）；ETF 0.1%；債券 ETF 停徵至 2026/12/31。
+     * date 為 yyyy/MM/dd 或 yyyy-MM-dd。
+     */
+    fun sellTaxRate(symbol: String, date: String, dayTrade: Boolean): Pair<Double, String> {
+        val d = runCatching { java.time.LocalDate.parse(date.trim().replace("/", "-")) }.getOrNull() ?: java.time.LocalDate.now()
+        if (isTwEtf(symbol)) {
+            return if (kindOf(symbol) == TaxKind.TW_ETF_BOND && !d.isAfter(java.time.LocalDate.of(2026, 12, 31))) 0.0 to "債券 ETF 停徵證交稅（至 2026/12/31）"
+            else 0.001 to "ETF 證交稅 0.1%"
+        }
+        if (dayTrade && !d.isAfter(java.time.LocalDate.of(2027, 12, 31))) return 0.0015 to "現股當沖證交稅減半 0.15%"
+        return 0.003 to "股票證交稅 0.3%"
+    }
+
+    /** 證交稅金額：元以下不計（無條件捨去） */
+    fun sellTax(symbol: String, amount: Double, date: String, dayTrade: Boolean): Double =
+        if (amount <= 0) 0.0 else Math.floor(amount * sellTaxRate(symbol, date, dayTrade).first + 1e-9)
+
+    /** 同一天已有同代號買進（且非期初）→ 視為現股當沖 */
+    fun looksLikeDayTrade(symbol: String, date: String, excludeId: Long = -1): Boolean {
+        val norm = date.trim().replace("-", "/")
+        return AppState.trades.any { it.id != excludeId && it.symbol == symbol && it.type == TradeType.BUY && it.date.replace("-", "/") == norm }
+    }
+
     /** 股利所得占配息的比例（0–1） */
     fun taxableRatio(symbol: String): Double =
         AppState.taxRatioOverride[symbol] ?: kindOf(symbol).defaultTaxable
