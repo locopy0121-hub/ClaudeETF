@@ -116,6 +116,22 @@ fun AlertsScreen(nav: NavController, initialSymbol: String = "") {
                     }
                 }
             }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("每日收盤摘要", color = C.Text, fontSize = 14.sp)
+                        Label("台股 13:45 後、美股收盤後推播當日持股損益")
+                    }
+                    Switch(
+                        checked = AppState.dailySummary, onCheckedChange = { AppState.updateDailySummary(it) },
+                        colors = SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary,
+                            uncheckedTrackColor = C.Border, uncheckedThumbColor = C.Muted, uncheckedBorderColor = C.Border),
+                    )
+                }
+            }
             item { SectionTitle("最近觸發") }
             if (AppState.alertHistory.isEmpty()) item { Label("尚無觸發紀錄") }
             items(AppState.alertHistory.take(15)) { h ->

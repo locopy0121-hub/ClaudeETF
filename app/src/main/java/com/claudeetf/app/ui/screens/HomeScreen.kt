@@ -135,7 +135,7 @@ fun HomeScreen(nav: NavController) {
                         Card {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("資產配置", Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                Label("USD/TWD " + Fmt.num(AppState.usdTwd, 2))
+                                Label("USD/TWD " + Fmt.num(AppState.usdTwd, 2) + " ›", Modifier.clickable { nav.navigate(Routes.FX) })
                             }
                             StackBar(
                                 listOf(

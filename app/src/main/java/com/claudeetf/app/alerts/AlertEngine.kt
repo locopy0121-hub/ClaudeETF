@@ -82,6 +82,7 @@ object AlertEngine {
         val today = LocalDate.now(TPE)
         val todayKey = today.toString()
         val now = System.currentTimeMillis()
+        dailySummaries(context, today)
         // 定期定額扣款日：每月通知一次
         val month = java.time.YearMonth.now(TPE).toString()
         for (p in AppState.dueDca()) {
@@ -142,6 +143,45 @@ object AlertEngine {
         return key to "${q.symbol} ${q.name} $whenText$what"
     }
 
+    /** 台股 13:45 後、美股收盤後各推播一次當日摘要 */
+    private fun dailySummaries(context: Context, today: LocalDate) {
+        if (!AppState.dailySummary) return
+        val now = java.time.ZonedDateTime.now(TPE)
+        val weekday = now.dayOfWeek.value <= 5
+        fun summary(market: com.claudeetf.app.data.Market, title: String, key: String) {
+            if (AppState.summarySent(key)) return
+            val hs = AppState.holdingsOf(market)
+            if (hs.isEmpty()) return
+            var pnl = 0.0
+            val moves = hs.mapNotNull { h ->
+                val q = AppState.quote(h.symbol) ?: return@mapNotNull null
+                if (q.updatedAt == 0L || q.prevClose <= 0) return@mapNotNull null
+                pnl += h.shares * q.change * AppState.fxFor(market)
+                q
+            }
+            if (moves.isEmpty()) return
+            val up = moves.count { it.change > 0 }
+            val down = moves.count { it.change < 0 }
+            val best = moves.maxBy { it.changePct }
+            val worst = moves.minBy { it.changePct }
+            val text = "今日損益 ${Fmt.signed(pnl)} 元 · 上漲 $up 檔、下跌 $down 檔\n" +
+                "表現最好 ${best.symbol} ${Fmt.signedPct(best.changePct)}；最弱 ${worst.symbol} ${Fmt.signedPct(worst.changePct)}"
+            AppState.markSummarySent(key)
+            notify(context, if (market == com.claudeetf.app.data.Market.TW) 901 else 902, title, text)
+        }
+        // 台股：平日 13:45 之後
+        if (weekday && now.toLocalTime() >= java.time.LocalTime.of(13, 45)) {
+            summary(com.claudeetf.app.data.Market.TW, "台股收盤摘要", "TW-$today")
+        }
+        // 美股：紐約收盤後（台灣時間清晨），以紐約日期為準
+        val ny = now.withZoneSameInstant(java.time.ZoneId.of("America/New_York"))
+        val nyDay = ny.toLocalDate()
+        val nyWeekday = ny.dayOfWeek.value <= 5
+        if (nyWeekday && ny.toLocalTime() >= java.time.LocalTime.of(16, 15) && nyDay !in UsSession.holidayNames.keys) {
+            summary(com.claudeetf.app.data.Market.US, "美股收盤摘要", "US-$nyDay")
+        }
+    }
+
     // ---------------- 背景排程 ----------------
 
     fun schedule(context: Context) {
@@ -156,10 +196,15 @@ object AlertEngine {
 class AlertWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         AppState.init(applicationContext)
-        if (AppState.alerts.none { it.enabled }) return Result.success()
+        val summaries = AppState.dailySummary && AppState.holdings.isNotEmpty()
+        if (AppState.alerts.none { it.enabled } && !summaries && AppState.dcaPlans.none { it.enabled }) return Result.success()
         runCatching {
-            val needsTw = AppState.alerts.any { it.enabled && it.isPrice && it.market == com.claudeetf.app.data.Market.TW }
-            val needsUs = AppState.alerts.any { it.enabled && it.isPrice && it.market == com.claudeetf.app.data.Market.US }
+            val TW = com.claudeetf.app.data.Market.TW
+            val US = com.claudeetf.app.data.Market.US
+            val needsTw = AppState.alerts.any { it.enabled && it.isPrice && it.market == TW } ||
+                (summaries && AppState.holdingsOf(TW).isNotEmpty())
+            val needsUs = AppState.alerts.any { it.enabled && it.isPrice && it.market == US } ||
+                (summaries && AppState.holdingsOf(US).isNotEmpty())
             if (needsTw) MarketData.refreshTw()
             if (needsUs) MarketData.refreshUs()
             AppState.persist()

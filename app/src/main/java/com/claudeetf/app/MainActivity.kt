@@ -129,7 +129,8 @@ private fun tabOf(route: String?): String? = when {
     route.startsWith(Routes.TRADE) || route == Routes.TRADES || route == Routes.DCA || route == Routes.REBALANCE || route == Routes.DIVIDEND || route == Routes.ANALYSIS -> Routes.PORTFOLIO
     route == Routes.CALENDAR -> Routes.MARKET
     route.startsWith(Routes.ALERTS) || route == Routes.PNL -> Routes.HOME
-    route == Routes.REPORT || route == Routes.COST -> Routes.PORTFOLIO
+    route == Routes.REPORT || route == Routes.COST || route == Routes.DRIP -> Routes.PORTFOLIO
+    route == Routes.FX -> Routes.MARKET
     else -> route
 }
 
@@ -246,6 +247,8 @@ fun AppRoot() {
             ) { AlertsScreen(nav, it.arguments?.getString("s") ?: "") }
             composable(Routes.REPORT) { com.claudeetf.app.ui.screens.ReportScreen(nav) }
             composable(Routes.COST) { com.claudeetf.app.ui.screens.CostScreen(nav) }
+            composable(Routes.DRIP) { com.claudeetf.app.ui.screens.DripScreen(nav) }
+            composable(Routes.FX) { com.claudeetf.app.ui.screens.FxScreen(nav) }
             composable(Routes.SETTINGS) { SettingsScreen(nav) }
         }
         }

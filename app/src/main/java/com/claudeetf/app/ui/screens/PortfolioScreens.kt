@@ -584,6 +584,8 @@ fun DividendScreen(nav: NavController) {
                     Label("每檔的稅務類型與應稅比例可在個股頁「股息」分頁調整。")
                     Text("查看年度報表（報稅參考） ›", color = C.Primary, fontSize = 13.sp,
                         modifier = Modifier.clickable { nav.navigate(Routes.REPORT) }.padding(vertical = 6.dp))
+                    Text("股息再投入試算（複利） ›", color = C.Primary, fontSize = 13.sp,
+                        modifier = Modifier.clickable { nav.navigate(Routes.DRIP) }.padding(vertical = 6.dp))
                 }
             }
         }

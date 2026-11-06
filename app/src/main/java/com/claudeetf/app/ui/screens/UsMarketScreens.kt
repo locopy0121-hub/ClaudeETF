@@ -135,7 +135,7 @@ fun MarketScreen(nav: NavController) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SmallCard("美 10 年債", Fmt.num(AppState.macro[0].value, 2) + "%", Modifier.weight(1f))
                         SmallCard("美元指數", Fmt.num(AppState.macro[1].value, 2), Modifier.weight(1f))
-                        SmallCard("USD/TWD", Fmt.num(AppState.usdTwd, 2), Modifier.weight(1f))
+                        SmallCard("USD/TWD ›", Fmt.num(AppState.usdTwd, 2), Modifier.weight(1f).clickable { nav.navigate(Routes.FX) })
                     }
                 }
             } else {

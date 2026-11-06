@@ -48,6 +48,8 @@ object Routes {
     const val WELCOME = "welcome"
     const val REPORT = "report"
     const val COST = "cost"
+    const val DRIP = "drip"
+    const val FX = "fx"
 
     fun alerts(symbol: String = "") = "$ALERTS?s=$symbol"
     const val SEARCH = "search"

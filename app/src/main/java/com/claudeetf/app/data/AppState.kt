@@ -49,6 +49,19 @@ object AppState {
         private set
     var online by mutableStateOf(true)
 
+    /** 每日收盤摘要通知 */
+    var dailySummary by mutableStateOf(true)
+        private set
+    fun updateDailySummary(on: Boolean) { dailySummary = on; save() }
+
+    /** 已送出的摘要（避免重複）：key 為 TW-日期、US-日期 */
+    fun summarySent(key: String): Boolean = prefs?.getString("sumSent", "")?.split(",")?.contains(key) == true
+    fun markSummarySent(key: String) {
+        val p = prefs ?: return
+        val list = (p.getString("sumSent", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()).takeLast(6) + key
+        p.edit().putString("sumSent", list.joinToString(",")).apply()
+    }
+
     /** 首頁卡片順序與隱藏 */
     val allHomeCards = listOf("assets" to "總資產與走勢", "alloc" to "資產配置", "movers" to "今日持股漲跌",
         "session" to "美股交易時段", "index" to "主要指數", "source" to "資料來源")
@@ -118,6 +131,7 @@ object AppState {
         usdTwd = p.getFloat("usdTwd", 32.02f).toDouble()
         themeMode = p.getInt("themeMode", 1)
         onboarded = p.getBoolean("onboarded", false)
+        dailySummary = p.getBoolean("dailySummary", true)
         homeOrder.clear()
         val savedOrder = p.getString("homeOrder", null)?.split(",")?.filter { id -> allHomeCards.any { it.first == id } } ?: emptyList()
         homeOrder.addAll(savedOrder + allHomeCards.map { it.first }.filter { it !in savedOrder })
@@ -257,6 +271,7 @@ object AppState {
             .putString("colorMode", colorMode.name)
             .putFloat("usdTwd", usdTwd.toFloat())
             .putInt("themeMode", themeMode)
+            .putBoolean("dailySummary", dailySummary)
             .putString("homeOrder", homeOrder.joinToString(","))
             .putString("homeHidden", homeHidden.joinToString(","))
             .putFloat("fontScale", fontScale)
