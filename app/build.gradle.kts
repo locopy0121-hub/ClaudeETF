@@ -68,4 +68,6 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // 群聊 P2P：Google Nearby Connections（藍牙／Wi-Fi 直連，無伺服器）
     implementation("com.google.android.gms:play-services-nearby:19.3.0")
+    // Play 服務帶入舊版 fragment，指定新版讓 ActivityResult 權限請求正常
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
 }
