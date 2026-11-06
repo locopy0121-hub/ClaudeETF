@@ -286,7 +286,11 @@ object StockInfoRepo {
         if (q.market == Market.TW) {
             val key = AppState.fugleKey
             // 13:30–14:30 證交所日資料還是昨天的，繼續用富果今日快照
-            if (key.isNotBlank() && (MarketData.isTwIntraday() || MarketData.isTwTodayPending())) {
+            // 交易日開盤後（含收盤後到當晚）都用富果今日快照，避免拿到證交所前一日資料
+            val tradingDay = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Taipei")).let { n ->
+                n.dayOfWeek.value <= 5 && n.toLocalTime() >= java.time.LocalTime.of(8, 30)
+            }
+            if (key.isNotBlank() && (MarketData.isTwIntraday() || tradingDay)) {
                 val snap = runCatching { FugleApi.snapshot(q.symbol, key) }.getOrNull()
                 if (snap != null) {
                     val items = listOfNotNull(
@@ -298,6 +302,24 @@ object StockInfoRepo {
                     )
                     val io = if (snap.atBidLots != null && snap.atAskLots != null) snap.atBidLots to snap.atAskLots else null
                     return@withContext Trading(items, snap.bids, snap.asks, io, if (MarketData.isTwIntraday()) "富果快照（等待串流）" else "富果今日收盤快照")
+                }
+            }
+            // 今天有即時價：用 Yahoo 今日分時算開高低量（證交所日資料可能還是昨天的）
+            if (MarketData.hasTodayLive(q.symbol)) {
+                val h = runCatching { YahooExtra.history(yahooSymbol(q), "1d") }.getOrNull()
+                val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei"))
+                val ok = h?.times?.lastOrNull()?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.of("Asia/Taipei")).toLocalDate() == today } == true
+                if (h != null && ok && h.closes.isNotEmpty()) {
+                    val vol = h.dayVolume ?: h.volumes.sumOf { it.toDouble() }.takeIf { it > 0 }
+                    val items = listOfNotNull(
+                        h.opens.firstOrNull()?.let { InfoItem("開盤", "%.2f".format(Locale.US, it)) },
+                        h.highs.maxOrNull()?.let { InfoItem("最高", "%.2f".format(Locale.US, it)) },
+                        h.lows.minOrNull()?.let { InfoItem("最低", "%.2f".format(Locale.US, it)) },
+                        InfoItem("昨收", "%.2f".format(Locale.US, q.prevClose)),
+                        lots(vol?.div(1000))?.let { InfoItem("成交量", it) },
+                        vol?.let { v -> money(v * q.price)?.let { InfoItem("成交金額（估）", it) } },
+                    )
+                    return@withContext Trading(items, emptyList(), emptyList(), null, "今日分時（收盤後）")
                 }
             }
             val rec = MarketData.closeRecord(q.symbol)?.first

@@ -455,3 +455,9 @@
 Kotlin · Jetpack Compose · Material 3 · Navigation Compose · minSdk 26 · targetSdk 35
 
 > 簽章金鑰 `app/claudeetf.keystore` 為個人側載用，若要上架 Google Play 請改用私密金鑰並放進 GitHub Secrets。
+
+### 收盤資料修正與概覽整理
+- 收盤後若已有今日即時價，不再被舊的收盤檔覆蓋；收盤後自動補抓今日收盤（富果 / MIS）。
+- 概覽分頁：行情、分析、光譜（獨立）、報酬、我的、基本（估值與基本面）。
+- 個股股價依漲跌上色：漲紅、平黃、跌綠（可自訂）。
+- 我的 › 漲跌配色：點色塊開調色盤，選常用色或調色相/鮮豔度/亮度，免輸入色碼；可恢復預設。

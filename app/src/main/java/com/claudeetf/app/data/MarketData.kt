@@ -51,7 +51,7 @@ object MarketData {
     }
 
     /** 這檔今天已經有即時來源（富果、證交所即時）的價格 */
-    private fun hasTodayLive(symbol: String): Boolean {
+    fun hasTodayLive(symbol: String): Boolean {
         val q = AppState.quote(symbol) ?: return false
         if (q.price <= 0 || q.updatedAt <= 0) return false
         val live = q.source == QuoteSource.FUGLE || q.source == QuoteSource.FUGLE_STREAM || q.source == QuoteSource.TWSE_LIVE
@@ -186,13 +186,34 @@ object MarketData {
             }
         }
 
+        // 2b) 交易日收盤後到當晚：證交所日資料可能還沒更新，改抓今天的收盤價
+        //     有富果金鑰用富果 REST，否則用證交所 MIS（收盤後仍保留今日資料到隔天早上）
+        val tpeNow = ZonedDateTime.now(TPE)
+        val afterCloseToday = !intraday && tpeNow.dayOfWeek.value <= 5 && tpeNow.toLocalTime() >= LocalTime.of(13, 30)
+        if (afterCloseToday && !live) {
+            val need = symbols.filter { !hasTodayLive(it) }
+            if (need.isNotEmpty()) {
+                val key = AppState.fugleKey
+                if (key.isNotBlank()) {
+                    withContext(Dispatchers.IO) {
+                        need.take(40).map { s -> delay(120); s to runCatching { FugleApi.quote(s, key) } }
+                    }.forEach { (s, r) -> r.getOrNull()?.let { AppState.applyRemote(it, QuoteSource.FUGLE, now, live = true); fugle += s } }
+                }
+                val still = need.filter { it !in fugle }
+                if (still.isNotEmpty()) {
+                    withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.TwseMisApi.quotes(still) } }.getOrNull()
+                        ?.forEach { (code, t) -> if (code in still && t.quote.price > 0) { AppState.applyRemote(t.quote, QuoteSource.TWSE_LIVE, maxOf(t.time, now - 60_000), live = true); mis += code } }
+                }
+            }
+        }
+
         // 3) 盤後或即時來源都失敗：收盤資料
         //    13:30 收盤到證交所發布日資料（約 14:30）之間，OpenAPI 還是前一個交易日的資料，
         //    直接套用會把今天的最後成交價換成昨天的收盤價（總市值、漲跌都會跳掉），
         //    所以這段時間只補「今天還沒有即時價」的股票。
-        val closeReady = !isTwTodayPending()
+        // 證交所／櫃買 OpenAPI 日資料常到晚上甚至隔天才更新：今天已有即時價（收盤後即今日收盤價）就一律不覆蓋
         val rest = symbols.filter { it !in fugle && it !in mis }
-            .filter { closeReady || !hasTodayLive(it) }
+            .filter { !hasTodayLive(it) }
         var closeCount = 0
         var closeError: String? = null
         if (rest.isNotEmpty() && (!live || !intraday)) {

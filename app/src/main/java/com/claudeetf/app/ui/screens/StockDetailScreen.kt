@@ -253,10 +253,11 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                                 item { VolumeProfileCard(q, h, start, opt.label) }
                             }
                         }
-                        1 -> { item { AnalysisCard(q) }; item { PriceBandCard(q) } }
-                        2 -> { item { YearlyReturnsCard(q) }; item { NextDividendCard(q, compact = true) } }
-                        3 -> overviewMine(q)
-                        else -> { overviewBasic(q, fund); peersSection(nav, peers, peerExtras) }
+                        1 -> { item { AnalysisCard(q) }; peersSection(nav, peers, peerExtras) }
+                        2 -> item { PriceBandCard(q) }
+                        3 -> { item { YearlyReturnsCard(q) }; item { NextDividendCard(q, compact = true) } }
+                        4 -> overviewMine(q)
+                        else -> overviewBasic(q, fund)
                     }
                 }
                 Tab.CHIPS -> chipsTab(q, chips)
@@ -296,7 +297,8 @@ private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info
             Label(StockInfoRepo.yahooSymbol(q) + " · " + q.market.currency)
         }
         Row(verticalAlignment = Alignment.Bottom) {
-            NumText(if (q.price > 0) Fmt.price(q.price) else "—", 32.sp, weight = FontWeight.Bold)
+            // 股價顏色依漲跌：漲紅、平黃、跌綠（依配色設定）
+            NumText(if (q.price > 0) Fmt.price(q.price) else "—", 32.sp, if (q.price > 0 && q.prevClose > 0) Trend.price(q.change) else C.Text, FontWeight.Bold)
             HGap(10.dp)
             NumText(
                 Fmt.signed(q.change, 2) + "（" + Fmt.pct(q.changePct) + "）", 14.sp, Trend.fg(q.change),
@@ -455,7 +457,7 @@ private fun LiveInfo(q0: Quote) {
     val q = AppState.quote(q0.symbol) ?: q0
     val ds = AppState.dayStats[q.symbol]
     val ccy = if (q.market == Market.US) "$" else ""
-    val col = Trend.fg(q.change)
+    val col = Trend.price(q.change)
     // 現價與漲跌獨立一列（大字），其餘兩欄排列，避免擠壓換行
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Card).padding(14.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
@@ -490,7 +492,7 @@ private fun LazyListScope.infoList(items: List<InfoItem>) {
 }
 
 /** 概覽子分頁 */
-private val OVERVIEW_SUBS = listOf("行情", "分析", "報酬", "我的", "基本")
+private val OVERVIEW_SUBS = listOf("行情", "分析", "光譜", "報酬", "我的", "基本")
 
 @Composable
 private fun OverviewSubTabs(sel: Int, onSelect: (Int) -> Unit) {
@@ -498,7 +500,7 @@ private fun OverviewSubTabs(sel: Int, onSelect: (Int) -> Unit) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OVERVIEW_SUBS.forEachIndexed { i, n ->
                 val on = i == sel
-                Text(n, color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                Text(n, color = if (on) C.OnPrimary else C.Text2, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1,
                     modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(if (on) C.Primary else C.Card)
                         .clickable { onSelect(i) }.padding(vertical = 7.dp))
@@ -548,10 +550,11 @@ private fun LazyListScope.overviewBasic(q: Quote, fund: Load<Fundamentals>) {
         is Load.Err -> showError(fund.message)
         is Load.Ok -> {
             val f = fund.value
-            val liveLabels = setOf("最高", "最低", "成交量").filter { AppState.dayStats[q.symbol] != null }.toSet() +
-                (if (q.prevClose > 0) setOf("昨收") else emptySet())
-            val rest = f.overview.filter { it.label !in liveLabels }
-            if (rest.isEmpty()) item { Label("暫無概覽資料") } else infoGrid(rest)
+            // 當日價量（開高低、量、昨收）已在「行情」分頁；這裡只放估值與基本面
+            val dayItems = setOf("開盤", "最高", "最低", "成交量", "昨收")
+            val rest = f.overview.filter { it.label !in dayItems }
+            item { SectionTitle("估值與基本面") }
+            if (rest.isEmpty()) item { Label("暫無基本資料") } else infoGrid(rest)
             item { Label("資料來源：Yahoo Finance" + if (q.market == Market.TW) "、證交所 OpenAPI" else "", Modifier.padding(top = 6.dp)) }
         }
     }

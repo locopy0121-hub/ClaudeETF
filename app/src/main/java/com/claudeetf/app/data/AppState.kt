@@ -24,6 +24,14 @@ object AppState {
     private var prefs: SharedPreferences? = null
 
     var colorMode by mutableStateOf(ColorMode.TW)
+    /** 自訂漲／跌／平顏色（ARGB）；0 = 使用台式或美式預設 */
+    var customUp by mutableStateOf(0L)
+    var customDown by mutableStateOf(0L)
+    var customFlat by mutableStateOf(0L)
+    fun updateCustomColor(which: String, argb: Long) {
+        when (which) { "up" -> customUp = argb; "down" -> customDown = argb; else -> customFlat = argb }
+        save()
+    }
         private set
     var usdTwd by mutableDoubleStateOf(32.02)
         private set
@@ -335,6 +343,7 @@ object AppState {
         com.claudeetf.app.data.remote.Http.cacheDir = java.io.File(context.applicationContext.cacheDir, "http")
         val p = context.getSharedPreferences("claudeetf", Context.MODE_PRIVATE)
         prefs = p
+        customUp = p.getLong("customUp", 0L); customDown = p.getLong("customDown", 0L); customFlat = p.getLong("customFlat", 0L)
         colorMode = runCatching { ColorMode.valueOf(p.getString("colorMode", "TW") ?: "TW") }
             .getOrDefault(ColorMode.TW)
         usdTwd = p.getFloat("usdTwd", 32.02f).toDouble()
@@ -545,6 +554,7 @@ object AppState {
         val p = prefs ?: return
         p.edit()
             .putString("colorMode", colorMode.name)
+            .putLong("customUp", customUp).putLong("customDown", customDown).putLong("customFlat", customFlat)
             .putFloat("usdTwd", usdTwd.toFloat())
             .putInt("themeMode", themeMode)
             .putBoolean("dailySummary", dailySummary)

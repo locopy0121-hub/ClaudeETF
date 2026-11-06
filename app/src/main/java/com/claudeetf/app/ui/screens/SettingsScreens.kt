@@ -31,6 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.claudeetf.app.ui.theme.Trend
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -470,8 +473,33 @@ fun SettingsScreen(nav: NavController) {
                             { AppState.updateColorMode(if (it == 0) ColorMode.TW else ColorMode.US) },
                             background = C.Bg,
                         )
+                        // 自訂顏色：點色塊叫出調色盤
+                        var picking by remember { mutableStateOf<String?>(null) }
+                        picking?.let { which ->
+                            val cur = when (which) { "up" -> Trend.up; "down" -> Trend.down; else -> Trend.flat }
+                            ColorPickerDialog(
+                                title = when (which) { "up" -> "上漲顏色"; "down" -> "下跌顏色"; else -> "平盤顏色" },
+                                initial = cur,
+                                onPick = { c -> AppState.updateCustomColor(which, c.toArgb().toLong() and 0xFFFFFFFFL); picking = null },
+                                onReset = { AppState.updateCustomColor(which, 0L); picking = null },
+                                onDismiss = { picking = null },
+                            )
+                        }
+                        listOf("up" to "上漲", "down" to "下跌", "flat" to "平盤").forEach { (k, n) ->
+                            val c = when (k) { "up" -> Trend.up; "down" -> Trend.down; else -> Trend.flat }
+                            val customized = when (k) { "up" -> AppState.customUp; "down" -> AppState.customDown; else -> AppState.customFlat } != 0L
+                            Row(Modifier.fillMaxWidth().clickable { picking = k }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(n + "顏色", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+                                if (customized) Label("自訂", Modifier.padding(end = 8.dp))
+                                Box(Modifier.size(width = 44.dp, height = 26.dp).clip(RoundedCornerShape(8.dp)).background(c)
+                                    .border(1.dp, C.Border, RoundedCornerShape(8.dp)))
+                                Text("  ›", color = C.Muted, fontSize = 14.sp)
+                            }
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Label("預覽", Modifier.weight(1f))
+                            Text("123.45", color = Trend.price(1.0), fontSize = 14.sp, fontWeight = FontWeight.Bold); HGap(6.dp)
+                            Text("100.00", color = Trend.price(0.0), fontSize = 14.sp, fontWeight = FontWeight.Bold); HGap(6.dp)
                             ChangePill(1.25); HGap(6.dp); ChangePill(-0.84)
                         }
                     }
@@ -596,6 +624,66 @@ fun PrimaryButton(text: String, onClick: () -> Unit) {
 @Composable
 private fun Group(text: String) {
     Text(text, color = C.Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+}
+
+/** 調色盤：常用色塊一點即選，或用色相、亮度滑桿微調；不需輸入色碼 */
+@Composable
+private fun ColorPickerDialog(title: String, initial: androidx.compose.ui.graphics.Color, onPick: (androidx.compose.ui.graphics.Color) -> Unit, onReset: () -> Unit, onDismiss: () -> Unit) {
+    val hsv = remember { FloatArray(3).also { android.graphics.Color.colorToHSV(initial.toArgb(), it) } }
+    var hue by remember { mutableStateOf(hsv[0]) }
+    var sat by remember { mutableStateOf(hsv[1]) }
+    var value by remember { mutableStateOf(hsv[2]) }
+    fun current() = androidx.compose.ui.graphics.Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value)))
+    val presets = listOf(
+        0xFFE53935, 0xFFFF5252, 0xFFEF5350, 0xFFFF7043, 0xFFFF9800, 0xFFFFB74D,
+        0xFFFFD54F, 0xFFE6C34A, 0xFFFFEB3B, 0xFFC0CA33, 0xFF8BC34A, 0xFF66BB6A,
+        0xFF43A047, 0xFF26A69A, 0xFF00BCD4, 0xFF29B6F6, 0xFF1E88E5, 0xFF5C6BC0,
+        0xFF7E57C2, 0xFFAB47BC, 0xFFEC407A, 0xFFBDBDBD, 0xFF90A4AE, 0xFFFFFFFF,
+    )
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = C.Card,
+        title = { Text(title, color = C.Text, fontSize = 16.sp) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                presets.chunked(6).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { argb ->
+                            val c = androidx.compose.ui.graphics.Color(argb)
+                            Box(Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(8.dp)).background(c)
+                                .border(if (c == current()) 3.dp else 1.dp, if (c == current()) C.Text else C.Border, RoundedCornerShape(8.dp))
+                                .clickable {
+                                    val f = FloatArray(3); android.graphics.Color.colorToHSV(argb.toInt(), f)
+                                    hue = f[0]; sat = f[1]; value = f[2]
+                                })
+                        }
+                    }
+                }
+                Label("色相")
+                // 色相條：拖曳選色
+                Box(Modifier.fillMaxWidth().height(22.dp).clip(RoundedCornerShape(11.dp))
+                    .background(androidx.compose.ui.graphics.Brush.horizontalGradient((0..6).map { androidx.compose.ui.graphics.Color(android.graphics.Color.HSVToColor(floatArrayOf(it * 60f, 1f, 1f))) })))
+                androidx.compose.material3.Slider(hue, { hue = it }, valueRange = 0f..360f)
+                Label("鮮豔度")
+                androidx.compose.material3.Slider(sat, { sat = it }, valueRange = 0f..1f)
+                Label("亮度")
+                androidx.compose.material3.Slider(value, { value = it }, valueRange = 0.2f..1f)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Label("預覽", Modifier.weight(1f))
+                    Text("▲ +1.25%", color = current(), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    HGap(10.dp)
+                    Box(Modifier.size(width = 56.dp, height = 28.dp).clip(RoundedCornerShape(8.dp)).background(current()))
+                }
+            }
+        },
+        confirmButton = { Text("套用", color = C.Primary, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onPick(current()) }.padding(12.dp)) },
+        dismissButton = {
+            Row {
+                Text("恢復預設", color = C.Muted, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onReset).padding(12.dp))
+                Text("取消", color = C.Muted, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp))
+            }
+        },
+    )
 }
 
 /** 金鑰欄位下方的申請連結 */

@@ -81,20 +81,33 @@ val Mono = FontFamily.Monospace
 /** 依設定的漲跌配色回傳顏色 */
 object Trend {
     private val tw: Boolean get() = AppState.colorMode == ColorMode.TW
+    private fun custom(v: Long): Color? = if (v != 0L) Color(v.toInt()) else null
+    /** 平盤預設黃色（股價、漲跌顯示用） */
+    val FLAT = Color(0xFFE6C34A)
+    val up: Color get() = custom(AppState.customUp) ?: if (tw) C.Red else C.Green
+    val down: Color get() = custom(AppState.customDown) ?: if (tw) C.Green else C.Red
+    val flat: Color get() = custom(AppState.customFlat) ?: FLAT
+
     fun fg(v: Double): Color = when {
-        v > 0 -> if (tw) C.Red else C.Green
-        v < 0 -> if (tw) C.Green else C.Red
-        else -> C.Muted
+        v > 0 -> up
+        v < 0 -> down
+        else -> custom(AppState.customFlat) ?: C.Muted
+    }
+    /** 股價本身的顏色：漲紅、平黃、跌綠（依配色設定） */
+    fun price(v: Double): Color = when {
+        v > 0 -> up
+        v < 0 -> down
+        else -> flat
     }
     fun pillBg(v: Double): Color = when {
-        v > 0 -> if (tw) C.RedBg else C.GreenBg
-        v < 0 -> if (tw) C.GreenBg else C.RedBg
+        v > 0 -> custom(AppState.customUp)?.copy(alpha = 0.18f) ?: if (tw) C.RedBg else C.GreenBg
+        v < 0 -> custom(AppState.customDown)?.copy(alpha = 0.18f) ?: if (tw) C.GreenBg else C.RedBg
         else -> C.Card2
     }
     fun pillFg(v: Double): Color = when {
-        v > 0 -> if (tw) C.RedFg else C.GreenFg
-        v < 0 -> if (tw) C.GreenFg else C.RedFg
-        else -> C.Muted
+        v > 0 -> custom(AppState.customUp) ?: if (tw) C.RedFg else C.GreenFg
+        v < 0 -> custom(AppState.customDown) ?: if (tw) C.GreenFg else C.RedFg
+        else -> custom(AppState.customFlat) ?: C.Muted
     }
 }
 
