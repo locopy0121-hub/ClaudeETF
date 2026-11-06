@@ -294,7 +294,7 @@ object StockInfoRepo {
                         if (snap.isLimitUp) InfoItem("狀態", "漲停") else if (snap.isLimitDown) InfoItem("狀態", "跌停") else null,
                     )
                     val io = if (snap.atBidLots != null && snap.atAskLots != null) snap.atBidLots to snap.atAskLots else null
-                    return@withContext Trading(items, snap.bids, snap.asks, io, "富果即時")
+                    return@withContext Trading(items, snap.bids, snap.asks, io, "富果快照（等待串流）")
                 }
             }
             val rec = MarketData.closeRecord(q.symbol)?.first

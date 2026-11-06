@@ -103,12 +103,19 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
         history = Load.Loading
         history = runCatching { StockInfoRepo.history(q, ranges[range].fetch) }
             .fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
-        // 盤中：1 日走勢每 30 秒自動更新
+        // 盤中：最新價格即時接到走勢最後一根（見 liveMerge）；每 2 分鐘與完整分 K 校正一次
         while (range == 0) {
-            kotlinx.coroutines.delay(30_000)
+            kotlinx.coroutines.delay(120_000)
             val open = if (q.market == Market.TW) com.claudeetf.app.data.MarketData.isTwIntraday() else com.claudeetf.app.data.MarketData.usLive()
             if (!open) continue
             runCatching { StockInfoRepo.history(q, ranges[range].fetch) }.onSuccess { history = Load.Ok(it) }
+        }
+    }
+    // 台股：正在看的個股優先放進富果串流（超過訂閱上限時替換掉其他代號）
+    if (q.market == Market.TW) {
+        DisposableEffect(q.symbol) {
+            com.claudeetf.app.data.remote.FugleStream.setFocus(q.symbol)
+            onDispose { com.claudeetf.app.data.remote.FugleStream.setFocus("") }
         }
     }
     // 三關價（前一交易日高低）
@@ -132,8 +139,16 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     }
     LaunchedEffect(q.symbol, tab) {
         when (tab) {
-            Tab.OVERVIEW -> if (trading !is Load.Ok) {
-                trading = runCatching { StockInfoRepo.trading(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            Tab.OVERVIEW -> {
+                if (trading !is Load.Ok) {
+                    trading = runCatching { StockInfoRepo.trading(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+                }
+                // 串流尚未涵蓋時才以快照補（串流一接上，畫面改由推播同步，不再輪詢）
+                while (q.market == Market.TW && com.claudeetf.app.data.MarketData.isTwIntraday() && AppState.fugleKey.isNotBlank()) {
+                    kotlinx.coroutines.delay(3_000)
+                    if (com.claudeetf.app.data.remote.FugleStream.books.containsKey(q.symbol)) continue
+                    runCatching { StockInfoRepo.trading(q) }.onSuccess { trading = Load.Ok(it) }
+                }
             }
             Tab.CHIPS -> if (chips !is Load.Ok) {
                 chips = Load.Loading
@@ -184,7 +199,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             if (ranges[range].fetch == "1d") item { KeyLevelsBar(q, AppState.keyPrices[q.symbol]) }
             item {
                 ChartBlock(
-                    history, range, q, chartType, mas, sub,
+                    liveMerge(history, range, q), range, q, chartType, mas, sub,
                     levels = if (ranges[range].fetch == "1d" && AppState.showKeyLevels) AppState.keyPrices[q.symbol]?.let { KeyLevelsUi.lines(it) } ?: emptyList() else emptyList(),
                 )
             }
@@ -1031,5 +1046,49 @@ private fun TapeCard(q: Quote) {
             Text(if (expanded) "收合" else "顯示更多", color = C.Primary, fontSize = 13.sp,
                 modifier = Modifier.clickable { expanded = !expanded }.padding(vertical = 4.dp))
         }
+    }
+}
+
+/**
+ * 1 日分時與即時報價同步：每次收到新價格（串流推播或即時更新），
+ * 直接更新最後一根 5 分 K 的收盤、高低與量，跨入下一個 5 分鐘就新增一根。
+ */
+private fun liveMerge(history: Load<YahooExtra.History>, range: Int, q: Quote): Load<YahooExtra.History> {
+    val h = (history as? Load.Ok<YahooExtra.History>)?.value ?: return history
+    if (ranges[range].fetch != "1d" || q.price <= 0 || q.updatedAt <= 0 || h.times.isEmpty()) return history
+    val live = if (q.market == Market.TW) com.claudeetf.app.data.MarketData.isTwIntraday() else com.claudeetf.app.data.MarketData.usLive()
+    if (!live) return history
+    val zone = ZoneId.of(if (q.market == Market.TW) "Asia/Taipei" else "America/New_York")
+    val lastT = h.times.last()
+    if (Instant.ofEpochMilli(lastT).atZone(zone).toLocalDate() != Instant.ofEpochMilli(q.updatedAt).atZone(zone).toLocalDate()) return history
+    if (q.updatedAt < lastT) return history
+    val p = q.price.toFloat()
+    val bar = 5 * 60_000L
+    val n = h.closes.size
+    val dayVol = AppState.dayStats[q.symbol]?.volume
+    fun volFor(prevSum: Double): Float? = dayVol?.let { (it - prevSum).coerceAtLeast(0.0).toFloat() }
+    return if (q.updatedAt >= lastT + bar) {
+        val start = lastT + (q.updatedAt - lastT) / bar * bar
+        val prevSum = h.volumes.sumOf { it.toDouble() }
+        Load.Ok(
+            h.copy(
+                times = h.times + start,
+                closes = h.closes + p,
+                opens = if (h.opens.size == n) h.opens + p else h.opens,
+                highs = if (h.highs.size == n) h.highs + p else h.highs,
+                lows = if (h.lows.size == n) h.lows + p else h.lows,
+                volumes = if (h.volumes.size == n) h.volumes + (volFor(prevSum) ?: 0f) else h.volumes,
+            )
+        )
+    } else {
+        val prevSum = h.volumes.dropLast(1).sumOf { it.toDouble() }
+        Load.Ok(
+            h.copy(
+                closes = h.closes.dropLast(1) + p,
+                highs = if (h.highs.size == n) h.highs.dropLast(1) + maxOf(h.highs.last(), p) else h.highs,
+                lows = if (h.lows.size == n) h.lows.dropLast(1) + minOf(h.lows.last(), p) else h.lows,
+                volumes = if (h.volumes.size == n) h.volumes.dropLast(1) + (volFor(prevSum)?.let { maxOf(it, h.volumes.last()) } ?: h.volumes.last()) else h.volumes,
+            )
+        )
     }
 }

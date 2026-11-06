@@ -75,7 +75,79 @@ object FugleStream {
             connect()
             return
         }
-        if (authed) subscribe(symbols.filter { it !in subscribed && it !in rejected })
+        if (authed) {
+            synchronized(subscribed) {
+                // 等待回應超過 10 秒：視為已訂閱，繼續下一檔
+                if (awaiting != null && System.currentTimeMillis() - awaitingAt > 10_000) { subscribed += awaiting!!; awaiting = null }
+                val add = prioritize(symbols).filter { it !in subscribed && it !in rejected && it !in queue && it != awaiting }
+                queue.addAll(add)
+            }
+            focusSwap()
+            pump()
+        }
+    }
+
+    // ---- 逐檔訂閱（依優先順序：正在看的個股 → 持股 → 自選），超過上限時保留最重要的 ----
+    private val queue = ArrayDeque<String>()
+    @Volatile private var awaiting: String? = null
+    @Volatile private var awaitingAt = 0L
+    @Volatile private var limitHit = false
+    private val subIds = HashMap<String, String>()
+
+    /** 個股頁正在看的代號：一定要在串流內 */
+    @Volatile var focus: String = ""
+        private set
+
+    fun setFocus(symbol: String) {
+        focus = symbol
+        if (authed && symbol.isNotBlank()) {
+            synchronized(subscribed) {
+                if (symbol !in subscribed && symbol != awaiting) { queue.remove(symbol); queue.addFirst(symbol); rejected.remove(symbol) }
+            }
+            focusSwap(); pump()
+        }
+    }
+
+    private fun prioritize(symbols: List<String>): List<String> {
+        val held = AppState.holdings.map { it.symbol }.toSet()
+        return symbols.sortedBy { s -> if (s == focus) 0 else if (s in held) 1 else 2 }
+    }
+
+    /** 已達訂閱上限而正在看的個股不在串流內：退訂一檔非持股、非焦點的代號換進來 */
+    private fun focusSwap() {
+        val f = focus
+        if (f.isBlank() || !limitHit) return
+        val w = ws ?: return
+        synchronized(subscribed) {
+            if (f in subscribed || f == awaiting) return
+            val held = AppState.holdings.map { it.symbol }.toSet()
+            val victim = subscribed.filter { it != f && it !in held }.lastOrNull() ?: subscribed.lastOrNull { it != f } ?: return
+            subIds[victim]?.let { id -> w.send(JSONObject().put("event", "unsubscribe").put("data", JSONObject().put("id", id)).toString()) }
+                ?: w.send(JSONObject().put("event", "unsubscribe").put("data", JSONObject().put("channel", "aggregates").put("symbol", victim)).toString())
+            subscribed -= victim; subIds.remove(victim); rejected += victim
+            rejected.remove(f); queue.remove(f)
+            awaiting = f; awaitingAt = System.currentTimeMillis()
+            w.send(JSONObject().put("event", "subscribe").put("data", JSONObject().put("channel", "aggregates").put("symbol", f)).toString())
+        }
+    }
+
+    /** 一次只送一檔，收到 subscribed／error 後再送下一檔，才能精準知道哪一檔被拒 */
+    private fun pump() {
+        val w = ws ?: return
+        synchronized(subscribed) {
+            if (awaiting != null) return
+            if (limitHit) { rejected.addAll(queue); queue.clear(); return }
+            val s = queue.removeFirstOrNull() ?: return
+            awaiting = s; awaitingAt = System.currentTimeMillis()
+            w.send(JSONObject().put("event", "subscribe").put("data", JSONObject().put("channel", "aggregates").put("symbol", s)).toString())
+        }
+    }
+
+    private fun resetSubs() {
+        synchronized(subscribed) {
+            subscribed.clear(); queue.clear(); subIds.clear(); rejected.clear()
+            awaiting = null; limitHit = false
+        }
     }
 
     fun stop() {
@@ -83,7 +155,7 @@ object FugleStream {
         authed = false
         ws?.close(1000, "bye")
         ws = null
-        synchronized(subscribed) { subscribed.clear() }
+        resetSubs()
         main.post { AppState.streamStatus = "" }
     }
 
@@ -115,7 +187,7 @@ object FugleStream {
         if (webSocket !== ws) return
         authed = false
         ws = null
-        synchronized(subscribed) { subscribed.clear() }
+        resetSubs()
         main.post { AppState.streamStatus = msg }
         if (wanted) {
             // 斷線重連：2、4、8…最多 60 秒
@@ -123,19 +195,6 @@ object FugleStream {
             retry++
             reconnects++
             main.postDelayed({ if (wanted && ws == null) connect() }, delayMs)
-        }
-    }
-
-    private fun subscribe(symbols: List<String>) {
-        val w = ws ?: return
-        if (symbols.isEmpty()) return
-        symbols.chunked(50).forEach { chunk ->
-            w.send(
-                JSONObject().put("event", "subscribe").put(
-                    "data", JSONObject().put("channel", "aggregates").put("symbols", JSONArray(chunk)),
-                ).toString()
-            )
-            synchronized(subscribed) { subscribed.addAll(chunk) }
         }
     }
 
@@ -147,8 +206,22 @@ object FugleStream {
                 connectedAt = System.currentTimeMillis()
                 val syms = AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol }
                 main.post { AppState.streamStatus = "富果串流已連線" }
-                subscribe(syms.filter { it !in rejected })
+                synchronized(subscribed) { queue.addAll(prioritize(syms)) }
+                pump()
             }
+            "subscribed" -> {
+                val d = o.optJSONObject("data")
+                val sym = d?.optString("symbol")?.ifBlank { null } ?: awaiting
+                synchronized(subscribed) {
+                    if (sym != null) {
+                        subscribed += sym
+                        d?.optString("id")?.ifBlank { null }?.let { subIds[sym] = it }
+                    }
+                    if (sym == awaiting || sym == null) awaiting = null
+                }
+                pump()
+            }
+            "unsubscribed" -> {}
             "error" -> {
                 val msg = o.optJSONObject("data")?.optString("message") ?: "錯誤"
                 if (msg.contains("auth", true) || msg.contains("credential", true)) {
@@ -156,11 +229,18 @@ object FugleStream {
                     main.post { AppState.streamStatus = "富果金鑰驗證失敗，改用證交所即時" }
                     webSocket.close(1000, "auth failed")
                 } else {
-                    // 多半是超過訂閱上限：記下尚未收到資料的代號，改由證交所即時補齊
+                    // 被拒的就是剛送出的那一檔；訊息提到上限時，其餘排隊的也不再送
+                    val limit = listOf("limit", "exceed", "maximum", "上限", "超過").any { msg.contains(it, true) }
                     synchronized(subscribed) {
-                        subscribed.filter { s -> synchronized(lastData) { lastData[s] } == null }.forEach { rejected += it }
+                        awaiting?.let { rejected += it }
+                        awaiting = null
+                        if (limit) limitHit = true
                     }
-                    main.post { AppState.streamStatus = "富果：$msg（超出部分改用證交所即時）" }
+                    main.post {
+                        AppState.streamStatus = "富果：$msg" + if (limit) "（已優先訂閱正在看的個股與持股，其餘以富果 REST 補）" else ""
+                    }
+                    focusSwap()
+                    pump()
                 }
             }
             "data" -> {
