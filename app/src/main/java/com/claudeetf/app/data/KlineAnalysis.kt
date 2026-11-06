@@ -446,9 +446,25 @@ object KlineAnalysis {
         cache[key]?.let { return it }
         val r = withContext(Dispatchers.Default) {
             val cs = ArrayList(cs0)
-            if (!weekly && q.price > 0 && cs.isNotEmpty() && System.currentTimeMillis() - cs.last().t < 20 * 3600_000L) {
+            if (!weekly && q.price > 0 && cs.isNotEmpty()) {
+                val zone = java.time.ZoneId.of(if (q.market == Market.TW) "Asia/Taipei" else "America/New_York")
+                fun day(t: Long) = java.time.Instant.ofEpochMilli(t).atZone(zone).toLocalDate()
                 val l = cs.last()
-                cs[cs.size - 1] = l.copy(c = q.price, h = max(l.h, q.price), l = min(l.l, q.price))
+                val lastDay = day(l.t)
+                // 報價屬於哪一天：台股依資料來源判斷，美股看更新時間
+                val qDay = if (q.market == Market.TW) MarketData.quoteDay(q.symbol) else if (q.updatedAt > 0) day(q.updatedAt) else null
+                val ds = AppState.dayStats[q.symbol]
+                when {
+                    // Yahoo 還沒有最後交易日的 K 棒（常見於收盤後到隔天）：用報價補一根
+                    qDay != null && qDay > lastDay && qDay.dayOfWeek.value <= 5 -> cs += Candle(
+                        qDay.atStartOfDay(zone).plusHours(9).toInstant().toEpochMilli(),
+                        q.prevClose.takeIf { it > 0 } ?: l.c,
+                        max(ds?.high ?: q.price, q.price), min(ds?.low ?: q.price, q.price), q.price, ds?.volume ?: 0.0,
+                    )
+                    // 同一天：最後一根以目前報價更新（盤中即為形成中的 K 棒）
+                    qDay == null || qDay == lastDay -> if (System.currentTimeMillis() - l.t < 30 * 3600_000L)
+                        cs[cs.size - 1] = l.copy(c = q.price, h = max(l.h, q.price), l = min(l.l, q.price))
+                }
             }
             analyze(cs, if (weekly) "週 K" else "日 K", if (weekly) 4 else 5)
         }

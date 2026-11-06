@@ -50,6 +50,25 @@ object MarketData {
         return time >= LocalTime.of(13, 30) && time < LocalTime.of(14, 30)
     }
 
+    /** 收盤資料套用時記下的交易日 */
+    private val closeDay = java.util.concurrent.ConcurrentHashMap<String, java.time.LocalDate>()
+
+    /** 最近一個（已開盤的）交易日：平日 9:00 後為今天，否則往前找平日（不含國定假日） */
+    fun lastTradingDay(now: ZonedDateTime = ZonedDateTime.now(TPE)): java.time.LocalDate {
+        var d = now.toLocalDate()
+        if (now.toLocalTime() < LocalTime.of(9, 0)) d = d.minusDays(1)
+        while (d.dayOfWeek == DayOfWeek.SATURDAY || d.dayOfWeek == DayOfWeek.SUNDAY) d = d.minusDays(1)
+        return d
+    }
+
+    /** 目前報價屬於哪個交易日：即時來源看成交時間，收盤資料看資料日期；不確定時回傳 null */
+    fun quoteDay(symbol: String): java.time.LocalDate? {
+        val q = AppState.quote(symbol) ?: return null
+        if (q.price <= 0 || q.updatedAt <= 0) return null
+        val live = q.source == QuoteSource.FUGLE || q.source == QuoteSource.FUGLE_STREAM || q.source == QuoteSource.TWSE_LIVE
+        return if (live) java.time.Instant.ofEpochMilli(q.updatedAt).atZone(TPE).toLocalDate() else closeDay[symbol]
+    }
+
     /** 這檔今天已經有即時來源（富果、證交所即時）的價格 */
     fun hasTodayLive(symbol: String): Boolean {
         val q = AppState.quote(symbol) ?: return false
@@ -188,10 +207,10 @@ object MarketData {
 
         // 2b) 交易日收盤後到當晚：證交所日資料可能還沒更新，改抓今天的收盤價
         //     有富果金鑰用富果 REST，否則用證交所 MIS（收盤後仍保留今日資料到隔天早上）
-        val tpeNow = ZonedDateTime.now(TPE)
-        val afterCloseToday = !intraday && tpeNow.dayOfWeek.value <= 5 && tpeNow.toLocalTime() >= LocalTime.of(13, 30)
-        if (afterCloseToday && !live) {
-            val need = symbols.filter { !hasTodayLive(it) }
+        //     週末、開盤前也一樣：報價還不是「最近一個交易日」的，就補抓（MIS／富果在休市時保留最後交易日資料）
+        val lastDay = lastTradingDay()
+        if (!intraday && !live) {
+            val need = symbols.filter { s -> quoteDay(s)?.let { it < lastDay } ?: true }
             if (need.isNotEmpty()) {
                 val key = AppState.fugleKey
                 if (key.isNotBlank()) {
@@ -202,7 +221,7 @@ object MarketData {
                 val still = need.filter { it !in fugle }
                 if (still.isNotEmpty()) {
                     withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.TwseMisApi.quotes(still) } }.getOrNull()
-                        ?.forEach { (code, t) -> if (code in still && t.quote.price > 0) { AppState.applyRemote(t.quote, QuoteSource.TWSE_LIVE, maxOf(t.time, now - 60_000), live = true); mis += code } }
+                        ?.forEach { (code, t) -> if (code in still && t.quote.price > 0) { AppState.applyRemote(t.quote, QuoteSource.TWSE_LIVE, if (t.time > 0) minOf(t.time, now) else now - 60_000, live = true); mis += code } }
                 }
             }
         }
@@ -220,8 +239,16 @@ object MarketData {
             val result = withContext(Dispatchers.IO) { runCatching { closeData() } }
             val data = result.getOrNull()
             if (data != null) {
-                rest.forEach { s -> data[s]?.let { (rq, src) -> AppState.applyRemote(rq, src, now) } }
-                closeCount = rest.count { data[it] != null }
+                // 收盤資料比目前報價舊（例如週六早上證交所還是週四資料，但已有週五即時價）就不覆蓋
+                val applied = rest.filter { s ->
+                    val (rq, src) = data[s] ?: return@filter false
+                    val cur = quoteDay(s)
+                    if (rq.date != null && cur != null && rq.date < cur) return@filter false
+                    AppState.applyRemote(rq, src, now)
+                    rq.date?.let { closeDay[s] = it }
+                    true
+                }
+                closeCount = applied.size
                 val missing = rest.filter { data[it] == null }
                 if (missing.isNotEmpty()) closeError = "查無 " + missing.joinToString("、")
             } else {

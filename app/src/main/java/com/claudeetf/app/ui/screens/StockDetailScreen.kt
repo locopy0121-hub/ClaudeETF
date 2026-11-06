@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -201,6 +202,9 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             IconButton(onClick = { nav.navigate(Routes.alerts(q.symbol)) }) {
                 Icon(Icons.Filled.Notifications, contentDescription = "設定提醒", tint = C.Text)
             }
+            IconButton(onClick = { nav.navigate(Routes.trade(q.symbol)) }) {
+                Icon(Icons.Filled.Add, contentDescription = "記一筆交易", tint = C.Text)
+            }
         }
         LazyColumn(
             Modifier.weight(1f).pointerInput(tab) {
@@ -273,22 +277,6 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                 Tab.CO -> companyTab(q, fund)
                 Tab.TAPE -> tapeTab(q)
             }
-        }
-        Row(
-            Modifier.fillMaxWidth().background(C.Bg).padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Box(
-                Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
-                    .border(1.dp, C.Border, RoundedCornerShape(12.dp))
-                    .clickable { nav.navigate(Routes.alerts(q.symbol)) },
-                contentAlignment = Alignment.Center,
-            ) { Text("設提醒", color = C.Text, fontSize = 15.sp) }
-            Box(
-                Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp)).background(C.Primary)
-                    .clickable { nav.navigate(Routes.trade(q.symbol)) },
-                contentAlignment = Alignment.Center,
-            ) { Text("記一筆交易", color = C.OnPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
         }
     }
 }

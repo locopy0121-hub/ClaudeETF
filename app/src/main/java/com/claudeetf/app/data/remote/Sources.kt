@@ -17,7 +17,26 @@ data class RemoteQuote(
     val volume: Double? = null,
     val value: Double? = null,
     val transactions: Double? = null,
+    /** 資料所屬交易日（收盤資料才有） */
+    val date: java.time.LocalDate? = null,
 )
+
+/** 民國 1151106、115/11/06 或西元 20261106 → 日期 */
+fun parseTwDate(s: String?): java.time.LocalDate? {
+    if (s.isNullOrBlank()) return null
+    val p = s.split(Regex("[^0-9]+")).filter { it.isNotEmpty() }
+    return runCatching {
+        if (p.size >= 3) java.time.LocalDate.of(p[0].toInt().let { if (it < 1000) it + 1911 else it }, p[1].toInt(), p[2].toInt())
+        else {
+            val d = p.first()
+            when (d.length) {
+                7 -> java.time.LocalDate.of(d.take(3).toInt() + 1911, d.substring(3, 5).toInt(), d.takeLast(2).toInt())
+                8 -> java.time.LocalDate.of(d.take(4).toInt(), d.substring(4, 6).toInt(), d.takeLast(2).toInt())
+                else -> null
+            }
+        }
+    }.getOrNull()
+}
 
 private fun JSONObject.num(key: String): Double? {
     if (!has(key) || isNull(key)) return null
@@ -138,6 +157,7 @@ object TwseApi {
                 volume = parseNum(o.optString("TradeVolume")),
                 value = parseNum(o.optString("TradeValue")),
                 transactions = parseNum(o.optString("Transaction")),
+                date = parseTwDate(o.optString("Date")),
             )
         }
         return out
@@ -168,6 +188,7 @@ object TpexApi {
                 volume = parseNum(o.optString("TradingShares")),
                 value = parseNum(o.optString("TransactionAmount")),
                 transactions = parseNum(o.optString("TransactionNumber")),
+                date = parseTwDate(o.optString("Date")),
             )
         }
         return out
