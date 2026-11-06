@@ -290,7 +290,10 @@ object ChatEngine {
         broadcast(o, except = link)
         // 需要檔案：向送來這則訊息的連線要
         if (fid.isNotBlank() && existing == null && !locked) send(link, JSONObject().put("k", "freq").put("fid", fid))
-        if (!viewing) unread++
+        if (!viewing) {
+            unread++
+            if (ChatPrefs.danmaku && !locked) pushDanmaku(m)
+        }
         // 回條：已送達；正在看畫面就直接已讀
         if (!locked) receipt(if (viewing) "r" else "d", listOf(id))
         save()
@@ -305,6 +308,24 @@ object ChatEngine {
         vector[ChatPrefs.userId] = lamport
         return (ChatPrefs.userId + ":" + lamport) to lamport
     }
+
+    /** 彈幕：最多同時 6 則，分 3 條軌道 */
+    data class Danmaku(val id: String, val name: String, val text: String, val lane: Int)
+    val danmaku = mutableStateListOf<Danmaku>()
+    private var lane = 0
+
+    private fun pushDanmaku(m: Message) {
+        val text = when (m.type) {
+            "image" -> "🖼️ 傳了一張圖片"
+            "file" -> "📄 " + m.fileName.ifBlank { "檔案" }
+            else -> m.text.replace('\n', ' ').take(40)
+        }
+        lane = (lane + 1) % 3
+        danmaku.add(Danmaku(m.id, m.fromName, text, lane))
+        while (danmaku.size > 6) danmaku.removeAt(0)
+    }
+
+    fun dismissDanmaku(id: String) { danmaku.removeAll { it.id == id } }
 
     private fun receipt(t: String, ids: List<String>) {
         val mine = ids.filter { id -> messages.firstOrNull { it.id == id }?.let { !it.mine && it.type != "system" } == true }

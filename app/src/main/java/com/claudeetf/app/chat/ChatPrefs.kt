@@ -34,6 +34,9 @@ object ChatPrefs {
         private set
     var useInternet by mutableStateOf(true)
         private set
+    /** 新訊息以彈幕顯示在 App 畫面上 */
+    var danmaku by mutableStateOf(true)
+        private set
 
     fun init(c: Context) {
         ctx = c.applicationContext
@@ -45,6 +48,7 @@ object ChatPrefs {
         groupPassword = p.getString("groupPassword", "") ?: ""
         useNearby = p.getBoolean("useNearby", true)
         useInternet = p.getBoolean("useInternet", true)
+        danmaku = p.getBoolean("danmaku", true)
         groupName = p.getString("groupName", "") ?: ""
         groupPublic = p.getBoolean("groupPublic", true)
         runCatching {
@@ -78,6 +82,7 @@ object ChatPrefs {
     fun updateGroupPassword(pw: String) { groupPassword = pw; put("groupPassword", pw) }
     fun updateUseNearby(on: Boolean) { useNearby = on; put("useNearby", on) }
     fun updateUseInternet(on: Boolean) { useInternet = on; put("useInternet", on) }
+    fun updateDanmaku(on: Boolean) { danmaku = on; put("danmaku", on) }
 
     private fun saveJoined() = put("joined", org.json.JSONObject(joined.toMap() as Map<*, *>).toString())
 

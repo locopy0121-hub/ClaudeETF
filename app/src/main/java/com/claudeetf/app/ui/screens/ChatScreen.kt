@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
@@ -440,6 +441,7 @@ fun ChatSettingsCard(nav: NavController) {
             visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
         OptToggle("附近直連（藍牙／Wi-Fi，不需網路）", ChatPrefs.useNearby) { ChatPrefs.updateUseNearby(it); if (ChatEngine.running) ChatEngine.restart(ctx) }
         OptToggle("跨網連線（WebRTC，用邀請碼加入）", ChatPrefs.useInternet) { ChatPrefs.updateUseInternet(it); if (ChatEngine.running) ChatEngine.restart(ctx) }
+        OptToggle("新訊息彈幕提醒（在 App 畫面飄過）", ChatPrefs.danmaku) { ChatPrefs.updateDanmaku(it) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("儲存", color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable {
                 ChatPrefs.updateUserName(name)
@@ -706,4 +708,51 @@ private fun GroupsPanel(onJoined: () -> Unit) {
     }
     msg?.let { Label(it, color = C.Primary) }
     Label("不在附近的成員：進群組後按「邀請」用邀請碼跨網加入。", Modifier.padding(top = 10.dp))
+}
+
+
+/**
+ * 群聊彈幕：新訊息從畫面右側飄到左側（約 8 秒），分 3 條軌道避免重疊；
+ * 點一下開啟群聊。只在 App 其他畫面顯示，正在聊天時不顯示。
+ */
+@Composable
+fun DanmakuOverlay(onOpen: () -> Unit) {
+    if (!ChatPrefs.enabled || !ChatPrefs.danmaku) return
+    val items = ChatEngine.danmaku.toList()
+    if (items.isEmpty()) return
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val width = maxWidth
+        items.forEach { d -> key(d.id) { DanmakuItem(d, width, onOpen) } }
+    }
+}
+
+@Composable
+private fun DanmakuItem(d: ChatEngine.Danmaku, screen: androidx.compose.ui.unit.Dp, onOpen: () -> Unit) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val startPx = with(density) { screen.toPx() }
+    val x = remember { androidx.compose.animation.core.Animatable(startPx) }
+    var textW by remember { mutableIntStateOf(0) }
+    LaunchedEffect(d.id, textW) {
+        if (textW == 0) return@LaunchedEffect
+        // 速度固定（每秒約螢幕寬的 1/6），長訊息飄比較久
+        val distance = startPx + textW
+        val ms = (distance / (startPx / 6f) * 1000).toInt().coerceIn(5_000, 14_000)
+        x.animateTo(-textW.toFloat(), androidx.compose.animation.core.tween(ms, easing = androidx.compose.animation.core.LinearEasing))
+        ChatEngine.dismissDanmaku(d.id)
+    }
+    Row(
+        Modifier
+            .padding(top = (72 + d.lane * 40).dp)
+            .wrapContentWidth(Alignment.Start, unbounded = true)
+            .offset { androidx.compose.ui.unit.IntOffset(x.value.toInt(), 0) }
+            .onSizeChanged { textW = it.width }
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.Black.copy(alpha = 0.55f))
+            .clickable { ChatEngine.danmaku.clear(); onOpen() }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("💬 " + d.name + "：", color = Color(0xFFFFD54F), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+        Text(d.text, color = Color.White, fontSize = 14.sp, maxLines = 1, softWrap = false)
+    }
 }

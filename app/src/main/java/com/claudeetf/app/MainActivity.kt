@@ -374,6 +374,8 @@ fun AppRoot() {
             composable(Routes.SETTINGS) { SettingsScreen(nav) }
             composable(Routes.CHAT) { com.claudeetf.app.ui.screens.ChatScreen(nav) }
         }
+        // 群聊新訊息彈幕（不在聊天畫面時從右往左飄過，點一下開啟群聊）
+        if (route != Routes.CHAT) com.claudeetf.app.ui.screens.DanmakuOverlay { nav.navigate(Routes.CHAT) }
         }
         }
     }

@@ -294,6 +294,8 @@ fun SettingsScreen(nav: NavController) {
                             onSave = { AppState.updateFugleKey(it) },
                             onTest = { MarketData.testFugle(it) },
                         )
+                        ApplyKeyLink("還沒有金鑰？到富果開發者平台免費申請 ›", "https://developer.fugle.tw/",
+                            "登入富果帳號 → 建立 API Key（免費方案即可使用台股即時行情）")
                         Label("目前來源：" + MarketData.twSourcePlan())
                         if (AppState.streamStatus.isNotBlank()) Label("串流：" + AppState.streamStatus, color = C.Text2)
                         if (AppState.fugleKey.isNotBlank()) {
@@ -357,6 +359,8 @@ fun SettingsScreen(nav: NavController) {
                             onSave = { AppState.updateFinnhubKey(it) },
                             onTest = { MarketData.testFinnhub(it) },
                         )
+                        ApplyKeyLink("還沒有金鑰？到 Finnhub 免費註冊 ›", "https://finnhub.io/register",
+                            "註冊後在 Dashboard 複製 API Key（免費方案每分鐘 60 次）")
                         AppState.sourceStatus["US"]?.let { Label("最近更新：$it", color = C.Text2) }
                     }
                 }
@@ -592,6 +596,17 @@ fun PrimaryButton(text: String, onClick: () -> Unit) {
 @Composable
 private fun Group(text: String) {
     Text(text, color = C.Muted, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+}
+
+/** 金鑰欄位下方的申請連結 */
+@Composable
+private fun ApplyKeyLink(label: String, url: String, hint: String) {
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    Column(Modifier.padding(top = 2.dp, bottom = 4.dp)) {
+        Text(label, color = C.Primary, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable { runCatching { uri.openUri(url) } }.padding(vertical = 6.dp))
+        Label(hint)
+    }
 }
 
 /** 新聞來源多選、各來源載入狀態、自訂 RSS */
