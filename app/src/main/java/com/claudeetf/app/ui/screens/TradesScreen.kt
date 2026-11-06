@@ -97,7 +97,30 @@ fun TradesScreen(nav: NavController) {
             }
             if (list.isEmpty()) item { Label("沒有符合的交易", Modifier.padding(vertical = 16.dp)) }
             list.groupBy { if (it.origin == TradeOrigin.OPENING) "期初持股" else it.date.take(7) }.forEach { (month, ts) ->
-                item { Text(month, color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp)) }
+                item {
+                    // 月小計：買進、賣出金額（台幣）、已實現與股息
+                    val buy = ts.filter { it.type == TradeType.BUY }.sumOf { it.shares * it.price * it.fx }
+                    val sell = ts.filter { it.type == TradeType.SELL }.sumOf { it.shares * it.price * it.fx }
+                    val real = ts.sumOf { AppState.realizedById[it.id] ?: 0.0 }
+                    val div = ts.sumOf { AppState.dividendById[it.id] ?: 0.0 }
+                    Column(Modifier.padding(top = 6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(month.replace("-", "/"), Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Label("${ts.size} 筆")
+                        }
+                        if (month != "期初持股") {
+                            Label(
+                                listOfNotNull(
+                                    if (buy > 0) "買 " + mask(Fmt.num(buy)) else null,
+                                    if (sell > 0) "賣 " + mask(Fmt.num(sell)) else null,
+                                    if (real != 0.0) "已實現 " + mask(Fmt.signed(real)) else null,
+                                    if (div > 0) "股息 " + mask(Fmt.num(div)) else null,
+                                ).joinToString(" · ").ifEmpty { "—" },
+                                color = if (real > 0) Trend.fg(1.0) else if (real < 0) Trend.fg(-1.0) else C.Muted,
+                            )
+                        }
+                    }
+                }
                 items(ts, key = { it.id }) { t -> TradeRow(t) { nav.navigate(Routes.trade(t.symbol, t.id)) } }
             }
             if (legacyCount > 0) {

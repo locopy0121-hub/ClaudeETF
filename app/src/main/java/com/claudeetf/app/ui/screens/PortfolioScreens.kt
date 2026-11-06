@@ -278,6 +278,13 @@ private fun HoldingRow(h: Holding, inTwd: Boolean, onClick: () -> Unit) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Label(Fmt.shares(h.shares) + " 股 · 均價 " + (if (isUs) "$" else "") + Fmt.price(h.avgCost))
+            if (q != null && q.price > 0 && q.prevClose > 0) {
+                val day = (q.price - q.prevClose) * h.shares
+                Text(
+                    "今日 " + mask(if (showTwd) Fmt.signed(day * fx) else Fmt.signed(day, 2, "$")) + "（" + Fmt.signedPct(q.changePct) + "）",
+                    color = Trend.fg(day), fontSize = 11.sp, maxLines = 1,
+                )
+            }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
             NumText(mask(mvText), 14.sp)
