@@ -1,6 +1,11 @@
 package com.claudeetf.app.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -104,17 +109,24 @@ fun StockChart(
     market: com.claudeetf.app.data.Market? = null,
 ) {
     val n = h.closes.size
-    val from = start.coerceIn(0, maxOf(0, n - 2))
-    val count = n - from
-    val span = maxOf(count, slots)
-    var sel by remember(h, from) { mutableStateOf<Int?>(null) }
+    val baseFrom = start.coerceIn(0, maxOf(0, n - 2))
+    val count = n - baseFrom
+    // 雙指縮放：zCount = 可見 K 棒數，zStart = 可見起點（浮點，讓縮放平順）
+    val zoomable = !intraday && count > 20
+    var zCount by remember(h, baseFrom) { mutableStateOf(count.toFloat()) }
+    var zStart by remember(h, baseFrom) { mutableStateOf(baseFrom.toFloat()) }
+    val zoomed = zoomable && zCount < count - 0.5f
+    val from = if (zoomed) zStart.toInt().coerceIn(baseFrom, maxOf(baseFrom, n - 2)) else baseFrom
+    val end = if (zoomed) minOf(n, from + kotlin.math.ceil(zCount).toInt()).coerceAtLeast(minOf(n, from + 2)) else n
+    val span = if (zoomed) end - from else maxOf(count, slots)
+    var sel by remember(h, baseFrom) { mutableStateOf<Int?>(null) }
 
     val maLines = remember(h, mas) { mas.associateWith { Indicators.sma(h.closes, it) } }
     val kd = remember(h, sub) { if (sub == SubChart.KD) Indicators.kd(h.highs, h.lows, h.closes) else null }
     val rsi = remember(h, sub) { if (sub == SubChart.RSI) Indicators.rsi(h.closes) else null }
     val macd = remember(h, sub) { if (sub == SubChart.MACD) Indicators.macd(h.closes) else null }
 
-    val first = h.closes[from]
+    val first = h.closes[baseFrom]
     val last = h.closes.last()
     val ref = basePrice ?: first
     val upColor = Trend.fg(1.0)
@@ -137,7 +149,7 @@ fun StockChart(
     }
 
     // ---- 讀值列 ----
-    val i = sel ?: (n - 1)
+    val i = sel ?: (end - 1)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Label(date(i) + if (sel == null) "（最新）" else "", Modifier.weight(1f))
@@ -175,26 +187,52 @@ fun StockChart(
         }
 
         // ---- 主圖 ----
-        val gesture = Modifier
-            .pointerInput(h, from) {
-                detectDragGestures(
-                    onDragStart = { o -> sel = indexAt(o.x, size.width.toFloat(), from, span).coerceAtMost(n - 1) },
-                    onDragEnd = { sel = null },
-                    onDragCancel = { sel = null },
-                    onDrag = { change, _ -> sel = indexAt(change.position.x, size.width.toFloat(), from, span).coerceAtMost(n - 1) },
-                )
+        // 單指：按住拖曳看數值、點一下鎖定；雙指：縮放與左右平移（K 線、日線以上）
+        val view by rememberUpdatedState(Triple(from, end, span))
+        val gesture = Modifier.pointerInput(h, baseFrom) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val slop = viewConfiguration.touchSlop
+                var multi = false
+                var dragging = false
+                fun idx(px: Float): Int {
+                    val (f, e, sp) = view
+                    return indexAt(px, size.width.toFloat(), f, sp).coerceAtMost(e - 1)
+                }
+                while (true) {
+                    val ev = awaitPointerEvent()
+                    val pressed = ev.changes.filter { it.pressed }
+                    if (pressed.isEmpty()) break
+                    if (pressed.size >= 2 && zoomable) {
+                        multi = true; sel = null
+                        val zoom = ev.calculateZoom()
+                        val pan = ev.calculatePan()
+                        val c = ev.calculateCentroid(useCurrent = true)
+                        val wpx = size.width.toFloat().coerceAtLeast(1f)
+                        val total = count.toFloat()
+                        val old = zCount
+                        val nc = (old / zoom).coerceIn(minOf(15f, total), total)
+                        val frac = (c.x / wpx).coerceIn(0f, 1f)
+                        val anchor = zStart + frac * old
+                        val ns = anchor - frac * nc - pan.x / wpx * nc
+                        zCount = nc
+                        zStart = ns.coerceIn(baseFrom.toFloat(), maxOf(baseFrom.toFloat(), n - nc))
+                        ev.changes.forEach { it.consume() }
+                    } else if (!multi) {
+                        val p = pressed[0]
+                        if (!dragging && (p.position - down.position).getDistance() > slop) dragging = true
+                        if (dragging) { sel = idx(p.position.x); p.consume() }
+                    }
+                }
+                if (!multi && !dragging) { val k = idx(down.position.x); sel = if (sel == k) null else k }
+                else if (dragging) sel = null
             }
-            .pointerInput(h, from) {
-                detectTapGestures(onTap = { o ->
-                    val idx = indexAt(o.x, size.width.toFloat(), from, span).coerceAtMost(n - 1)
-                    sel = if (sel == idx) null else idx
-                })
-            }
+        }
 
         Canvas(Modifier.fillMaxWidth().height(190.dp).then(gesture)) {
             var hi = -Float.MAX_VALUE
             var lo = Float.MAX_VALUE
-            for (k in from until n) {
+            for (k in from until end) {
                 val top = if (type == ChartType.CANDLE) h.highs.getOrElse(k) { h.closes[k] } else h.closes[k]
                 val bot = if (type == ChartType.CANDLE) h.lows.getOrElse(k) { h.closes[k] } else h.closes[k]
                 if (top > hi) hi = top
@@ -223,7 +261,7 @@ fun StockChart(
 
             if (type == ChartType.CANDLE && h.opens.size == n) {
                 val bw = (step * 0.7f).coerceAtLeast(1f)
-                for (k in from until n) {
+                for (k in from until end) {
                     val o = h.opens[k]; val c = h.closes[k]
                     val col = if (c >= o) upColor else downColor
                     drawLine(col, Offset(x(k), y(h.highs[k])), Offset(x(k), y(h.lows[k])), maxOf(1f, bw / 6))
@@ -232,15 +270,15 @@ fun StockChart(
                 }
             } else {
                 val path = Path()
-                for (k in from until n) { if (k == from) path.moveTo(x(k), y(h.closes[k])) else path.lineTo(x(k), y(h.closes[k])) }
-                val area = Path().apply { addPath(path); lineTo(x(n - 1), ht); lineTo(x(from), ht); close() }
+                for (k in from until end) { if (k == from) path.moveTo(x(k), y(h.closes[k])) else path.lineTo(x(k), y(h.closes[k])) }
+                val area = Path().apply { addPath(path); lineTo(x(end - 1), ht); lineTo(x(from), ht); close() }
                 drawPath(area, lineColor.copy(alpha = 0.12f))
                 drawPath(path, lineColor, style = Stroke(width = 2.dp.toPx()))
             }
-            maLines.forEach { (m, l) -> drawSeries(l, from, n, ::x, ::y, MA_COLORS[m] ?: C.Muted) }
+            maLines.forEach { (m, l) -> drawSeries(l, from, end, ::x, ::y, MA_COLORS[m] ?: C.Muted) }
             // 我的買賣點：買進「B」在成交價下方、賣出「S」在成交價上方
             markAt.forEach { (k, ms) ->
-                if (k < from) return@forEach
+                if (k < from || k >= end) return@forEach
                 ms.forEach { m ->
                     val col = if (m.buy) MARK_BUY else MARK_SELL
                     val cy = y(m.price.coerceIn(lo, hi))
@@ -284,8 +322,8 @@ fun StockChart(
             // 右側：各關價
             levels.forEach { l -> text(l.label + " " + fmt(l.value), w - 2, ty(l.value), l.color, true) }
             // 最新價標籤（接在曲線最後一點）
-            val lp = h.closes[n - 1]
-            text(fmt(lp), (x(n - 1) + 6).coerceAtMost(w - 60), (y(lp) + th / 2).coerceIn(th, ht - 3), lineColor, false)
+            val lp = h.closes[end - 1]
+            text(fmt(lp), (x(end - 1) + 6).coerceAtMost(w - 60), (y(lp) + th / 2).coerceIn(th, ht - 3), lineColor, false)
         }
 
         // ---- 副圖 ----
@@ -309,9 +347,9 @@ fun StockChart(
                 when (sub) {
                     SubChart.VOLUME -> {
                         if (h.volumes.size == n) {
-                            val mx = (from until n).maxOfOrNull { h.volumes[it] }?.takeIf { it > 0 } ?: 1f
+                            val mx = (from until end).maxOfOrNull { h.volumes[it] }?.takeIf { it > 0 } ?: 1f
                             val bw = (step * 0.7f).coerceAtLeast(1f)
-                            for (k in from until n) {
+                            for (k in from until end) {
                                 val up = if (k > 0) h.closes[k] >= h.closes[k - 1] else true
                                 val bh = h.volumes[k] / mx * ht
                                 drawRect((if (up) upColor else downColor).copy(alpha = 0.7f), Offset(x(k) - bw / 2, ht - bh), Size(bw, bh))
@@ -324,25 +362,25 @@ fun StockChart(
                             drawLine(C.Line, Offset(0f, y(lv)), Offset(w, y(lv)), 1f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f)))
                         }
                         if (sub == SubChart.KD && kd != null) {
-                            drawSeries(kd.first, from, n, ::x, ::y, Color(0xFFF2B544))
-                            drawSeries(kd.second, from, n, ::x, ::y, Color(0xFF6EA8FF))
+                            drawSeries(kd.first, from, end, ::x, ::y, Color(0xFFF2B544))
+                            drawSeries(kd.second, from, end, ::x, ::y, Color(0xFF6EA8FF))
                         }
-                        if (sub == SubChart.RSI && rsi != null) drawSeries(rsi, from, n, ::x, ::y, Color(0xFFB9A6FF))
+                        if (sub == SubChart.RSI && rsi != null) drawSeries(rsi, from, end, ::x, ::y, Color(0xFFB9A6FF))
                     }
                     SubChart.MACD -> if (macd != null) {
                         var mx = 0.0001f
-                        for (k in from until n) mx = maxOf(mx, kotlin.math.abs(macd.dif[k]), kotlin.math.abs(macd.dea[k]), kotlin.math.abs(macd.hist[k]))
+                        for (k in from until end) mx = maxOf(mx, kotlin.math.abs(macd.dif[k]), kotlin.math.abs(macd.dea[k]), kotlin.math.abs(macd.hist[k]))
                         fun y(v: Float) = ht / 2 - v / mx * (ht / 2) * 0.95f
                         drawLine(C.Gray, Offset(0f, ht / 2), Offset(w, ht / 2), 1f)
                         val bw = (step * 0.6f).coerceAtLeast(1f)
-                        for (k in from until n) {
+                        for (k in from until end) {
                             val v = macd.hist[k]
                             val col = if (v >= 0) upColor else downColor
                             val top = minOf(y(v), ht / 2); val bot = maxOf(y(v), ht / 2)
                             drawRect(col.copy(alpha = 0.7f), Offset(x(k) - bw / 2, top), Size(bw, maxOf(1f, bot - top)))
                         }
-                        drawSeries(macd.dif, from, n, ::x, ::y, Color(0xFFF2B544))
-                        drawSeries(macd.dea, from, n, ::x, ::y, Color(0xFF6EA8FF))
+                        drawSeries(macd.dif, from, end, ::x, ::y, Color(0xFFF2B544))
+                        drawSeries(macd.dea, from, end, ::x, ::y, Color(0xFF6EA8FF))
                     }
                     SubChart.NONE -> {}
                 }
@@ -351,8 +389,10 @@ fun StockChart(
         }
         Row {
             Label(date(from), Modifier.weight(1f))
-            Label("按住拖曳查看數值")
-            Label(date(n - 1), Modifier.weight(1f).wrapContentWidth(Alignment.End))
+            if (zoomed) Text("重設縮放", color = C.Primary, fontSize = 12.sp,
+                modifier = Modifier.clickable { zCount = count.toFloat(); zStart = baseFrom.toFloat() }.padding(horizontal = 6.dp))
+            else Label(if (zoomable) "雙指縮放・拖曳看數值" else "按住拖曳查看數值")
+            Label(date(end - 1), Modifier.weight(1f).wrapContentWidth(Alignment.End))
         }
     }
 }

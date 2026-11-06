@@ -169,6 +169,7 @@ fun PortfolioScreen(nav: NavController) {
                     }
                 }
             }
+            item { EtfDividendCard { nav.navigate(Routes.stock(it)) } }
             if (accChoices.size > 2) {
                 item {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

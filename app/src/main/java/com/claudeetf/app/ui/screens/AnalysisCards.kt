@@ -8,6 +8,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -242,40 +248,125 @@ fun PriceBandCard(q0: Quote) {
                 }
             }
         }
-        BandChart(r, Modifier.fillMaxWidth().height(200.dp).padding(top = 10.dp))
+        BandChart(r, q.market, Modifier.fillMaxWidth().padding(top = 10.dp))
         Label("依所選期間收盤價做線性迴歸（趨勢價），以 ±1σ、±2σ 劃分區間；只代表相對過去趨勢的高低，非基本面估值。", Modifier.padding(top = 4.dp))
     }
 }
 
 @Composable
-private fun BandChart(r: com.claudeetf.app.data.PriceBand.Result, modifier: Modifier) {
-    val line = C.Text
-    androidx.compose.foundation.Canvas(modifier) {
-        val n = r.closes.size
-        if (n < 2) return@Canvas
-        val lo = minOf(r.closes.min(), r.trendAt(0) - 2.5 * r.sigma, r.trendAt(n - 1) - 2.5 * r.sigma)
-        val hi = maxOf(r.closes.max(), r.trendAt(0) + 2.5 * r.sigma, r.trendAt(n - 1) + 2.5 * r.sigma)
-        val w = size.width; val h = size.height
-        fun x(i: Int) = i * w / (n - 1)
-        fun y(v: Double) = (h - (v - lo) / (hi - lo) * h).toFloat()
-        // 六段色帶（以 ±3σ 為最外緣）
-        val edges = listOf(-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0)
-        for (z in 0..5) {
-            val path = androidx.compose.ui.graphics.Path()
-            path.moveTo(0f, y(r.trendAt(0) + edges[z] * r.sigma))
-            path.lineTo(w, y(r.trendAt(n - 1) + edges[z] * r.sigma))
-            path.lineTo(w, y(r.trendAt(n - 1) + edges[z + 1] * r.sigma))
-            path.lineTo(0f, y(r.trendAt(0) + edges[z + 1] * r.sigma))
-            path.close()
-            drawPath(path, zoneColor(z).copy(alpha = 0.28f))
+private fun BandChart(r: com.claudeetf.app.data.PriceBand.Result, market: Market, modifier: Modifier) {
+    val n = r.closes.size
+    if (n < 2) return
+    var sel by remember(r) { mutableStateOf<Int?>(null) }
+    val i = (sel ?: (n - 1)).coerceIn(0, n - 1)
+    val ks = listOf(-2.0, -1.0, 0.0, 1.0, 2.0)
+    val tI = r.trendAt(i)
+    val cI = if (i == n - 1) r.price else r.closes[i]
+    val zI = if (r.sigma > 0) (cI - tI) / r.sigma else 0.0
+    val zoneI = ks.indexOfFirst { cI < tI + it * r.sigma }.let { if (it < 0) 5 else it }
+    val zone = java.time.ZoneId.of(if (market == Market.TW) "Asia/Taipei" else "America/New_York")
+    val dateText = r.times.getOrNull(i)?.let { java.time.Instant.ofEpochMilli(it).atZone(zone).format(DateTimeFormatter.ofPattern("yyyy/MM/dd")) } ?: ""
+    Column(modifier) {
+        // 讀值列：日期、收盤、趨勢價、偏離與區間
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Label(dateText + if (sel == null) "（最新）" else "", Modifier.weight(1f))
+            NumText("收 " + Fmt.price(cI), 12.sp, C.Text)
+            Spacer(Modifier.width(8.dp))
+            Text(com.claudeetf.app.data.PriceBand.zoneNames[zoneI], color = zoneColor(zoneI), fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
-        // 趨勢線
-        drawLine(Color(0xFF9575CD), androidx.compose.ui.geometry.Offset(0f, y(r.trendAt(0))), androidx.compose.ui.geometry.Offset(w, y(r.trendAt(n - 1))), 2f)
-        // 股價
-        val p = androidx.compose.ui.graphics.Path()
-        r.closes.forEachIndexed { i, v -> if (i == 0) p.moveTo(x(i), y(v)) else p.lineTo(x(i), y(v)) }
-        drawPath(p, line, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f))
-        drawCircle(zoneColor(r.zone), 6f, androidx.compose.ui.geometry.Offset(w, y(r.price)))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            NumText("趨勢 " + Fmt.price(tI), 11.sp, Color(0xFF9575CD))
+            NumText("偏離 " + (if (zI >= 0) "+" else "") + Fmt.num(zI, 2) + "σ", 11.sp, zoneColor(zoneI))
+            NumText("σ " + Fmt.price(r.sigma), 11.sp, C.Muted)
+        }
+        val line = C.Text
+        val muted = C.Muted
+        val bg = C.Bg
+        androidx.compose.foundation.Canvas(
+            Modifier.fillMaxWidth().height(210.dp).padding(top = 4.dp)
+                .pointerInput(r) {
+                    detectDragGestures(
+                        onDragStart = { o -> sel = ((o.x / (size.width - 56.dp.toPx())) * (n - 1)).toInt().coerceIn(0, n - 1) },
+                        onDragEnd = { sel = null }, onDragCancel = { sel = null },
+                        onDrag = { c, _ -> sel = ((c.position.x / (size.width - 56.dp.toPx())) * (n - 1)).toInt().coerceIn(0, n - 1) },
+                    )
+                }
+                .pointerInput(r) {
+                    detectTapGestures { o ->
+                        val k = ((o.x / (size.width - 56.dp.toPx())) * (n - 1)).toInt().coerceIn(0, n - 1)
+                        sel = if (sel == k) null else k
+                    }
+                },
+        ) {
+            val lo = minOf(r.closes.min(), r.trendAt(0) - 2.5 * r.sigma, r.trendAt(n - 1) - 2.5 * r.sigma)
+            val hi = maxOf(r.closes.max(), r.trendAt(0) + 2.5 * r.sigma, r.trendAt(n - 1) + 2.5 * r.sigma)
+            val labelW = 56.dp.toPx()
+            val w = size.width - labelW
+            val h = size.height
+            fun x(k: Int) = k * w / (n - 1)
+            fun y(v: Double) = (h - (v - lo) / (hi - lo) * h).toFloat()
+            val O = { a: Float, b: Float -> androidx.compose.ui.geometry.Offset(a, b) }
+            // 六段色帶（以 ±3σ 為最外緣）
+            val edges = listOf(-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0)
+            clipRect(0f, 0f, w, h) {
+                for (z in 0..5) {
+                    val path = androidx.compose.ui.graphics.Path()
+                    path.moveTo(0f, y(r.trendAt(0) + edges[z] * r.sigma))
+                    path.lineTo(w, y(r.trendAt(n - 1) + edges[z] * r.sigma))
+                    path.lineTo(w, y(r.trendAt(n - 1) + edges[z + 1] * r.sigma))
+                    path.lineTo(0f, y(r.trendAt(0) + edges[z + 1] * r.sigma))
+                    path.close()
+                    drawPath(path, zoneColor(z).copy(alpha = 0.22f))
+                }
+            }
+            // 五條線：±2σ、±1σ 虛線，趨勢線實線
+            val lineCols = listOf(zoneColor(0), zoneColor(1), Color(0xFF9575CD), zoneColor(4), zoneColor(5))
+            ks.forEachIndexed { j, k ->
+                val dash = if (k == 0.0) null else androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
+                drawLine(lineCols[j], O(0f, y(r.trendAt(0) + k * r.sigma)), O(w, y(r.trendAt(n - 1) + k * r.sigma)), if (k == 0.0) 2.5f else 1.5f, pathEffect = dash)
+            }
+            // 股價
+            val p = androidx.compose.ui.graphics.Path()
+            r.closes.forEachIndexed { k, v -> if (k == 0) p.moveTo(x(k), y(v)) else p.lineTo(x(k), y(v)) }
+            drawPath(p, line, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f))
+            drawCircle(zoneColor(r.zone), 6f, O(w, y(r.price)))
+
+            // 右側數值標籤（避免重疊：由上往下排、保持最小間距）
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                textSize = 10.sp.toPx(); typeface = android.graphics.Typeface.MONOSPACE
+            }
+            val nc = drawContext.canvas.nativeCanvas
+            val names = listOf("-2σ", "-1σ", "趨勢", "+1σ", "+2σ")
+            val vals = ks.map { r.trend + it * r.sigma }
+            val gap = paint.textSize + 3
+            val order = (4 downTo 0).toList()  // 由高價（上）到低價（下）
+            val ys = FloatArray(5)
+            var prev = -Float.MAX_VALUE
+            order.forEach { j -> val yy = maxOf(y(vals[j]) + paint.textSize / 3, prev + gap); ys[j] = yy; prev = yy }
+            // 底部超出就整組往上推
+            val over = ys[0] - (h - 2)
+            if (over > 0) for (j in 0..4) ys[j] -= over
+            for (j in 0..4) {
+                paint.color = lineCols[j].toArgb()
+                nc.drawText(names[j] + " " + Fmt.price(vals[j]), w + 4, ys[j], paint)
+            }
+            // 選取：十字線與當點數值
+            sel?.let { s ->
+                val cx = x(s)
+                drawLine(muted, O(cx, 0f), O(cx, h), 1f)
+                val cv = if (s == n - 1) r.price else r.closes[s]
+                drawCircle(line, 4.dp.toPx(), O(cx, y(cv)))
+                val t = Fmt.price(cv)
+                paint.color = bg.copy(alpha = 0.85f).toArgb()
+                val tw = paint.measureText(t)
+                val tx = (cx + 6).coerceAtMost(w - tw - 4)
+                val ty = (y(cv) - 8).coerceIn(paint.textSize, h - 4)
+                nc.drawRect(tx - 2, ty - paint.textSize, tx + tw + 2, ty + 3, paint)
+                paint.color = line.toArgb()
+                nc.drawText(t, tx, ty, paint)
+            }
+        }
+        Label("按住拖曳或點一下查看當日收盤、趨勢價與偏離", Modifier.padding(top = 2.dp))
     }
 }
 
