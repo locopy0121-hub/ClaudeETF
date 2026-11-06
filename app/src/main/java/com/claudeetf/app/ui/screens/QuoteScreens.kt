@@ -43,6 +43,7 @@ import com.claudeetf.app.util.Fmt
 fun WatchlistScreen(nav: NavController) {
     var filter by remember { mutableStateOf("all") } // all / tw / us / etf / g<id>
     var sort by remember { mutableIntStateOf(0) }
+    var heat by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var newGroup by remember { mutableStateOf<String?>(null) }
     var searching by remember { mutableStateOf(false) }
@@ -150,14 +151,27 @@ fun WatchlistScreen(nav: NavController) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Label("排序", Modifier.padding(end = 6.dp))
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        sortNames.forEachIndexed { i, n -> FilterChipText(n, sort == i) { sort = i } }
+                        FilterChipText("熱度圖", heat) { heat = !heat }
+                        sortNames.forEachIndexed { i, n -> FilterChipText(n, sort == i && !heat) { sort = i; heat = false } }
                     }
                 }
             }
         }
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
             if (list.isEmpty()) item { Label(if (group != null) "群組是空的，按「編輯」勾選股票" else "沒有符合的股票", Modifier.padding(vertical = 20.dp)) }
-            items(list, key = { it.symbol }) { q ->
+            if (heat && !editing) {
+                item {
+                    Heatmap(
+                        list.filter { it.price > 0 }.map { q ->
+                            // 自選沒有市值資料，以漲跌幅大小加權，讓變動大的更顯眼
+                            HeatItem(q.symbol, q.symbol, 1.0 + kotlin.math.abs(q.changePct), q.changePct)
+                        },
+                        height = 360.dp,
+                    ) { nav.navigate(Routes.stock(it)) }
+                }
+                item { Label("方塊越大代表今日漲跌幅越大；顏色代表方向", Modifier.padding(top = 6.dp)) }
+            }
+            if (!heat || editing) items(list, key = { it.symbol }) { q ->
                 if (!editing) {
                     QuoteRow(q) { nav.navigate(Routes.stock(q.symbol)) }
                 } else {

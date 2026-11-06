@@ -65,6 +65,7 @@ import kotlin.math.roundToLong
 @Composable
 fun PortfolioScreen(nav: NavController) {
     var inTwd by remember { mutableStateOf(true) }
+    var heat by remember { mutableStateOf(false) }
     var accFilter by remember { mutableIntStateOf(-1) } // -1 = 全部帳戶
     val usedAccounts = AppState.trades.filter { it.origin != TradeOrigin.LEGACY }.map { it.account }.toSet()
     val accChoices = listOf(-1) + AppState.accounts.map { it.id }.filter { it in usedAccounts } +
@@ -147,10 +148,25 @@ fun PortfolioScreen(nav: NavController) {
                     }
                 }
             }
-            item { GroupHeader(Market.TW, tw.size, "NT$" + mask(Fmt.num(tw.sumOf { AppState.marketValueTwd(it) }))) }
-            items(tw, key = { "tw-" + it.symbol }) { h -> HoldingRow(h, true) { nav.navigate(Routes.stock(h.symbol)) } }
-            item { GroupHeader(Market.US, us.size, "US$" + mask(Fmt.num(usUsd, 2))) }
-            items(us, key = { "us-" + it.symbol }) { h -> HoldingRow(h, inTwd) { nav.navigate(Routes.stock(h.symbol)) } }
+            item { Segmented(listOf("清單", "熱度圖"), if (heat) 1 else 0, { heat = it == 1 }) }
+            if (heat) {
+                item {
+                    Heatmap(
+                        hs.map { h ->
+                            val q = AppState.quote(h.symbol)
+                            HeatItem(h.symbol, q?.name?.takeIf { it.length <= 6 } ?: h.symbol, AppState.marketValueTwd(h), q?.changePct ?: 0.0)
+                        },
+                        height = 320.dp,
+                    ) { nav.navigate(Routes.stock(it)) }
+                }
+                item { Label("方塊大小＝持股市值（台幣），顏色＝今日漲跌，點方塊開個股頁") }
+            }
+            if (!heat) item { GroupHeader(Market.TW, tw.size, "NT$" + mask(Fmt.num(tw.sumOf { AppState.marketValueTwd(it) }))) }
+            if (!heat) {
+                items(tw, key = { "tw-" + it.symbol }) { h -> HoldingRow(h, true) { nav.navigate(Routes.stock(h.symbol)) } }
+                item { GroupHeader(Market.US, us.size, "US$" + mask(Fmt.num(usUsd, 2))) }
+                items(us, key = { "us-" + it.symbol }) { h -> HoldingRow(h, inTwd) { nav.navigate(Routes.stock(h.symbol)) } }
+            }
             item {
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card)

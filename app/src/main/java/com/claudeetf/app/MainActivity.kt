@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.background
@@ -139,6 +140,14 @@ fun AppRoot() {
     val current = tabOf(entry?.destination?.route)
     val route = entry?.destination?.route
     val hideBar = route == Routes.WELCOME
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    // 平板或橫向（寬度 ≥ 600dp）改用側邊導覽列，內容最寬 760dp 置中
+    val wide = config.screenWidthDp >= 600
+    fun go(r: String) = nav.navigate(r) {
+        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
 
     Scaffold(
         containerColor = C.Bg,
@@ -152,17 +161,11 @@ fun AppRoot() {
             }
         },
         bottomBar = {
-            if (!hideBar) NavigationBar(containerColor = C.Bg) {
+            if (!hideBar && !wide) NavigationBar(containerColor = C.Bg) {
                 tabs.forEach { t ->
                     NavigationBarItem(
                         selected = current == t.route,
-                        onClick = {
-                            nav.navigate(t.route) {
-                                popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        onClick = { go(t.route) },
                         icon = { Icon(t.icon, contentDescription = null) },
                         label = { Text(t.label, fontSize = 11.sp) },
                         colors = NavigationBarItemDefaults.colors(
@@ -180,7 +183,34 @@ fun AppRoot() {
         androidx.compose.runtime.LaunchedEffect(Unit) {
             if (!AppState.onboarded) nav.navigate(Routes.WELCOME)
         }
-        NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.fillMaxSize().padding(padding)) {
+        androidx.compose.foundation.layout.Row(Modifier.fillMaxSize().padding(padding)) {
+        if (wide && !hideBar) {
+            androidx.compose.material3.NavigationRail(containerColor = C.Bg) {
+                tabs.forEach { t ->
+                    androidx.compose.material3.NavigationRailItem(
+                        selected = current == t.route,
+                        onClick = { go(t.route) },
+                        icon = { Icon(t.icon, contentDescription = null) },
+                        label = { Text(t.label, fontSize = 11.sp) },
+                        colors = androidx.compose.material3.NavigationRailItemDefaults.colors(
+                            selectedIconColor = C.Primary,
+                            selectedTextColor = C.Primary,
+                            indicatorColor = C.Selected,
+                            unselectedIconColor = C.Muted,
+                            unselectedTextColor = C.Muted,
+                        ),
+                    )
+                }
+            }
+        }
+        androidx.compose.foundation.layout.Box(
+            Modifier.weight(1f).fillMaxSize(),
+            contentAlignment = androidx.compose.ui.Alignment.TopCenter,
+        ) {
+        NavHost(
+            nav, startDestination = Routes.HOME,
+            modifier = (if (wide) Modifier.widthIn(max = 760.dp) else Modifier).fillMaxSize(),
+        ) {
             composable(Routes.WELCOME) { com.claudeetf.app.ui.screens.WelcomeScreen(nav) }
             composable(Routes.SEARCH) { com.claudeetf.app.ui.screens.SearchScreen(nav) }
             composable(Routes.ERRORS) { com.claudeetf.app.ui.screens.ErrorLogScreen(nav) }
@@ -216,6 +246,8 @@ fun AppRoot() {
             ) { AlertsScreen(nav, it.arguments?.getString("s") ?: "") }
             composable(Routes.REPORT) { com.claudeetf.app.ui.screens.ReportScreen(nav) }
             composable(Routes.SETTINGS) { SettingsScreen(nav) }
+        }
+        }
         }
     }
 }
