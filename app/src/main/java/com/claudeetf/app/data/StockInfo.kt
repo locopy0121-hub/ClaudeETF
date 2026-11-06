@@ -264,6 +264,33 @@ object StockInfoRepo {
         else Chips.Us(YahooExtra.ownership(q.symbol))
     }
 
+    // ---------------- 同業 ----------------
+
+    data class Peer(val symbol: String, val yahoo: String, val name: String, val price: Double, val changePct: Double, val ret1y: Double?)
+
+    private val peerCache = HashMap<String, Pair<Long, List<Peer>>>()
+
+    /** Yahoo 代號轉回 App 代號：2330.TW → 2330 */
+    private fun appSymbol(y: String) = y.removeSuffix(".TWO").removeSuffix(".TW")
+
+    suspend fun peers(q: Quote): List<Peer> = withContext(Dispatchers.IO) {
+        peerCache[q.symbol]?.let { (t, p) -> if (System.currentTimeMillis() - t < TTL) return@withContext p }
+        val list = YahooExtra.peers(yahooSymbol(q)).filter { appSymbol(it) != q.symbol }
+        val out = list.mapNotNull { y ->
+            runCatching {
+                val h = YahooExtra.history(y, "1y")
+                val chart = com.claudeetf.app.data.remote.YahooApi.chart(y).quote
+                Peer(
+                    appSymbol(y), y, chart.name ?: y, chart.price,
+                    if (chart.prevClose > 0) (chart.price - chart.prevClose) / chart.prevClose * 100 else 0.0,
+                    if (h.closes.size > 1) (h.closes.last() / h.closes.first() - 1) * 100.0 else null,
+                )
+            }.getOrNull()
+        }
+        peerCache[q.symbol] = System.currentTimeMillis() to out
+        out
+    }
+
     // ---------------- ETF 成分股 ----------------
 
     suspend fun holdings(q: Quote): YahooExtra.EtfHoldings = withContext(Dispatchers.IO) {

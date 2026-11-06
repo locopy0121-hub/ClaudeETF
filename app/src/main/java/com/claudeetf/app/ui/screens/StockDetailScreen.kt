@@ -115,6 +115,10 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     var trading by remember { mutableStateOf<Load<StockInfoRepo.Trading>>(Load.Loading) }
     var chips by remember { mutableStateOf<Load<StockInfoRepo.Chips>>(Load.Loading) }
     var holdings by remember { mutableStateOf<Load<YahooExtra.EtfHoldings>>(Load.Loading) }
+    var peers by remember { mutableStateOf<Load<List<StockInfoRepo.Peer>>>(Load.Loading) }
+    LaunchedEffect(q.symbol) {
+        peers = runCatching { StockInfoRepo.peers(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+    }
     LaunchedEffect(q.symbol, tab) {
         when (tab) {
             Tab.OVERVIEW -> if (trading !is Load.Ok) {
@@ -169,7 +173,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             item { ChartBlock(history, range, q, chartType, mas, sub) }
             item { Segmented(tabs.map { it.label }, tabIdx, { tabIdx = it }) }
             when (tab) {
-                Tab.OVERVIEW -> { tradingSection(q, trading); overviewTab(q, fund) }
+                Tab.OVERVIEW -> { tradingSection(q, trading); overviewTab(q, fund); peersSection(nav, peers) }
                 Tab.CHIPS -> chipsTab(q, chips)
                 Tab.FIN -> financialsTab(q, fund)
                 Tab.HOLD -> holdingsTab(q, holdings)
@@ -828,4 +832,29 @@ private fun MarksCard(q: Quote) {
             Label("達到目標價或跌破停損價時會推播通知（提醒中心可管理）。")
         }
     }
+}
+
+private fun LazyListScope.peersSection(nav: NavController, peers: Load<List<StockInfoRepo.Peer>>) {
+    val list = (peers as? Load.Ok<List<StockInfoRepo.Peer>>)?.value ?: return
+    if (list.isEmpty()) return
+    item { SectionTitle("相似股票", "今日 · 近一年") }
+    items(list, key = { "peer-" + it.yahoo }) { p ->
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable {
+                if (!AppState.isWatched(p.symbol)) AppState.addWatch(p.symbol, p.name)
+                nav.navigate(Routes.stock(p.symbol))
+            }.padding(vertical = 8.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(p.name, color = C.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                NumText(p.symbol + " · " + Fmt.price(p.price), 11.sp, C.Muted)
+            }
+            ChangePill(p.changePct)
+            HGap(8.dp)
+            NumText(p.ret1y?.let { Fmt.pct(it, 1) } ?: "—", 12.sp, Trend.fg(p.ret1y ?: 0.0),
+                modifier = Modifier.width(64.dp).wrapContentWidth(Alignment.End))
+        }
+    }
+    item { Label("由 Yahoo Finance 依相關性推薦，點擊加入自選並開啟", Modifier.padding(top = 4.dp)) }
 }

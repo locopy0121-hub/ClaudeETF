@@ -116,6 +116,7 @@ private val features = listOf(
     Feature("新增交易", "記帳 買進 賣出 股息 拆股", Routes.trade()),
     Feature("交易紀錄", "歷史 明細 編輯 刪除", Routes.TRADES),
     Feature("股息與稅務", "配息 二代健保 預扣", Routes.DIVIDEND),
+    Feature("交易成本分析", "手續費 交易稅 證交稅 折扣 成本", Routes.COST),
     Feature("年度報表", "報稅 綜所稅 海外所得 最低稅負 已實現", Routes.REPORT),
     Feature("績效分析", "報酬 XIRR 回測 0050 SPY 回撤", Routes.ANALYSIS),
     Feature("定期定額", "定額 扣款 DCA", Routes.DCA),

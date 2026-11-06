@@ -121,6 +121,17 @@ object YahooExtra {
 
     /** 回傳 quoteSummary.result[0]，內含各 module 的 JSONObject */
     fun summary(symbol: String, modules: List<String>): JSONObject {
+        val base = "$Q2/v10/finance/quoteSummary/${enc(symbol)}?modules=${modules.joinToString(",")}"
+        return try {
+            summaryOnline(symbol, modules)
+        } catch (e: java.io.IOException) {
+            if (e is HttpException) throw e
+            val body = Http.cached(base) ?: throw e
+            JSONObject(body).getJSONObject("quoteSummary").optJSONArray("result")?.optJSONObject(0) ?: throw e
+        }
+    }
+
+    private fun summaryOnline(symbol: String, modules: List<String>): JSONObject {
         for (attempt in 0..1) {
             ensureCrumb(force = attempt == 1)
             val url = "$Q2/v10/finance/quoteSummary/${enc(symbol)}?modules=${modules.joinToString(",")}&crumb=${enc(crumb ?: "")}"
@@ -236,6 +247,16 @@ object YahooExtra {
             }
         }
         return Ownership(breakdown, top)
+    }
+
+    // ---------------- 同業（相似股票） ----------------
+
+    /** Yahoo 依瀏覽行為推薦的相似股票代號 */
+    fun peers(symbol: String, count: Int = 6): List<String> {
+        val body = Http.get("$Q2/v6/finance/recommendationsbysymbol/${enc(symbol)}", mapOf("User-Agent" to UA))
+        val arr = JSONObject(body).optJSONObject("finance")?.optJSONArray("result")?.optJSONObject(0)
+            ?.optJSONArray("recommendedSymbols") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("symbol")?.ifBlank { null } }.take(count)
     }
 
     // ---------------- 新聞 ----------------

@@ -110,6 +110,7 @@ object AppState {
 
     fun init(context: Context) {
         if (prefs != null) return
+        com.claudeetf.app.data.remote.Http.cacheDir = java.io.File(context.applicationContext.cacheDir, "http")
         val p = context.getSharedPreferences("claudeetf", Context.MODE_PRIVATE)
         prefs = p
         colorMode = runCatching { ColorMode.valueOf(p.getString("colorMode", "TW") ?: "TW") }

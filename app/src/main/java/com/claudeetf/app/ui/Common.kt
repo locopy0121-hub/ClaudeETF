@@ -47,6 +47,7 @@ object Routes {
     const val PNL = "pnl"
     const val WELCOME = "welcome"
     const val REPORT = "report"
+    const val COST = "cost"
 
     fun alerts(symbol: String = "") = "$ALERTS?s=$symbol"
     const val SEARCH = "search"

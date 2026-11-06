@@ -151,6 +151,10 @@ fun ReportScreen(nav: NavController) {
             }
             msg?.let { t -> item { Label(t, color = C.Primary) } }
             item {
+                Text("交易成本分析（手續費、交易稅、節省建議） ›", color = C.Primary, fontSize = 13.sp,
+                    modifier = Modifier.clickable { nav.navigate(Routes.COST) }.padding(vertical = 4.dp))
+            }
+            item {
                 Card(padding = 14.dp) {
                     Text("已實現損益", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     KeyValue("台股（證所稅停徵）", m(r.realizedTw), Trend.fg(r.realizedTw))
