@@ -98,6 +98,12 @@ object RssNews {
 
     /** HTML／實體字元 → 純文字 */
     fun plain(html: String): String {
+        val once = plainOnce(html)
+        // Google 新聞等來源的摘要是「跳脫過兩次」的 HTML：解一次後還有標籤就再解一次
+        return if (once.contains("</") || once.contains("<a ") || once.contains("&nbsp;") || once.contains("&amp;")) plainOnce(once) else once
+    }
+
+    private fun plainOnce(html: String): String {
         val noScript = html.replace(Regex("<(script|style)[^>]*>.*?</\\1>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), "")
         @Suppress("DEPRECATION")
         val t = if (android.os.Build.VERSION.SDK_INT >= 24) android.text.Html.fromHtml(noScript, android.text.Html.FROM_HTML_MODE_LEGACY).toString()
@@ -121,7 +127,8 @@ object RssNews {
             val src = tag(item, "source")?.let { plain(it) }?.ifBlank { null } ?: defaultSource
             val desc = (tag(item, "content:encoded") ?: tag(item, "description"))?.let { plain(it) }.orEmpty()
             // Google 新聞的摘要就是標題本身，不重複顯示
-            val summary = desc.takeIf { it.isNotBlank() && !it.startsWith(title.take(12)) }.orEmpty()
+            val core = title.removeSuffix(" - $src").take(12)
+            val summary = desc.removeSuffix(src).trim().takeIf { it.isNotBlank() && !it.contains(core) && it.length > 12 }.orEmpty()
             YahooExtra.News(title.removeSuffix(" - $src"), src, link, time(tag(item, "pubDate")), summary)
         }.toList()
 
@@ -156,7 +163,14 @@ object RssNews {
     /** 文章內文段落（純文字）；需在 IO 執行緒呼叫 */
     fun article(link: String): List<String> {
         articleCache[link]?.let { return it }
-        val html = Http.get(link, mapOf("User-Agent" to UA, "Accept" to "text/html"), timeoutMs = 20_000)
+        var html = Http.get(link, mapOf("User-Agent" to UA, "Accept" to "text/html"), timeoutMs = 20_000)
+        // Google 新聞連結是轉址頁：找出原始文章網址再抓
+        if (link.contains("news.google.com")) {
+            val real = Regex("data-n-au=\"(https?://[^\"]+)\"").find(html)?.groupValues?.get(1)
+                ?: Regex("<a[^>]+href=\"(https?://(?!news\\.google|www\\.google|support\\.google|accounts\\.google|[a-z0-9.]*gstatic|policies\\.google|play\\.google)[^\"]+)\"").find(html)?.groupValues?.get(1)
+                ?: throw IllegalStateException("Google 新聞只提供標題連結，無法取得原文；可在 我的 › 新聞來源 改勾其他媒體")
+            html = Http.get(plainOnce(real), mapOf("User-Agent" to UA, "Accept" to "text/html"), timeoutMs = 20_000)
+        }
         // Yahoo 文章本文在 caas-body；其他網站取 <article> 或整頁
         // 本文可能含圖片等巢狀 div，不用 </div> 截斷：從 caas-body 開始一路取到文章結尾標記
         val body = html.indexOf("caas-body").takeIf { it >= 0 }?.let { start ->
