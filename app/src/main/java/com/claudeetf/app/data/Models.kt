@@ -126,7 +126,17 @@ data class IndexQuote(
     val changePct: Double,
     val symbol: String = "",
     val updatedAt: Long = 0L,
-)
+    /** 昨收；0 表示未知，改由漲跌幅反推 */
+    val prev: Double = 0.0,
+) {
+    /** 漲跌點數 */
+    val change: Double
+        get() = when {
+            prev > 0 -> value - prev
+            changePct > -100.0 -> value - value / (1 + changePct / 100)
+            else -> 0.0
+        }
+}
 
 data class SectorMove(val name: String, val changePct: Double)
 

@@ -46,6 +46,22 @@ object FutStream {
     var status by mutableStateOf("")
     var live by mutableStateOf(false)
 
+    /** 富果回覆方案不支援期貨後設為 true，自動模式改用期交所 */
+    var fugleUnsupported by mutableStateOf(false)
+    /** 目前卡片資料來自期交所日行情 */
+    var fromTaifex by mutableStateOf(false)
+
+    /** 依「我的 › 行情資料來源 › 期貨」決定實際來源：fugle、taifex 或 off */
+    fun effectiveSource(): String = when (com.claudeetf.app.data.AppState.futSource) {
+        "fugle" -> "fugle"
+        "taifex" -> "taifex"
+        "off" -> "off"
+        else -> if (com.claudeetf.app.data.AppState.fugleKey.isNotBlank() && !fugleUnsupported) "fugle" else "taifex"
+    }
+
+    private fun isPlanError(msg: String?) = msg != null &&
+        (msg.contains("not support", true) || msg.contains("plan", true) || msg.contains("HTTP 403"))
+
     @Volatile private var ws: WebSocket? = null
     @Volatile private var users = 0
     private var retry = 0
@@ -90,7 +106,12 @@ object FutStream {
         val sym = nearMonth()
         val after = session() == "AFTERHOURS"
         val q = "?session=" + if (after) "afterhours" else "regular"
-        val body = Http.get("$BASE/intraday/quote/$sym" + (if (after) q else ""), mapOf("X-API-KEY" to key))
+        val body = try {
+            Http.get("$BASE/intraday/quote/$sym" + (if (after) q else ""), mapOf("X-API-KEY" to key))
+        } catch (e: Exception) {
+            if (isPlanError(e.message)) main.post { fugleUnsupported = true }
+            throw e
+        }
         val fq = parse(JSONObject(body), sym, after)
         val cb = runCatching { Http.get("$BASE/intraday/candles/$sym?timeframe=5" + (if (after) "&session=afterhours" else ""), mapOf("X-API-KEY" to key)) }.getOrNull()
         val closes = cb?.let { b ->
@@ -98,6 +119,7 @@ object FutStream {
             (0 until (arr?.length() ?: 0)).mapNotNull { i -> arr?.optJSONObject(i)?.optDouble("close", Double.NaN)?.takeIf { !it.isNaN() }?.toFloat() }
         } ?: emptyList()
         main.post {
+            fromTaifex = false
             if (fq != null) quote = fq
             if (closes.size >= 2) spark = closes
             status = if (fq != null) "富果期貨 $sym" else "查無 $sym 報價"
@@ -135,7 +157,14 @@ object FutStream {
                     }
                     "error" -> {
                         val msg = o.optJSONObject("data")?.optString("message") ?: "錯誤"
-                        main.post { live = false; status = "富果期貨：$msg" }
+                        main.post {
+                            live = false
+                            if (isPlanError(msg)) {
+                                fugleUnsupported = true
+                                status = "富果方案不支援期貨" + if (com.claudeetf.app.data.AppState.futSource == "auto") "，改用期交所資料" else "（可到 我的 › 行情資料來源 改用期交所）"
+                                users = 0; ws?.close(1000, "unsupported"); ws = null
+                            } else status = "富果期貨：$msg"
+                        }
                     }
                 }
             }
@@ -152,6 +181,55 @@ object FutStream {
         if (users > 0) {
             val delay = minOf(60_000L, 2_000L shl minOf(retry, 5)); retry++
             main.postDelayed({ if (users > 0 && ws == null) { users--; start(key) } }, delay)
+        }
+    }
+
+    /** 富果商品代號 → 期交所契約代號 */
+    private fun taifexCode(p: String) = when (p) { "MXF" -> "MTX"; "EXF" -> "TE"; "FXF" -> "TF"; else -> "TX" }
+
+    private fun field(o: JSONObject, vararg names: String): String? {
+        for (n in names) {
+            val k = o.keys().asSequence().firstOrNull { it.equals(n, true) } ?: continue
+            val v = o.optString(k).trim()
+            if (v.isNotEmpty() && v != "-") return v
+        }
+        return null
+    }
+
+    private fun numOf(s: String?): Double? = s?.replace(",", "")?.replace("+", "")?.trim()?.toDoubleOrNull()
+
+    /**
+     * 期交所 OpenAPI 每日期貨行情（收盤後更新、非即時）：
+     * GET https://openapi.taifex.com.tw/v1/DailyMarketReportFut
+     * 取該契約一般交易時段、近月（非週契約）一筆。需在 IO 執行緒呼叫。
+     */
+    fun taifex() {
+        val product = com.claudeetf.app.data.AppState.futProduct
+        val code = taifexCode(product)
+        val arr = org.json.JSONArray(Http.get("https://openapi.taifex.com.tw/v1/DailyMarketReportFut", timeoutMs = 25_000))
+        val rows = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+            .filter { field(it, "Contract", "ContractCode")?.equals(code, true) == true }
+        if (rows.isEmpty()) throw IllegalStateException("期交所資料查無 $code")
+        fun month(o: JSONObject) = field(o, "ContractMonth(Week)", "ContractMonth", "DeliveryMonth").orEmpty().replace(" ", "")
+        fun regular(o: JSONObject) = field(o, "TradingSession", "Session")?.let { it.contains("一般") || it.equals("Regular", true) || it == "0" } ?: true
+        // 一般盤、月契約（6 碼 yyyyMM），近月＝最小月份
+        val pick = rows.filter { regular(it) && month(it).length == 6 && month(it).all(Char::isDigit) }.minByOrNull { month(it) }
+            ?: rows.filter { regular(it) }.maxByOrNull { numOf(field(it, "Volume")) ?: 0.0 }
+            ?: rows.first()
+        val last = numOf(field(pick, "Last", "Close", "ClosePrice")) ?: numOf(field(pick, "SettlementPrice"))
+            ?: throw IllegalStateException("期交所 $code 尚無成交價")
+        val chg = numOf(field(pick, "Change"))
+        val date = field(pick, "Date").orEmpty()
+        val fq = FutQuote(
+            symbol = code + month(pick), price = last, ref = if (chg != null) last - chg else last,
+            open = numOf(field(pick, "Open")), high = numOf(field(pick, "High")), low = numOf(field(pick, "Low")),
+            volume = numOf(field(pick, "Volume")), time = System.currentTimeMillis(), afterHours = false,
+        )
+        main.post {
+            fromTaifex = true
+            quote = fq
+            spark = emptyList()
+            status = "期交所每日行情" + (if (date.isNotEmpty()) " $date" else "") + "（收盤後更新，非即時）"
         }
     }
 

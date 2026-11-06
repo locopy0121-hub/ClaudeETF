@@ -42,7 +42,25 @@ object MarketData {
         return time >= LocalTime.of(8, 30) && time < LocalTime.of(13, 35)
     }
 
+    /** 交易日 13:30–14:30：已收盤但證交所／櫃買日資料尚未更新成今天 */
+    fun isTwTodayPending(now: ZonedDateTime = ZonedDateTime.now(TPE)): Boolean {
+        val t = now.withZoneSameInstant(TPE)
+        if (t.dayOfWeek == DayOfWeek.SATURDAY || t.dayOfWeek == DayOfWeek.SUNDAY) return false
+        val time = t.toLocalTime()
+        return time >= LocalTime.of(13, 30) && time < LocalTime.of(14, 30)
+    }
+
+    /** 這檔今天已經有即時來源（富果、證交所即時）的價格 */
+    private fun hasTodayLive(symbol: String): Boolean {
+        val q = AppState.quote(symbol) ?: return false
+        if (q.price <= 0 || q.updatedAt <= 0) return false
+        val live = q.source == QuoteSource.FUGLE || q.source == QuoteSource.FUGLE_STREAM || q.source == QuoteSource.TWSE_LIVE
+        val day = java.time.Instant.ofEpochMilli(q.updatedAt).atZone(TPE).toLocalDate()
+        return live && day == ZonedDateTime.now(TPE).toLocalDate()
+    }
+
     fun twSourcePlan(): String = when {
+        isTwTodayPending() -> "已收盤：沿用今日最後成交價，14:30 後改用證交所／櫃買收盤資料"
         !isTwIntraday() -> "證交所／櫃買收盤資料（盤後）"
         !AppState.twUseFugle -> "盤中以證交所即時為主（約每 5 秒）" + if (AppState.fugleKey.isNotBlank()) "，失敗時改用富果" else ""
         AppState.fugleKey.isBlank() -> "尚未填富果金鑰，暫用證交所即時（填入後盤中僅用富果）"
@@ -169,7 +187,12 @@ object MarketData {
         }
 
         // 3) 盤後或即時來源都失敗：收盤資料
+        //    13:30 收盤到證交所發布日資料（約 14:30）之間，OpenAPI 還是前一個交易日的資料，
+        //    直接套用會把今天的最後成交價換成昨天的收盤價（總市值、漲跌都會跳掉），
+        //    所以這段時間只補「今天還沒有即時價」的股票。
+        val closeReady = !isTwTodayPending()
         val rest = symbols.filter { it !in fugle && it !in mis }
+            .filter { closeReady || !hasTodayLive(it) }
         var closeCount = 0
         var closeError: String? = null
         if (rest.isNotEmpty() && (!live || !intraday)) {
@@ -210,7 +233,8 @@ object MarketData {
 
     @Synchronized
     private fun closeData(): Map<String, Pair<RemoteQuote, QuoteSource>> {
-        val key = ZonedDateTime.now(TPE).toLocalDate().toString() + "-" + (ZonedDateTime.now(TPE).hour >= 14)
+        val nowT = ZonedDateTime.now(TPE)
+        val key = nowT.toLocalDate().toString() + "-" + (nowT.toLocalTime() >= LocalTime.of(14, 30))
         if (key == closeCacheKey && closeCache.isNotEmpty()) return closeCache
         val twse = TwseApi.dayAll().mapValues { it.value to QuoteSource.TWSE }
         val tpex = runCatching { TpexApi.dayAll().mapValues { it.value to QuoteSource.TPEX } }.getOrDefault(emptyMap())

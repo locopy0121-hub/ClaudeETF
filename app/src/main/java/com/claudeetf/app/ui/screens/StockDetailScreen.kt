@@ -405,6 +405,34 @@ private fun LazyListScope.infoGrid(items: List<InfoItem>) {
     }
 }
 
+/** 基本資料最上方：目前行情價（跟著串流更新） */
+@Composable
+private fun LiveInfo(q0: Quote) {
+    val q = AppState.quote(q0.symbol) ?: q0
+    val ds = AppState.dayStats[q.symbol]
+    val ccy = if (q.market == Market.US) "$" else ""
+    val items = listOfNotNull(
+        InfoItem("現價", if (q.price > 0) ccy + Fmt.price(q.price) else "—"),
+        InfoItem("漲跌", if (q.price > 0 && q.prevClose > 0) Fmt.signed(q.change, 2) + "（" + Fmt.pct(q.changePct) + "）" else "—"),
+        ds?.high?.let { InfoItem("最高", ccy + Fmt.price(it)) },
+        ds?.low?.let { InfoItem("最低", ccy + Fmt.price(it)) },
+        ds?.volume?.let { InfoItem("成交量", volumeText(it, q.market)) },
+        if (q.prevClose > 0) InfoItem("昨收（參考價）", ccy + Fmt.price(q.prevClose)) else null,
+    )
+    Column {
+        items.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                row.forEach {
+                    val color = if (it.label == "現價" || it.label == "漲跌") Trend.fg(q.change) else C.Text
+                    KeyValue(it.label, it.value, color, modifier = Modifier.weight(1f))
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+        Label(sourceText(q.source, q.updatedAt), Modifier.padding(bottom = 4.dp))
+    }
+}
+
 private fun LazyListScope.infoList(items: List<InfoItem>) {
     items(items) { KeyValue(it.label, it.value) }
 }
@@ -438,7 +466,12 @@ private fun LazyListScope.overviewTab(q: Quote, fund: Load<Fundamentals>) {
         is Load.Err -> showError(fund.message)
         is Load.Ok -> {
             val f = fund.value
-            if (f.overview.isEmpty()) item { Label("暫無概覽資料") } else infoGrid(f.overview)
+            // 現價、漲跌、高低與量來自目前行情（富果串流／證交所即時），其餘才用 Yahoo 概覽
+            item { LiveInfo(q) }
+            val liveLabels = setOf("最高", "最低", "成交量").filter { AppState.dayStats[q.symbol] != null }.toSet() +
+                (if (q.prevClose > 0) setOf("昨收") else emptySet())
+            val rest = f.overview.filter { it.label !in liveLabels }
+            if (rest.isEmpty()) item { Label("暫無概覽資料") } else infoGrid(rest)
             if (f.analyst.isNotEmpty()) {
                 item { SectionTitle("分析師") }
                 infoGrid(f.analyst)

@@ -183,16 +183,62 @@ fun IndexBigCard(nav: NavController, symbol: String) {
             kotlinx.coroutines.delay(if (MarketData.anyMarketLive()) 60_000 else 30 * 60_000L)
         }
     }
+    var opts by remember { mutableStateOf(false) }
     Card(Modifier.clickable { nav.navigate(Routes.index(symbol)) }) {
-        CardTitle(ix?.name ?: symbol, "走勢 ›")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(ix?.name ?: symbol, Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(if (opts) "完成" else "顯示設定", color = C.Primary, fontSize = 12.sp,
+                modifier = Modifier.clickable { opts = !opts }.padding(horizontal = 8.dp, vertical = 4.dp))
+            Label("走勢 ›")
+        }
+        if (opts) IndexCardOptions(symbol)
         Row(verticalAlignment = Alignment.Bottom) {
             NumText(ix?.let { Fmt.num(it.value, 2) } ?: "—", 24.sp, Trend.fg(ix?.changePct ?: 0.0), weight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            ix?.let { ChangePill(it.changePct) }
+            ix?.let {
+                Column(horizontalAlignment = Alignment.End) {
+                    if (AppState.indexShowPoints) NumText(Fmt.signed(it.change, 2) + " 點", 13.sp, Trend.fg(it.changePct))
+                    ChangePill(it.changePct)
+                }
+            }
         }
-        if (spark.size >= 2) {
+        if (AppState.indexShowChart && spark.size >= 2) {
             Sparkline(spark, Trend.fg(ix?.changePct ?: (spark.last() - (prev ?: spark.first())).toDouble()), Modifier.fillMaxWidth().height(64.dp), fill = true)
         }
+        if (AppState.indexShowRange && spark.size >= 2) {
+            val hi = spark.max().toDouble(); val lo = spark.min().toDouble()
+            val p0 = prev?.toDouble() ?: ix?.let { it.value - it.change }
+            Label(
+                listOfNotNull(
+                    "最高 " + Fmt.num(hi, 2), "最低 " + Fmt.num(lo, 2),
+                    p0?.let { "昨收 " + Fmt.num(it, 2) },
+                    "振幅 " + Fmt.num(if ((p0 ?: 0.0) > 0) (hi - lo) / p0!! * 100 else 0.0, 2) + "%",
+                ).joinToString(" · ")
+            )
+        }
         ix?.takeIf { it.updatedAt > 0 }?.let { Label("更新 " + Fmt.time(it.updatedAt)) }
+    }
+}
+
+@Composable
+fun OptToggle(label: String, on: Boolean, set: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable { set(!on) }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = set)
+    }
+}
+
+/** 指數卡片的顯示開關（所有指數卡片共用），也可直接移除這張卡片 */
+@Composable
+fun IndexCardOptions(cardSymbol: String?) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(10.dp)) {
+        OptToggle("顯示當日走勢圖", AppState.indexShowChart) { AppState.updateIndexCard(chart = it) }
+        OptToggle("顯示漲跌點數", AppState.indexShowPoints) { AppState.updateIndexCard(points = it) }
+        OptToggle("顯示最高／最低／昨收／振幅", AppState.indexShowRange) { AppState.updateIndexCard(range = it) }
+        if (cardSymbol != null) {
+            Text("從首頁移除這張卡片", color = C.Red, fontSize = 13.sp,
+                modifier = Modifier.clickable { AppState.removeHomeCard("idx:$cardSymbol") }.padding(vertical = 6.dp))
+        }
+        Label("開關套用到首頁所有指數卡片；要加回或新增其他卡片，到 我的 › 首頁卡片")
     }
 }
 
@@ -283,19 +329,31 @@ fun FuturesCard(nav: NavController) {
     val fs = com.claudeetf.app.data.remote.FutStream
     val key = AppState.fugleKey
     val product = AppState.futProduct
-    DisposableEffect(key, product) {
-        fs.start(key)
-        onDispose { fs.stop() }
+    val src = fs.effectiveSource()
+    DisposableEffect(key, product, src) {
+        if (src == "fugle") fs.start(key)
+        onDispose { if (src == "fugle") fs.stop() }
     }
-    LaunchedEffect(key, product) {
-        fs.quote = null; fs.spark = emptyList()
-        if (key.isNotBlank()) runCatching { withContext(Dispatchers.IO) { fs.snapshot(key) } }
-            .onFailure { e -> fs.status = "台指期：" + (e.message ?: "無法取得") }
+    LaunchedEffect(key, product, src) {
+        fs.quote = null; fs.spark = emptyList(); fs.status = ""
+        when (src) {
+            "fugle" -> if (key.isNotBlank()) runCatching { withContext(Dispatchers.IO) { fs.snapshot(key) } }
+                .onFailure { e -> fs.status = "富果期貨：" + (e.message ?: "無法取得") }
+            "taifex" -> while (true) {
+                runCatching { withContext(Dispatchers.IO) { fs.taifex() } }
+                    .onFailure { e -> fs.status = "期交所：" + (e.message ?: "無法取得") }
+                // 日行情一天只更新一次，開著首頁時每 30 分鐘再確認
+                kotlinx.coroutines.delay(30 * 60_000L)
+            }
+        }
     }
     val q = fs.quote
     val twii = AppState.twIndices.firstOrNull { it.symbol == "^TWII" }
     Card(Modifier.clickable { nav.navigate(Routes.index("^TWII")) }) {
-        CardTitle((fs.products.firstOrNull { it.first == product }?.second ?: product) + "近月", if (fs.live) "● 串流同步" else null)
+        CardTitle(
+            (fs.products.firstOrNull { it.first == product }?.second ?: product) + "近月",
+            when { src == "taifex" -> "期交所"; fs.live -> "● 串流同步"; else -> null },
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             fs.products.forEach { (code, name) ->
                 val on = code == product
@@ -304,12 +362,13 @@ fun FuturesCard(nav: NavController) {
                         .clickable { AppState.updateFutProduct(code) }.padding(horizontal = 10.dp, vertical = 5.dp))
             }
         }
-        if (key.isBlank()) { Label("需要富果金鑰（我的 › 行情資料來源）"); return@Card }
+        if (src == "off") { Label("期貨資料來源已關閉（我的 › 行情資料來源 › 期貨）"); return@Card }
+        if (src == "fugle" && key.isBlank()) { Label("需要富果金鑰，或到 我的 › 行情資料來源 › 期貨 改用期交所"); return@Card }
         if (q == null) { Label(fs.status.ifBlank { "載入中…" }); return@Card }
         Row(verticalAlignment = Alignment.Bottom) {
-            NumText(Fmt.num(q.price, 0), 24.sp, Trend.fg(q.change), weight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            NumText(Fmt.num(q.price, 2), 24.sp, Trend.fg(q.change), weight = FontWeight.Bold, modifier = Modifier.weight(1f))
             Column(horizontalAlignment = Alignment.End) {
-                NumText(Fmt.signed(q.change), 13.sp, Trend.fg(q.change))
+                NumText(Fmt.signed(q.change, 2) + " 點", 13.sp, Trend.fg(q.change))
                 ChangePill(q.changePct)
             }
         }
@@ -317,9 +376,9 @@ fun FuturesCard(nav: NavController) {
         val basis = if (product == "TXF" || product == "MXF") twii?.takeIf { it.value > 0 }?.let { q.price - it.value } else null
         Label(
             listOfNotNull(
-                q.symbol + if (q.afterHours) " 盤後" else " 一般盤",
+                q.symbol + when { fs.fromTaifex -> " 一般盤收盤"; q.afterHours -> " 盤後"; else -> " 一般盤" },
                 q.volume?.let { "量 " + Fmt.num(it) + " 口" },
-                basis?.let { "價差 " + Fmt.signed(it) + if (it >= 0) "（正價差）" else "（逆價差）" },
+                basis?.takeIf { !fs.fromTaifex }?.let { "價差 " + Fmt.signed(it, 2) + if (it >= 0) "（正價差）" else "（逆價差）" },
             ).joinToString(" · ")
         )
         Label(fs.status)

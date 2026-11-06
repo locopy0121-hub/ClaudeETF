@@ -300,6 +300,29 @@ fun SettingsScreen(nav: NavController) {
             }
             item {
                 Card(padding = 14.dp) {
+                    val fs = com.claudeetf.app.data.remote.FutStream
+                    Text("期貨（首頁台指期卡片）", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    val opts = listOf("auto" to "自動", "fugle" to "富果", "taifex" to "期交所", "off" to "關閉")
+                    Segmented(opts.map { it.second }, opts.indexOfFirst { it.first == AppState.futSource }.coerceAtLeast(0),
+                        { AppState.updateFutSource(opts[it].first) }, background = C.Bg)
+                    Label(
+                        when (AppState.futSource) {
+                            "fugle" -> "只用富果期權行情（WebSocket 串流）。需要富果有開通期貨的方案，基本方案會回覆不支援。"
+                            "taifex" -> "使用期交所 OpenAPI 每日期貨行情，免金鑰，收盤後更新（非盤中即時）。"
+                            "off" -> "不抓期貨資料，首頁期貨卡片只顯示提示。"
+                            else -> "有富果金鑰時先試富果；富果回覆方案不支援期貨或沒有金鑰時，自動改用期交所每日行情（收盤後更新）。"
+                        }
+                    )
+                    Label("目前使用：" + when (fs.effectiveSource()) { "fugle" -> "富果"; "taifex" -> "期交所每日行情"; else -> "關閉" } +
+                        if (fs.fugleUnsupported) "（富果方案不支援期貨）" else "", color = C.Text2)
+                    if (fs.fugleUnsupported) {
+                        Text("重新測試富果期貨", color = C.Primary, fontSize = 13.sp,
+                            modifier = Modifier.clickable { fs.fugleUnsupported = false }.padding(vertical = 8.dp))
+                    }
+                }
+            }
+            item {
+                Card(padding = 14.dp) {
                     Text("美股・指數", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Label("使用 Yahoo Finance，免金鑰；含當日走勢、道瓊、S&P 500、那斯達克、費半、VIX、加權指數、10 年債與美元指數。")
                     var yahooTest by remember { mutableStateOf<String?>(null) }
@@ -444,6 +467,8 @@ fun SettingsScreen(nav: NavController) {
                             if (AppState.isCustomCard(id)) Text("✕", color = C.Red, fontSize = 16.sp, modifier = Modifier.clickable { AppState.removeHomeCard(id) }.padding(10.dp))
                         }
                     }
+                    Text("指數卡片顯示內容", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                    IndexCardOptions(null)
                 }
             }
             item { SettingRow("美股時間", "台灣時間・自動夏冬令") }

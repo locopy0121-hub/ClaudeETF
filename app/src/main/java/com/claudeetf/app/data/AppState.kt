@@ -199,6 +199,28 @@ object AppState {
     var futProduct by mutableStateOf("TXF")
     fun updateFutProduct(p: String) { futProduct = p; save() }
 
+    /** 期貨資料來源：auto 自動（富果優先、失敗改期交所）、fugle 只用富果、taifex 只用期交所日行情、off 關閉 */
+    var futSource by mutableStateOf("auto")
+    fun updateFutSource(s: String) { futSource = s; save() }
+
+    /** 熱度圖：方塊大小 0 市值 1 成本 2 今日損益；顏色 0 今日漲跌 1 未實現報酬率；標籤 0 名稱 1 代號 */
+    var heatSize by mutableIntStateOf(0)
+    var heatColor by mutableIntStateOf(0)
+    var heatLabel by mutableIntStateOf(0)
+    /** 熱度圖是否顯示數值（漲跌幅或金額） */
+    var heatValue by mutableStateOf(true)
+    fun updateHeat(size: Int = heatSize, color: Int = heatColor, label: Int = heatLabel, value: Boolean = heatValue) {
+        heatSize = size; heatColor = color; heatLabel = label; heatValue = value; save()
+    }
+
+    /** 指數卡片顯示內容 */
+    var indexShowChart by mutableStateOf(true)
+    var indexShowPoints by mutableStateOf(true)
+    var indexShowRange by mutableStateOf(false)
+    fun updateIndexCard(chart: Boolean = indexShowChart, points: Boolean = indexShowPoints, range: Boolean = indexShowRange) {
+        indexShowChart = chart; indexShowPoints = points; indexShowRange = range; save()
+    }
+
     /** 美股 1 日走勢含盤前盤後 */
     var usExtendedChart by mutableStateOf(true)
     fun updateUsExtendedChart(on: Boolean) { usExtendedChart = on; save() }
@@ -332,6 +354,14 @@ object AppState {
         usExtendedChart = p.getBoolean("usExtendedChart", true)
         holdingSort = p.getInt("holdingSort", 0)
         futProduct = p.getString("futProduct", "TXF") ?: "TXF"
+        futSource = p.getString("futSource", "auto") ?: "auto"
+        heatSize = p.getInt("heatSize", 0)
+        heatColor = p.getInt("heatColor", 0)
+        heatLabel = p.getInt("heatLabel", 0)
+        heatValue = p.getBoolean("heatValue", true)
+        indexShowChart = p.getBoolean("indexShowChart", true)
+        indexShowPoints = p.getBoolean("indexShowPoints", true)
+        indexShowRange = p.getBoolean("indexShowRange", false)
         watchLayout = p.getString("watchLayout", "list") ?: "list"
         industries.clear()
         p.getString("industries", null)?.let { json ->
@@ -504,6 +534,14 @@ object AppState {
             .putBoolean("usExtendedChart", usExtendedChart)
             .putInt("holdingSort", holdingSort)
             .putString("futProduct", futProduct)
+            .putString("futSource", futSource)
+            .putInt("heatSize", heatSize)
+            .putInt("heatColor", heatColor)
+            .putInt("heatLabel", heatLabel)
+            .putBoolean("heatValue", heatValue)
+            .putBoolean("indexShowChart", indexShowChart)
+            .putBoolean("indexShowPoints", indexShowPoints)
+            .putBoolean("indexShowRange", indexShowRange)
             .putString("watchLayout", watchLayout)
             .putString("industries", JSONObject().apply { industries.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("finnhubKey", finnhubKey)
@@ -662,7 +700,7 @@ object AppState {
         val pct = if (prev > 0) (value - prev) / prev * 100 else 0.0
         for (list in listOf(twIndices, usIndices, macro)) {
             val i = list.indexOfFirst { it.symbol == symbol }
-            if (i >= 0) list[i] = list[i].copy(value = value, changePct = pct, updatedAt = now)
+            if (i >= 0) list[i] = list[i].copy(value = value, changePct = pct, updatedAt = now, prev = if (prev > 0) prev else list[i].prev)
         }
     }
 

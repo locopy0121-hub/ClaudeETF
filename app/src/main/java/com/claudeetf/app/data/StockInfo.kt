@@ -141,14 +141,14 @@ object StockInfoRepo {
         val ccy = pr?.optString("currency")?.ifBlank { null } ?: q.market.currency
 
         val overview = listOfNotNull(
-            sd.fmt("open")?.let { InfoItem("開盤", it) },
-            sd.fmt("previousClose")?.let { InfoItem("昨收", it) },
-            sd.fmt("dayHigh")?.let { InfoItem("最高", it) },
-            sd.fmt("dayLow")?.let { InfoItem("最低", it) },
+            px(sd, "open")?.let { InfoItem("開盤", it) },
+            px(sd, "previousClose")?.let { InfoItem("昨收", it) },
+            px(sd, "dayHigh")?.let { InfoItem("最高", it) },
+            px(sd, "dayLow")?.let { InfoItem("最低", it) },
             sd.fmt("volume")?.let { InfoItem("成交量", it) },
             sd.fmt("averageVolume")?.let { InfoItem("平均量", it) },
-            sd.fmt("fiftyTwoWeekHigh")?.let { InfoItem("52 週高", it) },
-            sd.fmt("fiftyTwoWeekLow")?.let { InfoItem("52 週低", it) },
+            px(sd, "fiftyTwoWeekHigh")?.let { InfoItem("52 週高", it) },
+            px(sd, "fiftyTwoWeekLow")?.let { InfoItem("52 週低", it) },
             (sd.fmt("marketCap") ?: pr.fmt("marketCap"))?.let { InfoItem("市值（$ccy）", it) },
             (twVal?.pe ?: sd.fmt("trailingPE"))?.let { InfoItem("本益比", it) },
             sd.fmt("forwardPE")?.let { InfoItem("預估本益比", it) },
@@ -275,6 +275,10 @@ object StockInfoRepo {
         val source: String,
     )
 
+    /** 價格欄位一律兩位小數 */
+    private fun px(o: org.json.JSONObject?, k: String): String? =
+        o.raw(k)?.takeIf { it > 0 }?.let { "%,.2f".format(Locale.US, it) } ?: o.fmt(k)
+
     private fun lots(v: Double?) = v?.let { "%,.0f 張".format(Locale.US, it) }
     private fun money(v: Double?) = v?.let {
         if (it >= 1e8) "%,.2f 億".format(Locale.US, it / 1e8) else "%,.0f 萬".format(Locale.US, it / 1e4)
@@ -283,7 +287,8 @@ object StockInfoRepo {
     suspend fun trading(q: Quote): Trading = withContext(Dispatchers.IO) {
         if (q.market == Market.TW) {
             val key = AppState.fugleKey
-            if (key.isNotBlank() && MarketData.isTwIntraday()) {
+            // 13:30–14:30 證交所日資料還是昨天的，繼續用富果今日快照
+            if (key.isNotBlank() && (MarketData.isTwIntraday() || MarketData.isTwTodayPending())) {
                 val snap = runCatching { FugleApi.snapshot(q.symbol, key) }.getOrNull()
                 if (snap != null) {
                     val items = listOfNotNull(
@@ -294,7 +299,7 @@ object StockInfoRepo {
                         if (snap.isLimitUp) InfoItem("狀態", "漲停") else if (snap.isLimitDown) InfoItem("狀態", "跌停") else null,
                     )
                     val io = if (snap.atBidLots != null && snap.atAskLots != null) snap.atBidLots to snap.atAskLots else null
-                    return@withContext Trading(items, snap.bids, snap.asks, io, "富果快照（等待串流）")
+                    return@withContext Trading(items, snap.bids, snap.asks, io, if (MarketData.isTwIntraday()) "富果快照（等待串流）" else "富果今日收盤快照")
                 }
             }
             val rec = MarketData.closeRecord(q.symbol)?.first

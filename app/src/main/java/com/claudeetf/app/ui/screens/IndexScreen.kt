@@ -64,7 +64,7 @@ fun IndexScreen(nav: NavController, symbol: String) {
                     Row(verticalAlignment = Alignment.Bottom) {
                         NumText(info?.let { Fmt.num(it.value, 2) } ?: "—", 32.sp, weight = FontWeight.Bold)
                         HGap(10.dp)
-                        info?.let { NumText(Fmt.signedPct(it.changePct), 14.sp, Trend.fg(it.changePct), modifier = Modifier.padding(bottom = 5.dp)) }
+                        info?.let { NumText(Fmt.signed(it.change, 2) + " 點（" + Fmt.pct(it.changePct) + "）", 14.sp, Trend.fg(it.changePct), modifier = Modifier.padding(bottom = 5.dp)) }
                     }
                     info?.takeIf { it.updatedAt > 0 }?.let { Label("更新 " + Fmt.time(it.updatedAt) + if (tw && MarketData.isTwIntraday()) " · 證交所即時" else "") }
                 }

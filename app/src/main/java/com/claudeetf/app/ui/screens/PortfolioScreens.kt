@@ -138,6 +138,7 @@ fun PortfolioScreen(nav: NavController) {
                             Modifier.width(140.dp), background = C.Bg)
                     }
                     NumText(mask(Fmt.num(mv)), 26.sp, weight = FontWeight.Bold)
+                    if (accFilter == -1) Label("＋ 現金 " + mask(Fmt.num(AppState.cashTwd)) + " ＝ 總資產 " + mask(Fmt.num(mv + AppState.cashTwd)) + "（與總覽相同）")
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Column(Modifier.weight(1f)) {
                             KeyValue("總成本", mask(Fmt.num(cost)))
@@ -211,16 +212,39 @@ fun PortfolioScreen(nav: NavController) {
             }
             item { Segmented(listOf("清單", "熱度圖"), if (heat) 1 else 0, { heat = it == 1 }) }
             if (heat) {
+                item { HeatOptions() }
                 item {
+                    val sizeBy = AppState.heatSize; val colorBy = AppState.heatColor
                     Heatmap(
                         hs.map { h ->
                             val q = AppState.quote(h.symbol)
-                            HeatItem(h.symbol, q?.name?.takeIf { it.length <= 6 } ?: h.symbol, AppState.marketValueTwd(h), q?.changePct ?: 0.0)
+                            val label = if (AppState.heatLabel == 1) h.symbol else q?.name?.takeIf { it.length <= 6 } ?: h.symbol
+                            val day = dayPnl(h)
+                            val weight = when (sizeBy) {
+                                1 -> AppState.costTwd(h)
+                                2 -> kotlin.math.abs(day)
+                                else -> AppState.marketValueTwd(h)
+                            }
+                            val ret = q?.price?.takeIf { it > 0 && h.avgCost > 0 }?.let { (it / h.avgCost - 1) * 100 } ?: 0.0
+                            val colorPct = if (colorBy == 1) ret else q?.changePct ?: 0.0
+                            val text = when {
+                                sizeBy == 2 -> mask(Fmt.signed(day))
+                                colorBy == 1 -> Fmt.signedPct(ret)
+                                else -> null
+                            }
+                            HeatItem(h.symbol, label, weight, colorPct, text)
                         },
                         height = 320.dp,
+                        colorScale = if (colorBy == 1) 20.0 else 3.0,
+                        showValue = AppState.heatValue,
                     ) { nav.navigate(Routes.stock(it)) }
                 }
-                item { Label("方塊大小＝持股市值（台幣），顏色＝今日漲跌，點方塊開個股頁") }
+                item {
+                    Label(
+                        "方塊大小＝" + listOf("持股市值", "持有成本", "今日損益金額")[AppState.heatSize] + "（台幣），顏色＝" +
+                            listOf("今日漲跌（±3% 最深）", "未實現報酬率（±20% 最深）")[AppState.heatColor] + "，點方塊開個股頁"
+                    )
+                }
             }
             if (!heat) item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -249,6 +273,37 @@ fun PortfolioScreen(nav: NavController) {
                     Label("${AppState.trades.count { it.origin != com.claudeetf.app.data.TradeOrigin.LEGACY }} 筆 ›")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun HeatChips(title: String, names: List<String>, sel: Int, pick: (Int) -> Unit) {
+    Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Label(title, Modifier.width(56.dp))
+        names.forEachIndexed { i, n ->
+            val on = i == sel
+            Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
+                    .clickable { pick(i) }.padding(horizontal = 10.dp, vertical = 5.dp))
+        }
+    }
+}
+
+/** 熱度圖顯示設定：大小、顏色、標籤、數值 */
+@Composable
+private fun HeatOptions() {
+    var open by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("顯示設定", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+            Label(if (open) "收合" else listOf("市值", "成本", "今日損益")[AppState.heatSize] + " · " + listOf("今日漲跌", "報酬率")[AppState.heatColor] + " ›")
+        }
+        if (open) {
+            HeatChips("大小", listOf("市值", "成本", "今日損益"), AppState.heatSize) { AppState.updateHeat(size = it) }
+            HeatChips("顏色", listOf("今日漲跌", "未實現報酬率"), AppState.heatColor) { AppState.updateHeat(color = it) }
+            HeatChips("標籤", listOf("名稱", "代號"), AppState.heatLabel) { AppState.updateHeat(label = it) }
+            OptToggle("方塊顯示數值", AppState.heatValue) { AppState.updateHeat(value = it) }
         }
     }
 }

@@ -102,6 +102,8 @@ fun HomeScreen(nav: NavController) {
                         Card {
                             Label("總資產（TWD）")
                             NumText(mask(Fmt.num(total)), 32.sp, weight = FontWeight.Bold)
+                            // 總資產＝持股總市值（與持股頁同一算法）＋現金
+                            Label("持股市值 " + mask(Fmt.num(mv)) + " ＋ 現金 " + mask(Fmt.num(AppState.cashTwd)))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Label("今日"); HGap(8.dp)
                                 NumText(mask(Fmt.signed(today)) + "（" + Fmt.pct(today / (total - today) * 100) + "）", 13.sp, Trend.fg(today))
@@ -240,7 +242,10 @@ fun IndexCard(q: IndexQuote, modifier: Modifier = Modifier, onClick: (() -> Unit
     ) {
         Label(q.name)
         NumText(Fmt.num(q.value, 2), 16.sp, weight = FontWeight.Bold)
-        NumText(Fmt.signedPct(q.changePct), 12.sp, Trend.fg(q.changePct))
+        NumText(
+            (if (AppState.indexShowPoints) Fmt.signed(q.change, 2) + " " else "") + Fmt.pct(q.changePct),
+            12.sp, Trend.fg(q.changePct),
+        )
     }
 }
 
