@@ -243,7 +243,8 @@ object MarketData {
                 val applied = rest.filter { s ->
                     val (rq, src) = data[s] ?: return@filter false
                     val cur = quoteDay(s)
-                    if (rq.date != null && cur != null && rq.date < cur) return@filter false
+                    // 有日期：比目前報價舊就略過；沒日期：目前報價已是最近交易日的就不可能更新，也略過
+                    if (cur != null && (if (rq.date != null) rq.date < cur else cur >= lastDay)) return@filter false
                     AppState.applyRemote(rq, src, now)
                     rq.date?.let { closeDay[s] = it }
                     true

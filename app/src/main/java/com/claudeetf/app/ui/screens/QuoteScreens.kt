@@ -331,60 +331,10 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
         if (flash == 0) androidx.compose.ui.graphics.Color.Transparent else Trend.fg(flash.toDouble()).copy(alpha = 0.18f),
         label = "flash",
     )
-    QuoteRowBody(q, AppState.watchStyle, Modifier.background(flashColor).combinedClickable(onClick = onClick, onLongClick = onLongClick), true)
+    WatchRowBody(q, AppState.watchStyle, Modifier.background(flashColor).combinedClickable(onClick = onClick, onLongClick = onLongClick), true)
     Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
 }
 
-/** 設定頁預覽用 */
-@Composable
-fun QuoteRowPreview(q: Quote) = QuoteRowBody(q, AppState.watchStyle, Modifier, false)
-
-/** 清單版面：依「自選個股顯示格式」排版；右側自訂欄位（走勢、三關…）照舊 */
-@Composable
-private fun QuoteRowBody(q: Quote, st: com.claudeetf.app.data.WatchStyle, modifier: Modifier, cells: Boolean) {
-    val vpad = when (st.density) { 0 -> 6.dp; 2 -> 13.dp; else -> 10.dp }
-    val c = Trend.fg(q.change)
-    Row(
-        modifier.fillMaxWidth().padding(vertical = vpad, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (st.density == 0) 2.dp else 4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                WatchName(q, st, 15, Modifier.weight(1f, fill = false))
-                if (st.tagPos == 1) { HGap(6.dp); EntryTagFor(q) }
-            }
-            // 第二列：市場標籤＋代號＋報價時間（依開關）
-            val showCode = st.nameMode == 0 || st.nameMode == 2
-            if (st.shows("market") || st.shows("source") || showCode) Row(verticalAlignment = Alignment.CenterVertically) {
-                if (st.shows("market")) { MarketTag(q.market); HGap(6.dp) }
-                if (showCode && st.nameMode == 0) { NumText(q.symbol, st.sp(12), C.Muted); HGap(6.dp) }
-                if (st.shows("source")) Text(sourceText(q.source, q.updatedAt), color = C.Muted, fontSize = st.sp(10), maxLines = 1)
-            }
-            // 其餘項目依使用者排定的順序往下排
-            st.items.filter { st.shows(it) && it !in setOf("market", "source", "spark", "limit", "ext") }.forEach { WatchExtraItem(q, it, st) }
-        }
-        if (cells) {
-            WatchCell(q, AppState.watchColumn)
-            if (AppState.watchColumn2.isNotEmpty() && AppState.watchColumn2 != AppState.watchColumn) {
-                HGap(6.dp)
-                WatchCell(q, AppState.watchColumn2)
-            }
-        }
-        HGap(10.dp)
-        Column(Modifier.widthIn(min = 96.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (st.tagPos == 2) { EntryTagFor(q); HGap(6.dp) }
-                NumText(if (q.price > 0) Fmt.price(q.price) else "—", st.sp(15), Trend.price(q.change), FontWeight.Bold)
-            }
-            if (st.changeMode != 1) NumText(Fmt.signed(q.change, 2), st.sp(11), c)
-            if (st.changeMode != 2) {
-                if (st.changeStyle == 1) ChangePill(q.changePct) else NumText(Fmt.pct(q.changePct), st.sp(12), c)
-            }
-            if (st.shows("ext")) WatchExtraItem(q, "ext", st)
-            if (st.shows("limit")) WatchExtraItem(q, "limit", st)
-        }
-    }
-}
 
 val watchColumns = listOf("spark" to "走勢", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "div" to "除權息", "inst" to "法人", "dt" to "當沖", "credit" to "信用", "rev" to "月營收", "pe" to "本益比", "pnl" to "持股損益")
 
@@ -399,7 +349,7 @@ fun amplitude(q: Quote): Double? {
 
 /** 自選清單中間欄，依設定顯示不同資訊 */
 @Composable
-private fun WatchCell(q: Quote, col: String) {
+fun WatchCell(q: Quote, col: String) {
     val m = Modifier.size(width = 72.dp, height = 30.dp)
     when (col) {
         "volume" -> CellText(AppState.dayStats[q.symbol]?.volume?.let { volumeText(it, q.market) } ?: "—", "量", m)
@@ -638,61 +588,9 @@ private fun QuoteCard(q: Quote, modifier: Modifier, onLongClick: () -> Unit, onC
             flash = 0
         } else last = q.price
     }
-    QuoteCardBody(q, AppState.watchStyle, flash, modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick))
+    WatchCardBody(q, AppState.watchStyle, flash, modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick))
 }
 
-/** 設定頁預覽用 */
-@Composable
-fun QuoteCardPreview(q: Quote, modifier: Modifier) = QuoteCardBody(q, AppState.watchStyle, 0, modifier)
-
-@Composable
-private fun QuoteCardBody(q: Quote, st: com.claudeetf.app.data.WatchStyle, flash: Int, modifier: Modifier) {
-    val color = Trend.fg(q.change)
-    val bg = when {
-        flash != 0 -> Trend.fg(flash.toDouble()).copy(alpha = 0.18f)
-        st.tintBg && q.change != 0.0 -> color.copy(alpha = 0.10f)
-        else -> C.Card
-    }
-    val pad = when (st.density) { 0 -> 7.dp; 2 -> 12.dp; else -> 10.dp }
-    val align = when (st.priceAlign) { 0 -> Alignment.Start; 2 -> Alignment.End; else -> Alignment.CenterHorizontally }
-    val small = st.cardCols == 3
-    Column(
-        modifier.clip(RoundedCornerShape(12.dp)).background(bg).padding(pad),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            WatchName(q, st, if (small) 12 else 13, Modifier.weight(1f))
-            if (st.tagPos == 1) EntryTagFor(q)
-            else if (st.nameMode == 0 && !small) NumText(q.symbol, st.sp(11), C.Muted)
-        }
-        Row(Modifier.align(align), verticalAlignment = Alignment.CenterVertically) {
-            NumText(if (q.price > 0) Fmt.price(q.price) else "—", st.sp(if (small) 19 else 26), Trend.price(q.change), weight = FontWeight.Bold)
-            if (st.tagPos == 2) { HGap(6.dp); EntryTagFor(q) }
-        }
-        // 漲跌列接在走勢圖之後；沒有走勢圖時接在價格之後
-        if (!st.shows("spark")) WatchChangeRow(q, st)
-        st.items.filter { st.shows(it) }.forEach { id ->
-            when (id) {
-                "spark" -> {
-                    if (q.spark.size >= 2) Sparkline(q.spark, color, Modifier.fillMaxWidth().height(if (st.density == 0) 20.dp else 26.dp), fill = true)
-                    WatchChangeRow(q, st)
-                }
-                "market" -> {}  // 市場標籤放在漲跌列前
-                else -> WatchExtraItem(q, id, st)
-            }
-        }
-    }
-}
-
-@Composable
-private fun WatchChangeRow(q: Quote, st: com.claudeetf.app.data.WatchStyle) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        if (st.shows("market")) { MarketTag(q.market); HGap(6.dp) }
-        if (st.nameMode == 0 && st.cardCols == 3) { NumText(q.symbol, st.sp(10), C.Muted); HGap(6.dp) }
-        Spacer(Modifier.weight(1f))
-        WatchChange(q, st, if (st.cardCols == 3) 11 else 12)
-    }
-}
 
 
 /** 自選列滑動：左滑移除、右滑加入群組（放開後列會彈回） */
