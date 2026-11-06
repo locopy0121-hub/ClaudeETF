@@ -404,12 +404,16 @@ object KlineAnalysis {
 
     // ---------------------------------------------------------------- 資料
 
-    private val cache = HashMap<String, Pair<Long, Result?>>()
+    /** 原始 K 棒快取：symbol|d/w → (取得時間, K 棒) */
+    private val raw: MutableMap<String, Pair<Long, List<Candle>>> = java.util.Collections.synchronizedMap(HashMap())
+    /** 分析結果快取：key|價格 */
+    private val cache: MutableMap<String, Result?> = java.util.Collections.synchronizedMap(HashMap())
+    /** 最近一次各股日 K 結果（標題徽章、摘要列共用） */
+    val latestDaily = androidx.compose.runtime.mutableStateMapOf<String, Result>()
 
-    /** weekly = false：近 2 年日 K；true：近 5 年週 K */
-    suspend fun load(q: Quote, weekly: Boolean): Result? = withContext(Dispatchers.IO) {
+    private suspend fun candles(q: Quote, weekly: Boolean, maxAgeMs: Long): List<Candle> = withContext(Dispatchers.IO) {
         val key = q.symbol + if (weekly) "|w" else "|d"
-        cache[key]?.let { (t, r) -> if (System.currentTimeMillis() - t < 10 * 60_000) return@withContext r }
+        raw[key]?.let { (t, cs) -> if (System.currentTimeMillis() - t < maxAgeMs) return@withContext cs }
         val h = YahooExtra.history(StockInfoRepo.yahooSymbol(q), if (weekly) "5y" else "2y")
         val cs = ArrayList<Candle>()
         for (k in h.closes.indices) {
@@ -420,13 +424,42 @@ object KlineAnalysis {
             if (o.isNaN() || hi.isNaN() || lo.isNaN() || c.isNaN() || c <= 0) continue
             cs += Candle(h.times[k], o, hi, lo, c, h.volumes.getOrNull(k)?.toDouble()?.takeIf { !it.isNaN() } ?: 0.0)
         }
-        // 盤中最新價補到最後一根（日 K）
-        if (!weekly && q.price > 0 && cs.isNotEmpty() && System.currentTimeMillis() - cs.last().t < 20 * 3600_000L) {
-            val l = cs.last()
-            cs[cs.size - 1] = l.copy(c = q.price, h = max(l.h, q.price), l = min(l.l, q.price))
+        raw[key] = System.currentTimeMillis() to cs
+        cs
+    }
+
+    /**
+     * weekly = false：近 2 年日 K；true：近 5 年週 K。
+     * maxAgeMs：K 棒資料最久可用多久（盤中即時訊號用 2 分鐘，讓當日高低點更新）。
+     * 日 K 的最後一根以目前報價補上（盤中即為「形成中」的 K 棒）。
+     */
+    suspend fun load(q: Quote, weekly: Boolean, maxAgeMs: Long = 10 * 60_000L): Result? {
+        val cs0 = candles(q, weekly, maxAgeMs)
+        val key = q.symbol + (if (weekly) "|w|" else "|d|") + cs0.size + "|" + (cs0.lastOrNull()?.t ?: 0) + "|" + q.price
+        cache[key]?.let { return it }
+        val r = withContext(Dispatchers.Default) {
+            val cs = ArrayList(cs0)
+            if (!weekly && q.price > 0 && cs.isNotEmpty() && System.currentTimeMillis() - cs.last().t < 20 * 3600_000L) {
+                val l = cs.last()
+                cs[cs.size - 1] = l.copy(c = q.price, h = max(l.h, q.price), l = min(l.l, q.price))
+            }
+            analyze(cs, if (weekly) "週 K" else "日 K", if (weekly) 4 else 5)
         }
-        val r = analyze(cs, if (weekly) "週 K" else "日 K", if (weekly) 4 else 5)
-        cache[key] = System.currentTimeMillis() to r
-        r
+        if (cache.size > 200) cache.clear()
+        cache[key] = r
+        if (!weekly && r != null) latestDaily[q.symbol] = r
+        return r
+    }
+
+    /** 長線（投資指數建議投入比例）× 短線（K 線進場建議）→ 現在先投入多少 */
+    fun combined(ratio: Int, entry: Entry): Pair<String, Int> {
+        fun r5(v: Double) = (Math.round(v / 5) * 5).toInt()
+        return when (entry.level) {
+            2 -> "進場" to ratio
+            1 -> "分批" to r5(ratio * 0.5)
+            0 -> (if (entry.label == "觀望") "觀望" else "等回測") to r5(ratio * 0.3)
+            -1 -> "等止跌" to r5(ratio * 0.15)
+            else -> "暫緩" to 0
+        }
     }
 }

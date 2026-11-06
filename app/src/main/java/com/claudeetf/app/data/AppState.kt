@@ -226,6 +226,13 @@ object AppState {
     fun updateInvestBudget(v: Double) { investBudget = v.coerceAtLeast(0.0); save() }
     fun updateShowScoreBadge(on: Boolean) { showScoreBadge = on; save() }
 
+    /** 行情價下方的即時 K 棒訊號（盤中） */
+    var showLiveSignal by mutableStateOf(true)
+    /** 收盤後仍顯示「收盤定案」的最終進場標籤；關閉則收盤後自動隱藏 */
+    var showFinalSignal by mutableStateOf(true)
+    fun updateShowLiveSignal(on: Boolean) { showLiveSignal = on; save() }
+    fun updateShowFinalSignal(on: Boolean) { showFinalSignal = on; save() }
+
     /** 走勢圖標示我的買賣點 */
     var showTradeMarks by mutableStateOf(true)
     fun updateShowTradeMarks(on: Boolean) { showTradeMarks = on; save() }
@@ -393,6 +400,8 @@ object AppState {
         futSource = p.getString("futSource", "auto") ?: "auto"
         showTradeMarks = p.getBoolean("showTradeMarks", true)
         showScoreBadge = p.getBoolean("showScoreBadge", true)
+        showLiveSignal = p.getBoolean("showLiveSignal", true)
+        showFinalSignal = p.getBoolean("showFinalSignal", true)
         investBudget = p.getFloat("investBudget", 0f).toDouble()
         p.getString("newsSources", null)?.let { j ->
             runCatching { val a = JSONArray(j); newsSources.clear(); for (k in 0 until a.length()) newsSources.add(a.getString(k)) }
@@ -586,6 +595,8 @@ object AppState {
             .putString("futSource", futSource)
             .putBoolean("showTradeMarks", showTradeMarks)
             .putBoolean("showScoreBadge", showScoreBadge)
+            .putBoolean("showLiveSignal", showLiveSignal)
+            .putBoolean("showFinalSignal", showFinalSignal)
             .putFloat("investBudget", investBudget.toFloat())
             .putString("newsSources", JSONArray(newsSources.toList()).toString())
             .putString("customFeeds", JSONArray().apply { customFeeds.forEach { put(JSONObject().put("n", it.first).put("u", it.second)) } }.toString())

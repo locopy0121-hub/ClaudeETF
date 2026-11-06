@@ -219,6 +219,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { PriceHeader(q, session) }
+            item { LiveSignalStrip(q) { tabIdx = 0; ovSub = 2 } }
             item { Segmented(ranges.map { it.label }, range, { range = it }) }
             item {
                 ChartControls(
@@ -415,6 +416,74 @@ private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info
     }
 }
 
+/**
+ * 行情價下方的即時 K 棒訊號：盤中每次報價更新就以「形成中的當日 K 棒」重算形態與進場建議，
+ * 並標示當下時間；收盤後依設定顯示「收盤定案」的最終進場標籤，或自動隱藏。
+ */
+@Composable
+private fun LiveSignalStrip(q: Quote, onClick: () -> Unit) {
+    if (!AppState.showLiveSignal) return
+    val tw = q.market == Market.TW
+    val zone = java.time.ZoneId.of(if (tw) "Asia/Taipei" else "America/New_York")
+    // 每 15 秒更新時間與盤中狀態
+    var now by remember { mutableStateOf(java.time.ZonedDateTime.now(zone)) }
+    LaunchedEffect(Unit) { while (true) { now = java.time.ZonedDateTime.now(zone); kotlinx.coroutines.delay(15_000) } }
+    val weekday = now.dayOfWeek != java.time.DayOfWeek.SATURDAY && now.dayOfWeek != java.time.DayOfWeek.SUNDAY
+    val t = now.toLocalTime()
+    val live = if (tw) weekday && t >= java.time.LocalTime.of(9, 0) && t < java.time.LocalTime.of(13, 30)
+        else com.claudeetf.app.util.UsSession.info().phase == com.claudeetf.app.util.UsSession.Phase.REGULAR
+    val closedToday = weekday && if (tw) t >= java.time.LocalTime.of(13, 30) else t >= java.time.LocalTime.of(16, 0)
+    if (!live && !AppState.showFinalSignal) return
+
+    var r by remember(q.symbol) { mutableStateOf<com.claudeetf.app.data.KlineAnalysis.Result?>(null) }
+    // 報價變動就重算（K 棒資料盤中 2 分鐘更新一次，取得當日最新高低點）
+    LaunchedEffect(q.symbol, q.price, live) {
+        r = runCatching { com.claudeetf.app.data.KlineAnalysis.load(q, false, if (live) 120_000L else 10 * 60_000L) }.getOrNull() ?: r
+    }
+    val res = r ?: return
+    val last = res.candles.lastIndex
+    val todayHits = res.latest.filter { it.idx == last }
+    val lastDay = java.time.Instant.ofEpochMilli(res.candles[last].t).atZone(zone).toLocalDate()
+    val c = entryColor(res.entry.level)
+    val hm = now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(c.copy(alpha = 0.10f))
+            .border(1.dp, c.copy(alpha = 0.35f), RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (live) {
+                // 閃爍紅點表示即時
+                val blink by androidx.compose.animation.core.rememberInfiniteTransition(label = "live").animateFloat(
+                    0.25f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(800),
+                        androidx.compose.animation.core.RepeatMode.Reverse), label = "a")
+                Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Red.copy(alpha = blink)))
+                HGap(6.dp)
+                Text("$hm 即時 K 棒訊號", color = C.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            } else {
+                Text(
+                    (if (closedToday && lastDay == now.toLocalDate()) "收盤定案 " else "前一交易日收盤 ") +
+                        lastDay.format(java.time.format.DateTimeFormatter.ofPattern("M/d")),
+                    color = C.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            EntryTag(res.entry)
+        }
+        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (live) "當日 K 棒（形成中）：" else "當日 K 棒：", color = C.Muted, fontSize = 12.sp)
+            Text(
+                if (todayHits.isEmpty()) "無明顯形態" else todayHits.distinctBy { it.pat }.joinToString("、") { it.pat.cn },
+                Modifier.weight(1f), color = if (todayHits.isEmpty()) C.Text2 else entryColor(todayHits.sumOf { it.pat.dir.weight }.coerceIn(-1, 1)),
+                fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Text(res.dir.label + " " + res.strength, color = c, fontSize = 12.sp)
+        }
+        Text(res.entry.reason, color = C.Text2, fontSize = 11.sp, lineHeight = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 2.dp))
+        Label(if (live) "盤中訊號會隨價格變動，以收盤定案為準 · 點此看完整分析 ›" else "點此看完整 K 線分析 ›")
+    }
+}
+
 /** 走勢圖上方的 K 線形態摘要，點了跳到「概覽 › K線」 */
 @Composable
 private fun KlineSummaryStrip(q: Quote, onClick: () -> Unit) {
@@ -447,7 +516,7 @@ private fun ChartBlock(
     levels: List<KeyLevel> = emptyList(),
     onKline: () -> Unit = {},
 ) {
-    KlineSummaryStrip(q, onKline)
+    if (!AppState.showLiveSignal) KlineSummaryStrip(q, onKline)
     when (history) {
         is Load.Loading -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("載入走勢中…") }
         is Load.Err -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("走勢載入失敗：" + history.message) }

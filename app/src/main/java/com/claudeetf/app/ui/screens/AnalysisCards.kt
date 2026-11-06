@@ -423,18 +423,56 @@ fun ScoreBadge(q: Quote) {
     if (!AppState.showScoreBadge) return
     val r = InvestAnalysis.results[q.symbol]
     LaunchedEffect(q.symbol) { if (InvestAnalysis.cached(q.symbol) == null) runCatching { InvestAnalysis.analyze(q) } }
+    // 短線 K 線結果（與摘要列共用快取）
+    LaunchedEffect(q.symbol) { runCatching { com.claudeetf.app.data.KlineAnalysis.load(q, false) } }
+    val k = com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol]
     val color = r?.let { scoreColor(it.score) } ?: C.Muted
+    var info by remember { mutableStateOf(false) }
     Row(
-        Modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.18f)).padding(horizontal = 10.dp, vertical = 4.dp),
+        Modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.18f)).clickable { info = true }
+            .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("指數 ", color = C.Text2, fontSize = 11.sp, maxLines = 1)
         NumText(r?.let { "${it.score}%" } ?: "…", 14.sp, color, FontWeight.Bold)
         r?.let {
-            Text(" " + it.label, color = color, fontSize = 11.sp, maxLines = 1)
-            it.band?.let { b -> Text(" · " + b.zoneName, color = zoneColor(b.zone), fontSize = 11.sp, maxLines = 1) }
-            Text(" · 投入 " + (it.verdict?.ratio ?: InvestAnalysis.suggestedRatio(it.score)) + "%", color = C.Text2, fontSize = 11.sp, maxLines = 1)
+            it.band?.let { b -> Text(" " + b.zoneName, color = zoneColor(b.zone), fontSize = 11.sp, maxLines = 1) }
+            val ratio = it.verdict?.ratio ?: InvestAnalysis.suggestedRatio(it.score)
+            if (k != null) {
+                val (word, now) = com.claudeetf.app.data.KlineAnalysis.combined(ratio, k.entry)
+                Text(" · ", color = C.Muted, fontSize = 11.sp)
+                Text(word, color = entryColor(k.entry.level), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(" 先投 $now%", color = C.Text2, fontSize = 11.sp, maxLines = 1)
+            } else Text(" · 投入 $ratio%", color = C.Text2, fontSize = 11.sp, maxLines = 1)
         }
+    }
+    if (info && r != null) {
+        val ratio = r.verdict?.ratio ?: InvestAnalysis.suggestedRatio(r.score)
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { info = false },
+            containerColor = C.Card,
+            title = { Text("長短線綜合結論", color = C.Text, fontSize = 16.sp) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    KeyValue("長線：投資分析指數", "${r.score}% " + r.label + (r.band?.let { " · " + it.zoneName } ?: ""), color)
+                    KeyValue("長線建議投入比例", "$ratio%")
+                    if (k != null) {
+                        val (word, now) = com.claudeetf.app.data.KlineAnalysis.combined(ratio, k.entry)
+                        KeyValue("短線：K 線訊號", k.dir.label + " " + k.strength, entryColor(k.entry.level))
+                        KeyValue("短線進場建議", k.entry.label, entryColor(k.entry.level))
+                        KeyValue("綜合：現在先投入", "$now%（$word）", entryColor(k.entry.level))
+                        Text(
+                            if (now < ratio) "長線評估可投入 $ratio%，但短線" + k.entry.label + "，先投 $now%，其餘 ${ratio - now}% 等 K 線轉為「可分批進場」以上再補足。"
+                            else "長短線方向一致，可依長線比例 $ratio% 布局。",
+                            color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp,
+                        )
+                        Text(k.entry.reason, color = C.Muted, fontSize = 12.sp, lineHeight = 17.sp)
+                    } else Label("K 線分析載入中…")
+                    Label("換算：建議進場 100%、分批 50%、等回測／觀望 30%、等止跌 15%、暫緩 0%（乘上長線比例）。僅供參考，不構成投資建議。")
+                }
+            },
+            confirmButton = { Text("關閉", color = C.Primary, fontSize = 14.sp, modifier = Modifier.clickable { info = false }.padding(12.dp)) },
+        )
     }
 }
 

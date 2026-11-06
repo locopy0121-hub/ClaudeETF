@@ -531,6 +531,8 @@ fun SettingsScreen(nav: NavController) {
                         }
                         Text("個股頁", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                         OptToggle("標題顯示投資分析指數（0–100）", AppState.showScoreBadge) { AppState.updateShowScoreBadge(it) }
+                        OptToggle("行情價下方顯示即時 K 棒訊號（盤中）", AppState.showLiveSignal) { AppState.updateShowLiveSignal(it) }
+                        if (AppState.showLiveSignal) OptToggle("收盤後顯示最終進場標籤（關閉則自動隱藏）", AppState.showFinalSignal) { AppState.updateShowFinalSignal(it) }
                         OptToggle("走勢圖標示我的買賣點", AppState.showTradeMarks) { AppState.updateShowTradeMarks(it) }
                         Text("指數卡片顯示內容", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                         IndexCardOptions(null)
