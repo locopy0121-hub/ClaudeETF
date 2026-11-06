@@ -73,8 +73,9 @@ fun AnalysisCard(q0: Quote) {
             )
         }
         ScoreGauge(r.score)
+        r.verdict?.let { v -> VerdictBox(v) }
         Text(r.advice, color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 6.dp))
-        SuggestedInvest(q, r.score)
+        SuggestedInvest(q, r.score, r.verdict?.ratio ?: InvestAnalysis.suggestedRatio(r.score))
 
         // 最強與最弱因子：標籤一行、說明一行，避免長句擠在一起
         val best = r.factors.maxBy { it.score }
@@ -164,10 +165,123 @@ fun AnalysisCard(q0: Quote) {
 
 private data class InfoCell(val label: String, val value: String?)
 
+/** 光譜區間顏色：便宜綠、合理黃、昂貴紅、極貴紫 */
+fun zoneColor(zone: Int): Color = when (zone) {
+    0, 1 -> Color(0xFF6CC070)
+    2 -> Color(0xFFD9C34A)
+    3 -> Color(0xFFE0A060)
+    4 -> Color(0xFFE57373)
+    else -> Color(0xFF9575CD)
+}
+
+/** 綜合結論：分析指數 × 股價光譜 */
+@Composable
+private fun VerdictBox(v: InvestAnalysis.Verdict) {
+    val c = when (v.tone) { 1 -> Trend.fg(1.0); -1 -> Trend.fg(-1.0); else -> C.Primary }
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(c.copy(alpha = 0.14f)).padding(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("結論", color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(end = 8.dp))
+            Text(v.title, color = c, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(v.reason, color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+/** 股價光譜卡片：期間選擇、所在區間、區間刻度、趨勢通道走勢圖 */
+@Composable
+fun PriceBandCard(q0: Quote) {
+    val q = AppState.quote(q0.symbol) ?: q0
+    var period by remember { mutableStateOf("1y") }
+    var res by remember(q.symbol, period) { mutableStateOf<com.claudeetf.app.data.PriceBand.Result?>(null) }
+    var loading by remember(q.symbol, period) { mutableStateOf(true) }
+    LaunchedEffect(q.symbol, period) {
+        res = runCatching { com.claudeetf.app.data.PriceBand.load(q, period) }.getOrNull()
+        loading = false
+    }
+    Card(padding = 14.dp) {
+        Text("股價光譜", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.claudeetf.app.data.PriceBand.periods.forEach { (label, key) ->
+                val on = key == period
+                Text(label, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
+                        .clickable { period = key }.padding(horizontal = 10.dp, vertical = 4.dp))
+            }
+        }
+        val r = res
+        if (r == null) { Label(if (loading) "計算中…" else "歷史資料不足"); return@Card }
+        val zc = zoneColor(r.zone)
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Label("股價所在區間")
+                Text(r.zoneName, color = zc, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Label("現價 / 趨勢價")
+                NumText(Fmt.price(r.price) + " / " + Fmt.price(r.trend), 14.sp)
+                NumText("偏離 " + (if (r.z >= 0) "+" else "") + Fmt.num(r.z, 1) + "σ", 12.sp, zc)
+            }
+        }
+        // 區間刻度：六段色條＋五條分界價
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp).height(12.dp).clip(RoundedCornerShape(6.dp))) {
+            (0..5).forEach { z ->
+                Box(Modifier.weight(1f).fillMaxHeight().background(zoneColor(z).copy(alpha = if (z == r.zone) 1f else 0.35f)))
+            }
+        }
+        Row(Modifier.fillMaxWidth()) {
+            com.claudeetf.app.data.PriceBand.zoneNames.forEachIndexed { z, n ->
+                Text(n, Modifier.weight(1f), color = if (z == r.zone) zc else C.Muted, fontSize = 10.sp, maxLines = 1,
+                    fontWeight = if (z == r.zone) FontWeight.Bold else FontWeight.Normal, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+            listOf("特價價", "便宜價", "趨勢價", "昂貴價", "極貴價").zip(r.lines).forEach { (n, v) ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(n, color = C.Muted, fontSize = 9.sp)
+                    NumText(Fmt.price(v), 10.sp, C.Text2)
+                }
+            }
+        }
+        BandChart(r, Modifier.fillMaxWidth().height(200.dp).padding(top = 10.dp))
+        Label("依所選期間收盤價做線性迴歸（趨勢價），以 ±1σ、±2σ 劃分區間；只代表相對過去趨勢的高低，非基本面估值。", Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun BandChart(r: com.claudeetf.app.data.PriceBand.Result, modifier: Modifier) {
+    val line = C.Text
+    androidx.compose.foundation.Canvas(modifier) {
+        val n = r.closes.size
+        if (n < 2) return@Canvas
+        val lo = minOf(r.closes.min(), r.trendAt(0) - 2.5 * r.sigma, r.trendAt(n - 1) - 2.5 * r.sigma)
+        val hi = maxOf(r.closes.max(), r.trendAt(0) + 2.5 * r.sigma, r.trendAt(n - 1) + 2.5 * r.sigma)
+        val w = size.width; val h = size.height
+        fun x(i: Int) = i * w / (n - 1)
+        fun y(v: Double) = (h - (v - lo) / (hi - lo) * h).toFloat()
+        // 六段色帶（以 ±3σ 為最外緣）
+        val edges = listOf(-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0)
+        for (z in 0..5) {
+            val path = androidx.compose.ui.graphics.Path()
+            path.moveTo(0f, y(r.trendAt(0) + edges[z] * r.sigma))
+            path.lineTo(w, y(r.trendAt(n - 1) + edges[z] * r.sigma))
+            path.lineTo(w, y(r.trendAt(n - 1) + edges[z + 1] * r.sigma))
+            path.lineTo(0f, y(r.trendAt(0) + edges[z + 1] * r.sigma))
+            path.close()
+            drawPath(path, zoneColor(z).copy(alpha = 0.28f))
+        }
+        // 趨勢線
+        drawLine(Color(0xFF9575CD), androidx.compose.ui.geometry.Offset(0f, y(r.trendAt(0))), androidx.compose.ui.geometry.Offset(w, y(r.trendAt(n - 1))), 2f)
+        // 股價
+        val p = androidx.compose.ui.graphics.Path()
+        r.closes.forEachIndexed { i, v -> if (i == 0) p.moveTo(x(i), y(v)) else p.lineTo(x(i), y(v)) }
+        drawPath(p, line, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f))
+        drawCircle(zoneColor(r.zone), 6f, androidx.compose.ui.geometry.Offset(w, y(r.price)))
+    }
+}
+
 /** 參考投入比例與金額：預計投入資金 × 比例，換算可買股數（台股另顯示張數） */
 @Composable
-private fun SuggestedInvest(q: Quote, score: Int) {
-    val ratio = InvestAnalysis.suggestedRatio(score)
+private fun SuggestedInvest(q: Quote, score: Int, ratio: Int) {
     var editing by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf(if (AppState.investBudget > 0) Fmt.num(AppState.investBudget).replace(",", "") else "") }
     val budget = AppState.investBudget
@@ -195,7 +309,7 @@ private fun SuggestedInvest(q: Quote, score: Int) {
             Text("儲存", color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable { AppState.updateInvestBudget(text.toDoubleOrNull() ?: 0.0); editing = false }.padding(10.dp))
         }
-        Label("偏空 10%・中性偏空 25%・中性 40%・中性偏多 60%・偏多 80%；依分數分批布局的參考，不構成投資建議。")
+        Label("比例依「結論」：推薦買進 60–80%、觀望 30%、便宜但偏弱 25%、暫不建議 10%、不建議追高 0%；分批布局參考，不構成投資建議。")
     }
 }
 
@@ -227,7 +341,8 @@ fun ScoreBadge(q: Quote) {
         NumText(r?.let { "${it.score}%" } ?: "…", 14.sp, color, FontWeight.Bold)
         r?.let {
             Text(" " + it.label, color = color, fontSize = 11.sp, maxLines = 1)
-            Text(" · 投入 " + InvestAnalysis.suggestedRatio(it.score) + "%", color = C.Text2, fontSize = 11.sp, maxLines = 1)
+            it.band?.let { b -> Text(" · " + b.zoneName, color = zoneColor(b.zone), fontSize = 11.sp, maxLines = 1) }
+            Text(" · 投入 " + (it.verdict?.ratio ?: InvestAnalysis.suggestedRatio(it.score)) + "%", color = C.Text2, fontSize = 11.sp, maxLines = 1)
         }
     }
 }

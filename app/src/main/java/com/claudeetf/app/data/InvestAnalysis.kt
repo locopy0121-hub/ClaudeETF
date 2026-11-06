@@ -62,7 +62,42 @@ object InvestAnalysis {
         val at: Long,
         val analyst: Analyst? = null,
         val etf: EtfInfo? = null,
+        /** 一年期股價光譜 */
+        val band: PriceBand.Result? = null,
+        val verdict: Verdict? = null,
     )
+
+    /** 綜合結論：推薦買進／小量分批／觀望／暫不建議／不建議追高，附參考投入比例 */
+    data class Verdict(val title: String, val reason: String, val ratio: Int, val tone: Int /* 1 正向 0 中性 -1 負向 */)
+
+    /**
+     * 結論矩陣：分析指數（趨勢、動能、籌碼…）× 股價光譜位置（便宜或昂貴）
+     *   便宜（特價／便宜）  ＋指數 ≥ 45 → 推薦買進（分批）
+     *   便宜              ＋指數 < 45 → 價格便宜但趨勢偏弱：小量分批或等止跌
+     *   合理（偏低／偏高）  ＋指數 ≥ 58 → 推薦買進（分批）
+     *   合理              ＋指數 45–57 → 觀望或定期定額
+     *   合理              ＋指數 < 45 → 暫不建議買進
+     *   昂貴／極貴         ＋指數 ≥ 70 → 可續抱，新資金等拉回
+     *   昂貴／極貴         ＋其他     → 不建議追高
+     */
+    fun verdict(score: Int, band: PriceBand.Result?): Verdict {
+        val zone = band?.zone
+        val where = band?.let { "股價位於一年光譜「${it.zoneName}」區（趨勢價 " + "%.2f".format(it.trend) + "）" } ?: "無股價光譜資料"
+        return when {
+            zone == null -> when {
+                score >= 58 -> Verdict("可分批買進", "指數 $score 偏多；$where", suggestedRatio(score), 1)
+                score >= 45 -> Verdict("觀望", "指數 $score 中性；$where", suggestedRatio(score), 0)
+                else -> Verdict("暫不建議買進", "指數 $score 偏弱；$where", 10, -1)
+            }
+            zone <= 1 && score >= 45 -> Verdict("推薦買進（分批）", "價格便宜且指標不弱：$where、指數 $score", if (score >= 58) 80 else 60, 1)
+            zone <= 1 -> Verdict("便宜但偏弱：小量分批", "$where，但指數 $score 趨勢與籌碼偏弱，宜小量分批或等止跌訊號", 25, 0)
+            zone <= 3 && score >= 58 -> Verdict("推薦買進（分批）", "價格合理、指數 $score 偏多；$where", 60, 1)
+            zone <= 3 && score >= 45 -> Verdict("觀望／定期定額", "價格合理、指數 $score 中性；$where", 30, 0)
+            zone <= 3 -> Verdict("暫不建議買進", "價格不算便宜、指數 $score 偏弱；$where", 10, -1)
+            score >= 70 -> Verdict("可續抱，新資金等拉回", "$where，偏貴但指數 $score 強勢", 10, 0)
+            else -> Verdict("不建議追高", "$where，價格偏貴且指數 $score 不夠強", 0, -1)
+        }
+    }
 
     /** Compose 可觀察：個股頁標題徽章與分析卡片共用 */
     val results = androidx.compose.runtime.mutableStateMapOf<String, Result>()
@@ -116,6 +151,12 @@ object InvestAnalysis {
         score >= 45 -> 40
         score >= 33 -> 25
         else -> 10
+    }
+
+    private fun bandFactor(b: PriceBand.Result?): Factor? {
+        b ?: return null
+        return Factor("股價光譜", PriceBand.zoneScore(b.zone), 20,
+            "一年光譜「${b.zoneName}」區，偏離趨勢 " + "%+.1f".format(b.z) + "σ（便宜價 " + "%.2f".format(b.lines[1]) + "、趨勢價 " + "%.2f".format(b.trend) + "、昂貴價 " + "%.2f".format(b.lines[3]) + "）")
     }
 
     private fun trendFactor(c: List<Float>, price: Double, symbol: String): Factor? {
@@ -302,6 +343,7 @@ object InvestAnalysis {
         val price = q.price.takeIf { it > 0 } ?: raw.lastOrNull()?.toDouble() ?: throw IllegalStateException("沒有 ${q.symbol} 的價格")
         // 最後一根換成目前行情價，盤中分數會跟著現價走
         val c = if (raw.isNotEmpty()) raw.dropLast(1) + price.toFloat() else raw
+        val band = PriceBand.compute(h.times, h.closes.map { it.toDouble() }, price, q.market == Market.TW)
         // 個股看分析師共識；ETF 沒有分析師，改用 ETF 指標
         val etf = if (isEtf(q)) etfInfo(q, h, price) else null
         val an = if (etf == null) analyst(q) else null
@@ -314,12 +356,13 @@ object InvestAnalysis {
             chipsFactor(q),
             marketFactor(q),
             riskFactor(c),
+            bandFactor(band),
         )
         if (factors.isEmpty()) throw IllegalStateException("歷史資料不足，無法分析")
         val wsum = factors.sumOf { it.weight }
         val score = (factors.sumOf { it.score * it.weight }.toDouble() / wsum).roundToInt()
         val (label, advice) = label(score)
-        Result(score, label, advice, factors, System.currentTimeMillis(), an, etf).also { r -> withContext(Dispatchers.Main) { results[q.symbol] = r } }
+        Result(score, label, advice, factors, System.currentTimeMillis(), an, etf, band, verdict(score, band)).also { r -> withContext(Dispatchers.Main) { results[q.symbol] = r } }
     }
 
 }

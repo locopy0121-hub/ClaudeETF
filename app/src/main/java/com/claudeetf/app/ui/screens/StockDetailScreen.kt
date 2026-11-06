@@ -487,6 +487,7 @@ private fun LazyListScope.overviewTab(q: Quote, fund: Load<Fundamentals>) {
         }
     }
     item { AnalysisCard(q) }
+    item { PriceBandCard(q) }
     item { YearlyReturnsCard(q) }
     item { NextDividendCard(q, compact = true) }
     if (holding != null) item { LotsCard(q) }
