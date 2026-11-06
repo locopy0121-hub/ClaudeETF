@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -241,6 +243,8 @@ private fun MessageBubble(m: ChatEngine.Message, onImage: (String) -> Unit) {
     }
     val mine = m.mine
     val ctx = LocalContext.current
+    var actions by remember { mutableStateOf(false) }
+    if (actions && m.path != null) FileActionsDialog(m.path, m.fileName.ifBlank { File(m.path).name }, image = m.type == "image") { actions = false }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
         if (!mine) Text(m.fromName, color = C.Text2, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
         Column(
@@ -253,14 +257,19 @@ private fun MessageBubble(m: ChatEngine.Message, onImage: (String) -> Unit) {
                     val bmp = rememberThumb(m.path)
                     when {
                         bmp != null -> Image(bmp, null, Modifier.widthIn(max = 240.dp).heightIn(max = 260.dp).clip(RoundedCornerShape(8.dp))
-                            .clickable { m.path?.let(onImage) }, contentScale = ContentScale.Fit)
+                            .pointerInput(m.id) {
+                                detectTapGestures(
+                                    onTap = { m.path?.let(onImage) },
+                                    onLongPress = { actions = true },
+                                )
+                            }, contentScale = ContentScale.Fit)
                         m.progress < 0 -> Text("圖片接收失敗，點此重試：" + m.fileName, color = fg, fontSize = 13.sp,
                             modifier = Modifier.clickable { ChatEngine.retryFile(m) })
                         else -> Text("接收圖片中… ${m.progress}%", color = fg, fontSize = 13.sp)
                     }
                 }
                 "file" -> Row(
-                    Modifier.clickable { if (m.path != null) openFile(ctx, m.path) else if (m.progress < 0) ChatEngine.retryFile(m) },
+                    Modifier.clickable { if (m.path != null) actions = true else if (m.progress < 0) ChatEngine.retryFile(m) },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("📄", fontSize = 26.sp)
@@ -271,7 +280,7 @@ private fun MessageBubble(m: ChatEngine.Message, onImage: (String) -> Unit) {
                             sizeText(m.size) + when {
                                 m.progress < 0 -> " · 接收失敗，點此重試"
                                 m.path == null -> " · 接收中 ${m.progress}%"
-                                else -> " · 點擊開啟"
+                                else -> " · 點擊開啟／儲存"
                             },
                             color = fg.copy(alpha = 0.75f), fontSize = 11.sp,
                         )
@@ -280,7 +289,80 @@ private fun MessageBubble(m: ChatEngine.Message, onImage: (String) -> Unit) {
                 else -> Text(m.text, color = fg, fontSize = if (m.text.length <= 2 && m.text.any { Character.isSurrogate(it) }) 34.sp else 15.sp, lineHeight = 21.sp)
             }
         }
-        Text(hhmm(m.time), color = C.Muted, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+        Row(Modifier.padding(horizontal = 4.dp, vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(hhmm(m.time), color = C.Muted, fontSize = 10.sp)
+            if (mine) {
+                // 已讀狀態：已讀 n／已送達／未送達（對方上線後自動補送）
+                val r = ChatEngine.readBy[m.id].orEmpty().size
+                val d = ChatEngine.delivered[m.id].orEmpty().size
+                val members = ChatEngine.peers.size
+                val (t, c) = when {
+                    r > 0 -> (if (members <= 1 && r == 1) "已讀" else "已讀 $r") to C.Primary
+                    d > 0 -> "已送達" to C.Muted
+                    ChatEngine.links.isEmpty() -> "未送達" to C.Muted
+                    else -> "傳送中" to C.Muted
+                }
+                Text(" · $t", color = c, fontSize = 10.sp, fontWeight = if (r > 0) FontWeight.Bold else FontWeight.Normal)
+            }
+        }
+    }
+}
+
+/** 檔案／圖片動作：開啟、儲存到手機「下載」、分享 */
+@Composable
+private fun FileActionsDialog(path: String, name: String, image: Boolean, onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    var msg by remember { mutableStateOf<String?>(null) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        if (uri != null) msg = runCatching {
+            ctx.contentResolver.openOutputStream(uri)?.use { out -> File(path).inputStream().use { it.copyTo(out) } }
+            "已儲存"
+        }.getOrElse { "儲存失敗：" + (it.message ?: "") }
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onClose,
+        containerColor = C.Card,
+        title = { Text(name, color = C.Text, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Label(sizeText(File(path).length()))
+                listOf(
+                    "📂  開啟" to { openFile(ctx, path); onClose() },
+                    "⬇️  儲存到「下載」資料夾" to { msg = saveToDownloads(ctx, path, name) },
+                    "💾  另存到…（選擇位置）" to { pick.launch(name) },
+                    "📤  分享" to { shareFile(ctx, path, name); onClose() },
+                ).forEach { (label, act) ->
+                    Text(label, color = C.Text, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().clickable { act() }.padding(vertical = 12.dp))
+                }
+                msg?.let { Label(it, color = C.Primary) }
+                if (image) Label("圖片：點一下全螢幕檢視，長按開啟這個選單")
+            }
+        },
+        confirmButton = { Text("關閉", color = C.Primary, modifier = Modifier.clickable(onClick = onClose).padding(12.dp)) },
+    )
+}
+
+/** 存到公用「下載／ClaudeETF」資料夾（Android 10 以上免權限；舊版改用另存） */
+private fun saveToDownloads(ctx: android.content.Context, path: String, name: String): String = runCatching {
+    if (Build.VERSION.SDK_INT < 29) return "此 Android 版本請用「另存到…」"
+    val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(File(name).extension.lowercase()) ?: "application/octet-stream"
+    val values = android.content.ContentValues().apply {
+        put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+        put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime)
+        put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/ClaudeETF")
+    }
+    val uri = ctx.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return "儲存失敗"
+    ctx.contentResolver.openOutputStream(uri)?.use { out -> File(path).inputStream().use { it.copyTo(out) } }
+    "已儲存到「下載／ClaudeETF／$name」"
+}.getOrElse { "儲存失敗：" + (it.message ?: "") }
+
+private fun shareFile(ctx: android.content.Context, path: String, name: String) {
+    runCatching {
+        val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".files", File(path))
+        val type = ctx.contentResolver.getType(uri) ?: "*/*"
+        ctx.startActivity(Intent.createChooser(
+            Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "分享 $name",
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }
 
@@ -306,10 +388,16 @@ private fun rememberThumb(path: String?, max: Int = 720): ImageBitmap? {
 @Composable
 private fun ImageViewer(path: String, onClose: () -> Unit) {
     val bmp = rememberThumb(path, 2048)
+    var actions by remember { mutableStateOf(false) }
+    if (actions) FileActionsDialog(path, File(path).name.substringAfter('_').substringAfter('_'), image = true) { actions = false }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
             if (bmp != null) Image(bmp, null, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
             else Label("載入中…")
+            Text("儲存／分享", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(24.dp)
+                    .clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = 0.18f)).clickable { actions = true }
+                    .padding(horizontal = 18.dp, vertical = 10.dp))
         }
     }
 }

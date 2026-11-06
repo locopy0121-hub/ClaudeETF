@@ -75,7 +75,14 @@ object ChatEngine {
         private set
     var status by mutableStateOf("未啟動")
     var unread by mutableStateOf(0)
+    /** 是否正在看聊天畫面；開啟時把別人的訊息標成已讀 */
     var viewing = false
+        set(v) { field = v; if (v) main.post { markAllRead() } }
+
+    /** 已讀回條：訊息 id → 已送達／已讀的成員代號 */
+    val delivered = mutableStateMapOf<String, Set<String>>()
+    val readBy = mutableStateMapOf<String, Set<String>>()
+    private val readSent = HashSet<String>()
 
     /** 相容舊介面：線上成員（依使用者去重） */
     val peers: Map<String, Link> get() = links.values.groupBy { it.userId }.mapValues { it.value.first() }
@@ -196,6 +203,10 @@ object ChatEngine {
                 refreshStatus()
                 // 交換同步向量，補齊離線訊息；告知已連線成員（WebRTC 網狀擴展）
                 send(link, JSONObject().put("k", "vec").put("v", JSONObject(vector as Map<*, *>)))
+                // 對方離線期間我讀過的訊息，補送已讀回條
+                val myReads = messages.filter { it.fromId == uid && it.id in readSent }.takeLast(200).map { it.id }
+                if (myReads.isNotEmpty()) send(link, JSONObject().put("k", "rcpt").put("by", ChatPrefs.userId).put("t", "r").put("ids", JSONArray(myReads)))
+                if (viewing) markAllRead()
                 send(link, JSONObject().put("k", "peers").put("list", JSONArray(peers.keys.filter { it != uid })))
             }
             "vec" -> {
@@ -224,6 +235,23 @@ object ChatEngine {
             "msg" -> onMessage(link, o)
             "freq" -> serveFile(link, o.optString("fid"))
             "fc" -> onChunk(o)
+            "rcpt" -> {
+                // 回條：{by, t: d 送達／r 已讀, ids[]}；洪泛轉送給其他成員
+                val by = o.optString("by"); val t = o.optString("t")
+                val arr = o.optJSONArray("ids") ?: return
+                if (!seen.add("rc:" + by + ":" + t + ":" + arr.optString(arr.length() - 1) + ":" + arr.length())) return
+                val target = if (t == "r") readBy else delivered
+                var changed = false
+                for (i in 0 until arr.length()) {
+                    val id = arr.optString(i)
+                    if (messages.none { it.id == id }) continue
+                    val cur = target[id].orEmpty()
+                    if (by !in cur) { target[id] = cur + by; changed = true }
+                    if (t == "r") { val d = delivered[id].orEmpty(); if (by !in d) delivered[id] = d + by }
+                }
+                if (changed) save()
+                broadcast(o, except = link)
+            }
             "fnone" -> {
                 val fid = o.optString("fid")
                 // 這條連線沒有檔案：改向其他連線要
@@ -263,6 +291,8 @@ object ChatEngine {
         // 需要檔案：向送來這則訊息的連線要
         if (fid.isNotBlank() && existing == null && !locked) send(link, JSONObject().put("k", "freq").put("fid", fid))
         if (!viewing) unread++
+        // 回條：已送達；正在看畫面就直接已讀
+        if (!locked) receipt(if (viewing) "r" else "d", listOf(id))
         save()
     }
 
@@ -274,6 +304,19 @@ object ChatEngine {
         lamport += 1
         vector[ChatPrefs.userId] = lamport
         return (ChatPrefs.userId + ":" + lamport) to lamport
+    }
+
+    private fun receipt(t: String, ids: List<String>) {
+        val mine = ids.filter { id -> messages.firstOrNull { it.id == id }?.let { !it.mine && it.type != "system" } == true }
+            .filter { t != "r" || readSent.add(it) }
+        if (mine.isEmpty()) return
+        broadcast(JSONObject().put("k", "rcpt").put("by", ChatPrefs.userId).put("t", t).put("ids", JSONArray(mine.takeLast(200))))
+    }
+
+    /** 開啟聊天畫面：把別人的訊息全部回已讀 */
+    fun markAllRead() {
+        if (links.isEmpty()) return
+        receipt("r", messages.filter { !it.mine && it.type != "system" && it.lamport > 0 && it.id !in readSent }.map { it.id })
     }
 
     fun sendText(text: String) {
@@ -412,7 +455,7 @@ object ChatEngine {
     }
 
     fun clearHistory() {
-        messages.clear(); seen.clear(); vector.clear()
+        messages.clear(); seen.clear(); vector.clear(); readBy.clear(); delivered.clear(); readSent.clear()
         runCatching { historyFile().delete() }
     }
 
@@ -425,7 +468,9 @@ object ChatEngine {
                 snapshot.forEach { m ->
                     arr.put(JSONObject().put("id", m.id).put("f", m.fromId).put("n", m.fromName).put("t", m.time)
                         .put("ty", m.type).put("x", if (m.locked) "" else m.text).put("fn", m.fileName).put("sz", m.size)
-                        .put("p", m.path ?: "").put("l", m.lamport).put("fid", m.fileId).put("lk", m.locked))
+                        .put("p", m.path ?: "").put("l", m.lamport).put("fid", m.fileId).put("lk", m.locked)
+                        .put("rd", JSONArray(readBy[m.id].orEmpty().toList())).put("dv", JSONArray(delivered[m.id].orEmpty().toList()))
+                        .put("rs", m.id in readSent))
                 }
                 historyFile().writeText(arr.toString())
             }
@@ -434,6 +479,7 @@ object ChatEngine {
 
     private fun load() {
         messages.clear(); seen.clear(); vector.clear(); lamport = 0
+        readBy.clear(); delivered.clear(); readSent.clear()
         runCatching {
             val f = historyFile()
             if (!f.exists()) return
@@ -449,6 +495,10 @@ object ChatEngine {
                     progress = if (o.optString("fid").isBlank() || path != null) 100 else -1,
                     lamport = l, fileId = o.optString("fid"), locked = o.optBoolean("lk"))
                 messages.add(m); seen.add(id)
+                fun set(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.optString(it) }.toSet() }.orEmpty()
+                set("rd").takeIf { it.isNotEmpty() }?.let { readBy[id] = it }
+                set("dv").takeIf { it.isNotEmpty() }?.let { delivered[id] = it }
+                if (o.optBoolean("rs")) readSent.add(id)
                 if (l > 0) { lamport = maxOf(lamport, l); if (l > (vector[m.fromId] ?: 0L)) vector[m.fromId] = l }
             }
         }
