@@ -947,6 +947,26 @@ object AppState {
     }
 
     /** 自訂排序：delta = -1 上移、+1 下移 */
+    /** 把目前排序結果套用為自訂順序（未列出的維持在後面） */
+    fun applyQuoteOrder(symbols: List<String>) {
+        val head = symbols.mapNotNull { s -> quotes.firstOrNull { it.symbol == s } }
+        val rest = quotes.filter { it.symbol !in symbols }
+        quotes.clear(); quotes.addAll(head + rest); save()
+    }
+
+    /** 以目前清單建立新群組 */
+    fun groupFrom(name: String, symbols: List<String>): Int {
+        val id = (groups.maxOfOrNull { it.id } ?: 0) + 1
+        groups.add(WatchGroup(id, name.trim().ifBlank { "群組 $id" }, symbols))
+        save()
+        return id
+    }
+
+    /** 首頁卡片移到最上方 */
+    fun moveHomeCardTop(id: String) {
+        if (homeOrder.remove(id)) { homeOrder.add(0, id); save() }
+    }
+
     fun moveQuote(symbol: String, delta: Int) {
         val i = quotes.indexOfFirst { it.symbol == symbol }
         val j = i + delta

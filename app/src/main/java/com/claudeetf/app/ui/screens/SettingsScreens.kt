@@ -438,6 +438,7 @@ fun SettingsScreen(nav: NavController) {
                                 modifier = Modifier.clickable { AppState.toggleHomeCard(id) }.padding(8.dp),
                             )
                             Text(name, Modifier.weight(1f), color = if (shown) C.Text else C.Muted, fontSize = 14.sp)
+                            Text("⇈", color = C.Text, fontSize = 16.sp, modifier = Modifier.clickable { AppState.moveHomeCardTop(id) }.padding(8.dp))
                             Text("↑", color = C.Text, fontSize = 18.sp, modifier = Modifier.clickable { AppState.moveHomeCard(id, -1) }.padding(10.dp))
                             Text("↓", color = C.Text, fontSize = 18.sp, modifier = Modifier.clickable { AppState.moveHomeCard(id, 1) }.padding(10.dp))
                             if (AppState.isCustomCard(id)) Text("✕", color = C.Red, fontSize = 16.sp, modifier = Modifier.clickable { AppState.removeHomeCard(id) }.padding(10.dp))

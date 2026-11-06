@@ -169,6 +169,17 @@ fun WatchlistScreen(nav: NavController) {
                         sortNames.forEachIndexed { i, n -> FilterChipText(n, sort == i && !heat) { sort = i; heat = false } }
                     }
                 }
+                if (sort != 0 && !heat && list.isNotEmpty()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Text("套用為自訂順序", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clickable {
+                            AppState.applyQuoteOrder(list.map { it.symbol }); sort = 0
+                        }.padding(vertical = 4.dp))
+                        Text("存成新群組（${sortNames[sort]}）", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clickable {
+                            val id = AppState.groupFrom(sortNames[sort] + " " + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("M/d")), list.map { it.symbol })
+                            filter = "g$id"
+                        }.padding(vertical = 4.dp))
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Label("欄位", Modifier.padding(end = 6.dp))
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
