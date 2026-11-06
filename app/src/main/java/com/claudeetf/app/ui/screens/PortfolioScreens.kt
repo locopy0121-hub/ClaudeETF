@@ -331,6 +331,34 @@ private fun GroupHeader(market: Market, count: Int, total: String) {
     }
 }
 
+/** 持股列的即時現價小方格：依漲跌上色，價格跳動時閃爍，盤中顯示即時燈號 */
+@Composable
+private fun LivePriceBox(q: com.claudeetf.app.data.Quote, isUs: Boolean) {
+    var last by remember(q.symbol) { mutableStateOf(q.price) }
+    var flash by remember(q.symbol) { mutableIntStateOf(0) }
+    LaunchedEffect(q.price) {
+        if (last != 0.0 && q.price != last) {
+            flash = if (q.price > last) 1 else -1
+            last = q.price
+            kotlinx.coroutines.delay(700)
+            flash = 0
+        } else last = q.price
+    }
+    val c = Trend.price(q.change)
+    val live = if (isUs) com.claudeetf.app.data.MarketData.usLive() else com.claudeetf.app.data.MarketData.isTwIntraday()
+    Row(
+        Modifier.clip(RoundedCornerShape(6.dp))
+            .background(if (flash != 0) Trend.fg(flash.toDouble()).copy(alpha = 0.35f) else c.copy(alpha = 0.12f))
+            .border(1.dp, c.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (live) { Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(C.Red)); HGap(4.dp) }
+        Text(if (live) "即時 " else "收盤 ", color = C.Muted, fontSize = 10.sp)
+        NumText((if (isUs) "$" else "") + Fmt.price(q.price), 13.sp, c, FontWeight.Bold)
+    }
+}
+
 @Composable
 private fun HoldingRow(h: Holding, inTwd: Boolean, onClick: () -> Unit) {
     val q = AppState.quote(h.symbol)
@@ -365,6 +393,7 @@ private fun HoldingRow(h: Holding, inTwd: Boolean, onClick: () -> Unit) {
             q?.let { EntryTagFor(it, holder = true, modifier = Modifier.padding(top = 2.dp)) }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            if (q != null && q.price > 0) LivePriceBox(q, isUs)
             NumText(mask(mvText), 14.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 NumText(mask(plText), 12.sp, Trend.fg(plOrig)); HGap(6.dp)
