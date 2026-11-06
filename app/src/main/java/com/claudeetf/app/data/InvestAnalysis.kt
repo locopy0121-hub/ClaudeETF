@@ -50,6 +50,8 @@ object InvestAnalysis {
         val expensePct: Double?,
         val nav: Double?,
         val premiumPct: Double?,
+        /** 近 5 年沒有任何配息紀錄（累積型或新上市） */
+        val noDividend: Boolean = false,
     )
 
     data class Result(
@@ -232,7 +234,9 @@ object InvestAnalysis {
             assets = raw("summaryDetail", "totalAssets") ?: raw("defaultKeyStatistics", "totalAssets"),
             expensePct = expense,
             nav = nav,
-            premiumPct = nav?.let { (price / it - 1) * 100 },
+            // Yahoo 的淨值是前一交易日的，與「昨收」比才不會在大漲大跌日誤判折溢價
+            premiumPct = nav?.let { n -> ((q.prevClose.takeIf { it > 0 } ?: price) / n - 1) * 100 },
+            noDividend = div != null && div.history.isEmpty(),
         )
     }
 
@@ -274,7 +278,7 @@ object InvestAnalysis {
         // 折溢價：溢價過高代表買貴
         e.premiumPct?.let { p ->
             val score = when { p > 2 -> 25.0; p > 1 -> 40.0; p > 0.3 -> 55.0; p >= -0.3 -> 72.0; p >= -1 -> 70.0; else -> 60.0 }
-            out += Factor("折溢價", clamp(score), 10, (if (p >= 0) "溢價 " else "折價 ") + "%.2f".format(kotlin.math.abs(p)) + "%（淨值 " + "%.2f".format(e.nav) + "）")
+            out += Factor("折溢價", clamp(score), 10, "昨收" + (if (p >= 0) "溢價 " else "折價 ") + "%.2f".format(kotlin.math.abs(p)) + "%（前一日淨值 " + "%.2f".format(e.nav) + "）")
         }
         return out
     }

@@ -116,14 +116,15 @@ fun AnalysisCard(q0: Quote) {
             }
             val tw = q.market == Market.TW
             val cells = listOfNotNull(
+                if (e.noDividend) InfoCell("配息", "不配息／尚無紀錄") else null,
                 InfoCell("殖利率", e.yieldPct?.let { Fmt.num(it, 2) + "%" }),
                 InfoCell("填息", if (e.divCount != null && e.filled != null) "${e.filled} / ${e.divCount} 次" else null),
                 InfoCell("平均填息", e.avgFillDays?.let { Fmt.num(it, 0) + " 天" }),
                 InfoCell("日均量", e.avgVolume?.let { if (tw) Fmt.num(it) + " 張" else Fmt.num(it / 1e6, 2) + "M" }),
-                InfoCell("規模", e.assets?.let { if (it >= 1e8) Fmt.num(it / 1e8) + " 億" else Fmt.num(it / 1e4) + " 萬" }),
+                InfoCell("規模（Yahoo）", e.assets?.let { if (it >= 1e8) Fmt.num(it / 1e8) + " 億" else Fmt.num(it / 1e4) + " 萬" }),
                 InfoCell("費用率", e.expensePct?.let { Fmt.num(it, 2) + "%" }),
-                InfoCell("淨值", e.nav?.let { Fmt.price(it) }),
-                InfoCell("折溢價", e.premiumPct?.let { (if (it >= 0) "溢價 " else "折價 ") + Fmt.num(kotlin.math.abs(it), 2) + "%" }),
+                InfoCell("前日淨值", e.nav?.let { Fmt.price(it) }),
+                InfoCell("昨收折溢價", e.premiumPct?.let { (if (it >= 0) "溢價 " else "折價 ") + Fmt.num(kotlin.math.abs(it), 2) + "%" }),
             ).filter { it.value != null }
             if (cells.isEmpty()) Label("暫無 ETF 指標資料")
             cells.chunked(2).forEach { row ->
