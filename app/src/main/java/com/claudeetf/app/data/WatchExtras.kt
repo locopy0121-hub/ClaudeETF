@@ -44,7 +44,10 @@ object WatchExtras {
         if (syms.isEmpty()) return
         val res = withContext(Dispatchers.IO) {
             val od = com.claudeetf.app.data.remote.TwOpenData
-            val margins = runCatching { od.marginAll() }.getOrDefault(emptyMap())
+            // 上市（證交所）＋上櫃（櫃買中心）
+            val margins = runCatching { od.marginAll() }.getOrDefault(emptyMap()) +
+                runCatching { com.claudeetf.app.data.remote.TpexOpenData.margin() }.getOrDefault(emptyMap()).filterKeys { it in syms }
+            val otcRev = runCatching { com.claudeetf.app.data.remote.TpexOpenData.revenue() }.getOrDefault(emptyMap())
             val dt = runCatching { od.dayTradeAll() }.getOrDefault(emptyMap())
             val close = if (dt.isNotEmpty()) MarketData.closeAll() else emptyMap()
             syms.associateWith { s ->
@@ -54,12 +57,31 @@ object WatchExtras {
                     if (d != null && vol != null && vol > 0) d / vol * 100 else null,
                     d?.div(1000),
                     margins[s],
-                    runCatching { od.monthlyRevenue(s) }.getOrNull(),
+                    runCatching { od.monthlyRevenue(s) }.getOrNull() ?: otcRev[s],
                 )
             }
         }
         if (res.values.any { it.margin != null || it.revenue != null || it.dayTradePct != null }) twDay = today()
         AppState.twDaily.clear(); AppState.twDaily.putAll(res)
+    }
+
+    private var peDay = ""
+
+    /** 本益比：上市證交所、上櫃櫃買中心、美股 Yahoo（每天一次） */
+    suspend fun loadPe() {
+        if (peDay == today() && AppState.peMap.isNotEmpty()) return
+        val tw = AppState.quotes.filter { it.market == Market.TW }.map { it.symbol }
+        val us = AppState.quotes.filter { it.market == Market.US }.map { it.symbol }
+        val m = withContext(Dispatchers.IO) {
+            val out = HashMap<String, Double>()
+            if (tw.isNotEmpty()) {
+                runCatching { com.claudeetf.app.data.remote.TwOpenData.peAll() }.getOrNull()?.let { all -> tw.forEach { s -> all[s]?.let { out[s] = it } } }
+                runCatching { com.claudeetf.app.data.remote.TpexOpenData.peAll() }.getOrNull()?.let { all -> tw.forEach { s -> if (s !in out) all[s]?.let { out[s] = it } } }
+            }
+            if (us.isNotEmpty()) runCatching { com.claudeetf.app.data.remote.YahooExtra.peRatios(us) }.getOrNull()?.let { out.putAll(it) }
+            out
+        }
+        if (m.isNotEmpty()) { peDay = today(); AppState.peMap.putAll(m) }
     }
 
     suspend fun loadInstitutional() {

@@ -194,6 +194,8 @@ object AppState {
     var divPlansUpdatedAt by mutableStateOf(0L)
     val institutional = mutableStateMapOf<String, com.claudeetf.app.data.remote.TwInstitutional.Day>()
     val twDaily = mutableStateMapOf<String, WatchExtras.TwDaily>()
+    /** 本益比（自選欄位） */
+    val peMap = mutableStateMapOf<String, Double>()
     var showKeyLevels by mutableStateOf(true)
     /** 台股分時 Y 軸用漲跌停價 */
     var limitAxis by mutableStateOf(true)

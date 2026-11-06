@@ -216,6 +216,21 @@ object YahooExtra {
         return out
     }
 
+    /** 本益比（trailing PE），v7 批次 */
+    fun peRatios(symbols: List<String>): Map<String, Double> {
+        val out = HashMap<String, Double>()
+        for (chunk in symbols.chunked(50)) {
+            val body = authedGet("$Q2/v7/finance/quote?symbols=${enc(chunk.joinToString(","))}&formatted=false")
+            val arr = JSONObject(body).optJSONObject("quoteResponse")?.optJSONArray("result") ?: continue
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val pe = o.raw("trailingPE") ?: continue
+                if (pe > 0) out[o.optString("symbol")] = pe
+            }
+        }
+        return out
+    }
+
     // ---------------- 漲跌排行（預設篩選器） ----------------
 
     data class Mover(val symbol: String, val name: String, val price: Double, val changePct: Double, val volume: Double)

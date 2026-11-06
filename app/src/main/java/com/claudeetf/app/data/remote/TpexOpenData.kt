@@ -198,6 +198,18 @@ object TpexOpenData {
         out
     }
 
+    /** 上櫃股票本益比 */
+    fun peAll(): Map<String, Double> = firstOf(listOf("/tpex_mainboard_peratio_analysis", "/tpex_mainborad_peratio_analysis")) { arr ->
+        val out = HashMap<String, Double>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val c = code(o) ?: continue
+            val pe = num(o.field("PriceEarningRatio", "Earning") ?: o.like(listOf("本益比"))) ?: continue
+            if (pe > 0) out[c] = pe
+        }
+        out
+    }
+
     private fun roc(s: String): String {
         val d = s.filter { it.isDigit() }
         if (d.length < 6) return s

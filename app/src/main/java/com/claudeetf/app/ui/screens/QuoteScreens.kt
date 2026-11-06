@@ -69,6 +69,7 @@ fun WatchlistScreen(nav: NavController) {
         if ("keys" in cols || AppState.watchLayout == "card") KeyLevelsUi.load(AppState.quotes.toList())
         if ("div" in cols) com.claudeetf.app.data.WatchExtras.loadDividends(AppState.quotes.toList())
         if ("inst" in cols) com.claudeetf.app.data.WatchExtras.loadInstitutional()
+        if ("pe" in cols) com.claudeetf.app.data.WatchExtras.loadPe()
         if (cols.any { it in listOf("dt", "credit", "rev") }) com.claudeetf.app.data.WatchExtras.loadTwDaily()
     }
     val base = AppState.quotes.filter { q ->
@@ -354,7 +355,11 @@ fun WatchCell(q: Quote, col: String) {
     when (col) {
         "volume" -> CellText(AppState.dayStats[q.symbol]?.volume?.let { volumeText(it, q.market) } ?: "—", "量", m)
         "amp" -> CellText(amplitude(q)?.let { Fmt.num(it, 2) + "%" } ?: "—", "振幅", m)
-        "pe" -> CellText(q.stats?.pe?.takeIf { it.isNotBlank() } ?: "—", "本益比", m)
+        "pe" -> {
+            val etf = q.isEtf || (q.market == Market.TW && q.symbol.startsWith("00"))
+            val pe = AppState.peMap[q.symbol]?.let { Fmt.num(it, 1) } ?: q.stats?.pe?.takeIf { it.isNotBlank() && it != "—" }
+            CellText(pe ?: "—", if (etf && pe == null) "ETF 無" else "本益比", m)
+        }
         "div" -> {
             val b = AppState.divBriefs[q.symbol]
             val md = java.time.format.DateTimeFormatter.ofPattern("M/d")
@@ -370,7 +375,8 @@ fun WatchCell(q: Quote, col: String) {
             val d = AppState.twDaily[q.symbol]
             if (q.market != Market.TW) CellText("—", "美股", m)
             else when (col) {
-                "dt" -> CellText(d?.dayTradePct?.let { Fmt.num(it, 1) + "%" } ?: "—", d?.dayTradeLots?.let { "當沖 " + Fmt.num(it) + " 張" } ?: "當沖比", m)
+                "dt" -> CellText(d?.dayTradePct?.let { Fmt.num(it, 1) + "%" } ?: "—",
+                    d?.dayTradeLots?.let { "當沖 " + Fmt.num(it) + " 張" } ?: "當沖比（上市）", m)
                 "credit" -> {
                     val mg = d?.margin
                     if (mg?.financing == null) CellText("—", "信用", m)
@@ -388,7 +394,7 @@ fun WatchCell(q: Quote, col: String) {
                 else -> {
                     val r = d?.revenue
                     val yoy = r?.yoyPct?.replace(",", "")?.toDoubleOrNull()
-                    if (r == null) CellText("—", "月營收", m)
+                    if (r == null) CellText("—", if (q.isEtf || q.symbol.startsWith("00")) "ETF 無營收" else "月營收", m)
                     else Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
                         NumText("年 " + (yoy?.let { Fmt.signedPct(it, 1) } ?: "—"), 12.sp, yoy?.let { Trend.fg(it) } ?: C.Text)
                         Text(r.month + " 月 " + (r.momPct?.replace(",", "")?.toDoubleOrNull()?.let { Fmt.signedPct(it, 1) } ?: "—"),

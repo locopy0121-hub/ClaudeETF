@@ -52,6 +52,19 @@ object TwOpenData {
     // ---------- 本益比、殖利率、股價淨值比 ----------
     data class Valuation(val pe: String?, val yieldPct: String?, val pb: String?)
 
+    /** 全部上市股票本益比（證交所 BWIBBU_ALL） */
+    fun peAll(): Map<String, Double> {
+        val arr = dataset("/exchangeReport/BWIBBU_ALL")
+        val out = HashMap<String, Double>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val c = (o.find("Code") ?: o.find("代號"))?.trim() ?: continue
+            val pe = toNum(o.find("PE") ?: o.find("本益比")) ?: continue
+            if (pe > 0) out[c] = pe
+        }
+        return out
+    }
+
     fun valuation(code: String): Valuation? {
         val o = dataset("/exchangeReport/BWIBBU_ALL").rowFor(code) ?: return null
         return Valuation(

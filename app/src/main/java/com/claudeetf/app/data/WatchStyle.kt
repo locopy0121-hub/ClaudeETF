@@ -53,6 +53,7 @@ data class WatchStyle(
             "change" to "漲跌",
             "entry" to "進場建議標籤",
             "keys" to "三關位置",
+            "cols" to "欄位／第二欄資訊",
             "limit" to "漲停／跌停",
             "market" to "市場標籤（TW／US）",
             "source" to "報價來源與時間",

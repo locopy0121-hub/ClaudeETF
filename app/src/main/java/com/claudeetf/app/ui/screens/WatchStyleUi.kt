@@ -147,6 +147,13 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
         groups(ids, setOf("market", "source", "volume", "amp")).forEach { g ->
             when (g.first()) {
                 "spark" -> if (q.spark.size >= 2) Sparkline(q.spark, color, Modifier.fillMaxWidth().height(if (st.density == 0) 20.dp else 26.dp).tap(t, "spark"), fill = true)
+                "cols" -> {
+                    // 行情頁「欄位／第二欄」選的資訊；走勢與卡片走勢圖重複不再顯示
+                    val cols = listOf(AppState.watchColumn, AppState.watchColumn2).filter { it.isNotEmpty() && it != "spark" }.distinct()
+                    if (cols.isNotEmpty()) Row(Modifier.align(extraAlign).tap(t, "cols"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        cols.forEach { WatchCell(q, it) }
+                    } else if (onTap != null) Text("欄位：未選（行情頁設定）", Modifier.tap(t, "cols"), color = C.Muted, fontSize = st.sp(10))
+                }
                 "change" -> WatchChange(q, st, if (small) 11 else 12,
                     (if (st.changeMode == 0 && st.tagAlign == 0) Modifier.fillMaxWidth() else Modifier.align(extraAlign)).tap(t, "change"), spread = st.tagAlign == 0)
                 else -> Row(Modifier.align(extraAlign), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
