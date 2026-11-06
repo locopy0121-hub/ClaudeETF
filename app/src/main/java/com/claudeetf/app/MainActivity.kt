@@ -146,10 +146,12 @@ class MainActivity : ComponentActivity() {
                 runCatching { com.claudeetf.app.alerts.AlertEngine.checkDividendDays(applicationContext) }
             }
         }
-        // 線上更新：開啟 App 後自動檢查 GitHub 最新版本（6 小時內只查一次）
+        // 線上更新：每次回到 App（前景）時檢查 GitHub 最新版本，距上次超過 15 分鐘才重新查詢
         lifecycleScope.launch {
-            delay(4_000L)
-            if (AppState.autoUpdateCheck) runCatching { com.claudeetf.app.data.AppUpdater.check(applicationContext, auto = true) }
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                delay(3_000L)
+                if (AppState.autoUpdateCheck) runCatching { com.claudeetf.app.data.AppUpdater.check(applicationContext, auto = true) }
+            }
         }
         // 美股盤中：依「美股更新頻率」獨立輪詢（1～10 秒），或 Finnhub 逐筆串流（即時）
         lifecycleScope.launch {

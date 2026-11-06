@@ -78,6 +78,16 @@ object AlertEngine {
     /** 測試通知 */
     fun test(context: Context) = notify(context, 0, "提醒測試", "通知功能正常，觸發條件時會這樣通知你。")
 
+    /** 背景發現新版本：發一次系統通知，點了開 App 跳出更新視窗 */
+    suspend fun checkAppUpdate(context: Context) {
+        if (!AppState.autoUpdateCheck) return
+        com.claudeetf.app.data.AppUpdater.check(context, auto = true, minGapMs = 6 * 3600_000L, popup = false)
+        if (com.claudeetf.app.data.AppUpdater.shouldNotify(context)) {
+            val r = com.claudeetf.app.data.AppUpdater.latest ?: return
+            notify(context, 908, "ClaudeETF 有新版本 " + r.tag.removePrefix("v"), "點此開啟 App，一鍵下載並安裝更新。")
+        }
+    }
+
     suspend fun check(context: Context) {
         val today = LocalDate.now(TPE)
         val todayKey = today.toString()
@@ -416,6 +426,7 @@ object AlertEngine {
 class AlertWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         AppState.init(applicationContext)
+        runCatching { AlertEngine.checkAppUpdate(applicationContext) }
         val summaries = (AppState.dailySummary || AppState.monthlyReport) && AppState.holdings.isNotEmpty()
         if (AppState.alerts.none { it.enabled } && !summaries && AppState.dcaPlans.none { it.enabled }) return Result.success()
         runCatching {

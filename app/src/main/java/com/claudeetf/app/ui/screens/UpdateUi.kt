@@ -102,6 +102,8 @@ fun UpdateCard() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var show by remember { mutableStateOf(false) }
+    // 打開「關於」時，距上次檢查超過 1 分鐘就自動重新檢查（不跳視窗）
+    LaunchedEffect(Unit) { AppUpdater.check(ctx, auto = true, minGapMs = 60_000L, popup = false) }
     val r = AppUpdater.latest
     Card(padding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -118,12 +120,17 @@ fun UpdateCard() {
                 }.padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
-        AppUpdater.message?.let { Text(it, color = if (it.contains("失敗")) C.Red else C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+        Row(Modifier.padding(top = 4.dp)) {
+            AppUpdater.message?.let { Text(it, Modifier.weight(1f), color = if (it.contains("失敗")) C.Red else if (it.startsWith("有新版本")) C.Primary else C.Text2, fontSize = 12.sp) }
+                ?: Spacer(Modifier.weight(1f))
+            if (AppUpdater.lastCheckAt > 0) Label("上次檢查 " + java.time.Instant.ofEpochMilli(AppUpdater.lastCheckAt)
+                .atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("M/d HH:mm")))
+        }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("開啟 App 時自動檢查", Modifier.weight(1f), color = C.Text2, fontSize = 13.sp)
             Switch(AppState.autoUpdateCheck, { AppState.updateAutoUpdateCheck(it) })
         }
-        Label("從 GitHub Releases 下載最新開發版，交給系統安裝程式覆蓋更新。")
+        Label("從 GitHub Releases 下載最新版，交給系統安裝程式覆蓋更新。回到 App 時自動檢查（15 分鐘一次），背景每 6 小時檢查並以通知提醒。")
     }
     if (show && r != null) UpdateDialog(r, onLater = { show = false })
 }

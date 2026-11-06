@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * 線上更新（OTA）：從 GitHub Releases 取得最新開發版 APK，下載後交給系統安裝程式覆蓋更新。
- * - repo 公開，不需要權杖（GitHub API 未登入每小時 60 次，App 每 6 小時最多自動檢查一次）。
+ * - repo 公開，不需要權杖（GitHub API 未登入每小時 60 次；回到 App 時距上次超過 15 分鐘才自動檢查）。
  * - 每次建置都用 repo 內同一把 keystore 簽章，所以可以直接覆蓋安裝、資料保留。
  * - 以「最新發布時間」那一版為準，再比較版本（主.次.修訂），避免舊版號規則留下的 v0.2.69 被誤判成較新。
  * - 版本自 v1.0.1 起；0.2.x 開發版也能更新到 1.0.x。
@@ -40,6 +40,9 @@ object AppUpdater {
     /** 下載進度 0..1；null = 未下載 */
     var progress by mutableStateOf<Float?>(null)
         private set
+    /** 上次檢查時間（毫秒） */
+    var lastCheckAt by mutableStateOf(0L)
+        private set
     /** 是否要在首頁跳出更新提示（使用者按「稍後」後本次不再跳） */
     var prompt by mutableStateOf(false)
 
@@ -58,15 +61,19 @@ object AppUpdater {
 
     fun hasUpdate(context: Context): Boolean = latest?.let { it.patch > currentPatch(context) } ?: false
 
-    /** auto = true：啟動時自動檢查（6 小時內檢查過就略過） */
-    suspend fun check(context: Context, auto: Boolean = false) {
+    /**
+     * auto = true：回到 App 時自動檢查（距上次 minGapMs 內就沿用上次結果）。
+     * popup = false：只更新資料不跳視窗（背景通知、關於頁刷新用）。
+     */
+    suspend fun check(context: Context, auto: Boolean = false, minGapMs: Long = 15 * 60_000L, popup: Boolean = auto) {
         if (checking) return
         val prefs = context.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
-        if (auto && now - prefs.getLong("lastCheck", 0L) < 6 * 3600_000L) {
+        if (lastCheckAt == 0L) lastCheckAt = prefs.getLong("lastCheck", 0L)
+        if (auto && now - prefs.getLong("lastCheck", 0L) < minGapMs) {
             // 用上次的結果
             restore(prefs)
-            prompt = hasUpdate(context) && prefs.getString("skipped", "") != latest?.tag
+            if (popup) prompt = hasUpdate(context) && prefs.getString("skipped", "") != latest?.tag
             return
         }
         checking = true
@@ -102,13 +109,14 @@ object AppUpdater {
             val newest = list.maxByOrNull { it.publishedAt }
             latest = newest
             prefs.edit().putLong("lastCheck", now).apply()
+            lastCheckAt = now
             newest?.let { save(prefs, it) }
             message = when {
                 newest == null -> "找不到可下載的版本"
                 newest.patch > currentPatch(context) -> "有新版本 " + newest.tag
                 else -> "已是最新版本"
             }
-            prompt = auto && hasUpdate(context) && prefs.getString("skipped", "") != newest?.tag
+            if (popup) prompt = hasUpdate(context) && prefs.getString("skipped", "") != newest?.tag
         } catch (e: Exception) {
             message = "檢查失敗：" + (e.message ?: e.javaClass.simpleName)
         } finally {
@@ -126,6 +134,16 @@ object AppUpdater {
         val tag = p.getString("tag", null) ?: return
         latest = Release(tag, p.getInt("patch", -1), p.getString("name", "") ?: "", p.getString("notes", "") ?: "",
             p.getString("url", "") ?: "", p.getLong("size", 0), p.getString("pub", "") ?: "")
+    }
+
+    /** 背景通知用：這一版是否已通知過（每版只通知一次） */
+    fun shouldNotify(context: Context): Boolean {
+        val r = latest ?: return false
+        if (!hasUpdate(context)) return false
+        val p = context.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE)
+        if (p.getString("notified", "") == r.tag) return false
+        p.edit().putString("notified", r.tag).apply()
+        return true
     }
 
     /** 「稍後」：這一版不再自動跳出 */
