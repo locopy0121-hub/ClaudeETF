@@ -32,6 +32,8 @@ data class DividendInfo(
     val ttm: Double,
     val yieldPct: Double?,
     val extra: List<InfoItem>,
+    /** 除息時間 → 填息天數（日曆天）；null = 尚未填息；沒有鍵 = 無股價資料 */
+    val fillDays: Map<Long, Int?> = emptyMap(),
 )
 
 /** 個股詳細資料：概覽、財務、股息、新聞、公司。各部分獨立載入，失敗不影響其他部分。 */
@@ -47,7 +49,30 @@ object StockInfoRepo {
     }
 
     suspend fun history(q: Quote, range: String): YahooExtra.History = withContext(Dispatchers.IO) {
+        // 台股盤中、僅用富果：1 日分時改用富果 5 分 K
+        if (range == "1d" && q.market == Market.TW && AppState.twUseFugle && AppState.fugleKey.isNotBlank() && MarketData.isTwIntraday()) {
+            runCatching { fugleIntraday(q) }.getOrNull()?.let { return@withContext it }
+        }
         YahooExtra.history(yahooSymbol(q), range)
+    }
+
+    private fun fugleIntraday(q: Quote): YahooExtra.History? {
+        val c = FugleApi.candles(q.symbol, AppState.fugleKey, 5)
+        if (c.size < 2) return null
+        // 量的單位：與當日總量（股）比對，若明顯是「張」則換算為股
+        val sum = c.sumOf { it.volume }
+        val day = AppState.dayStats[q.symbol]?.volume
+        val mult = if (day != null && sum > 0 && sum * 200 < day) 1000.0 else 1.0
+        return YahooExtra.History(
+            times = c.map { it.time },
+            closes = c.map { it.close.toFloat() },
+            prevClose = q.prevClose.takeIf { it > 0 },
+            opens = c.map { it.open.toFloat() },
+            highs = c.map { it.high.toFloat() },
+            lows = c.map { it.low.toFloat() },
+            volumes = c.map { (it.volume * mult).toFloat() },
+            dayVolume = day,
+        )
     }
 
     /**
@@ -207,7 +232,23 @@ object StockInfoRepo {
         val extra = ArrayList<InfoItem>()
         if (q.market == Market.US) extra += InfoItem("美股預扣稅", "30%（實收 = 配息 × 0.7）")
         if (q.market == Market.TW) extra += InfoItem("二代健保", "單筆 ≥ NT$20,000 扣 2.11%")
-        DividendInfo(list, ttm, yieldPct, extra)
+        // 填息天數：除息前一日收盤價，之後第一次收盤 ≥ 該價的天數（近 2 年日線）
+        val fill = HashMap<Long, Int?>()
+        runCatching {
+            val h = YahooExtra.history(yahooSymbol(q), "2y")
+            val zone = java.time.ZoneId.of(if (q.market == Market.TW) "Asia/Taipei" else "America/New_York")
+            fun day(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+            for (d in list) {
+                val exDay = day(d.time)
+                val exIdx = h.times.indexOfFirst { !day(it).isBefore(exDay) }
+                if (exIdx <= 0) continue
+                val pre = h.closes[exIdx - 1]
+                if (pre.isNaN()) continue
+                val j = (exIdx until h.closes.size).firstOrNull { !h.closes[it].isNaN() && h.closes[it] >= pre }
+                fill[d.time] = j?.let { java.time.temporal.ChronoUnit.DAYS.between(exDay, day(h.times[it])).toInt() }
+            }
+        }
+        DividendInfo(list, ttm, yieldPct, extra, fill)
     }
 
     /** 台股用 Google 中文新聞；美股用 Yahoo 新聞，失敗時改用 Google */

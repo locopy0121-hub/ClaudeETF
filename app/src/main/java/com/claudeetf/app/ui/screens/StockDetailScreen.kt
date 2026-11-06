@@ -433,15 +433,28 @@ private fun LazyListScope.dividendTab(q: Quote, divs: Load<DividendInfo>) {
                     KeyValue("近 12 個月配息", if (d.ttm > 0) ccy + Fmt.num(d.ttm, 4).trimEnd('0').trimEnd('.') else "—")
                     KeyValue("現價殖利率", d.yieldPct?.let { Fmt.num(it, 2) + "%" } ?: "—")
                     KeyValue("近 5 年配息次數", d.history.size.toString())
+                    val filled = d.fillDays.values.filterNotNull()
+                    if (d.fillDays.isNotEmpty()) {
+                        KeyValue("填息率（近 2 年）", "${filled.size} / ${d.fillDays.size}")
+                        KeyValue("平均填息天數", if (filled.isNotEmpty()) Fmt.num(filled.average(), 0) + " 天" else "—")
+                    }
                 }
             }
             if (d.history.isEmpty()) {
                 item { Label("近 5 年沒有配息紀錄") }
             } else {
-                item { SectionTitle("配息紀錄", "除息日 · 每股") }
+                item { SectionTitle("配息紀錄", "除息日 · 填息 · 每股") }
                 items(d.history) { div ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
                         NumText(date(div.time), 13.sp, modifier = Modifier.weight(1f))
+                        if (d.fillDays.containsKey(div.time)) {
+                            val fd = d.fillDays[div.time]
+                            Text(
+                                if (fd == null) "尚未填息" else if (fd == 0) "當日填息" else "填息 $fd 天",
+                                color = if (fd == null) C.Muted else C.Primary, fontSize = 12.sp,
+                                modifier = Modifier.padding(end = 12.dp),
+                            )
+                        }
                         NumText(ccy + Fmt.num(div.amount, 4).trimEnd('0').trimEnd('.'), 13.sp)
                     }
                 }

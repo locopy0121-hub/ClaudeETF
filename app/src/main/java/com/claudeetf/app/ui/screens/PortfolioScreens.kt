@@ -759,6 +759,7 @@ fun AnalysisScreen(nav: NavController) {
             }
             concentrationSection()
             statsSection()
+            tagSection()
             item {
                 Card(padding = 14.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -904,6 +905,40 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statsSection() {
             s.worst?.let { KeyValue("最大單筆虧損", it.first + " " + mask(Fmt.signed(it.second)), Trend.fg(it.second)) }
             KeyValue("累計已實現", mask(Fmt.signed(s.totalRealized)), Trend.fg(s.totalRealized))
             Label("獲利因子＝總獲利 ÷ 總虧損，大於 1 代表賺多賠少；平均持有天數以先進先出計算，不含期初持股。")
+        }
+    }
+}
+
+/** 依交易標籤統計：筆數、買進金額、已實現損益、股息 */
+private fun androidx.compose.foundation.lazy.LazyListScope.tagSection() {
+    val tagged = AppState.trades.filter { it.tags.isNotEmpty() && it.origin != com.claudeetf.app.data.TradeOrigin.LEGACY }
+    if (tagged.isEmpty()) return
+    data class Row4(val tag: String, val count: Int, val buy: Double, val realized: Double, val div: Double)
+    val rows = tagged.flatMap { t -> t.tags.map { it to t } }.groupBy({ it.first }, { it.second }).map { (tag, ts) ->
+        Row4(
+            tag, ts.size,
+            ts.filter { it.type == com.claudeetf.app.data.TradeType.BUY }.sumOf { it.shares * it.price * it.fx + it.fee * it.fx },
+            ts.sumOf { AppState.realizedById[it.id] ?: 0.0 },
+            ts.sumOf { AppState.dividendById[it.id] ?: 0.0 },
+        )
+    }.sortedByDescending { it.realized + it.div }
+    item { SectionTitle("依標籤統計", "${rows.size} 個標籤") }
+    item {
+        Card(padding = 14.dp) {
+            Row {
+                Label("標籤", Modifier.weight(1.2f)); Label("筆數", Modifier.weight(0.6f))
+                Label("買進金額", Modifier.weight(1f)); Label("已實現＋股息", Modifier.weight(1.2f))
+            }
+            rows.forEach { r ->
+                val pl = r.realized + r.div
+                Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("#" + r.tag, Modifier.weight(1.2f), color = C.Primary, fontSize = 13.sp, maxLines = 1)
+                    NumText(r.count.toString(), 13.sp, modifier = Modifier.weight(0.6f))
+                    NumText(mask(Fmt.num(r.buy)), 13.sp, modifier = Modifier.weight(1f))
+                    NumText(mask(Fmt.signed(pl)), 13.sp, Trend.fg(pl), modifier = Modifier.weight(1.2f))
+                }
+            }
+            Label("金額皆為台幣；一筆交易有多個標籤時會分別計入")
         }
     }
 }

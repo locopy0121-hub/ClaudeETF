@@ -57,6 +57,21 @@ object FugleApi {
             low = o.num("lowPrice"),
         )
     }
+
+    /** 富果盤中分 K（timeframe 分鐘），回傳 時間（毫秒）、開高低收、量 */
+    data class Candle(val time: Long, val open: Double, val high: Double, val low: Double, val close: Double, val volume: Double)
+
+    fun candles(symbol: String, apiKey: String, timeframe: Int = 5): List<Candle> {
+        val body = Http.get("$BASE/intraday/candles/$symbol?timeframe=$timeframe", mapOf("X-API-KEY" to apiKey))
+        val arr = JSONObject(body).optJSONArray("data") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val t = runCatching { java.time.OffsetDateTime.parse(o.optString("date")).toInstant().toEpochMilli() }.getOrNull()
+                ?: return@mapNotNull null
+            Candle(t, o.num("open") ?: return@mapNotNull null, o.num("high") ?: return@mapNotNull null,
+                o.num("low") ?: return@mapNotNull null, o.num("close") ?: return@mapNotNull null, o.num("volume") ?: 0.0)
+        }.sortedBy { it.time }
+    }
 }
 
 /** 富果盤中快照：五檔、內外盤、成交量（張） */
