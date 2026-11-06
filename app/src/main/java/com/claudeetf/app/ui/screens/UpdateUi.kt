@@ -57,7 +57,7 @@ private fun UpdateDialog(r: AppUpdater.Release, onLater: () -> Unit) {
     AlertDialog(
         onDismissRequest = { if (p == null) onLater() },
         containerColor = C.Card,
-        title = { Text("有新版本 v0.2.${r.patch}", color = C.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold) },
+        title = { Text("有新版本 " + r.tag.removeSuffix("-dev"), color = C.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Label("目前 " + AppUpdater.currentVersion(ctx) + " → " + r.tag.removePrefix("v") + (sizeText(r.size).takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""))

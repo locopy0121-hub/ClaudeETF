@@ -21,7 +21,8 @@ import java.util.concurrent.TimeUnit
  * 線上更新（OTA）：從 GitHub Releases 取得最新開發版 APK，下載後交給系統安裝程式覆蓋更新。
  * - repo 公開，不需要權杖（GitHub API 未登入每小時 60 次，App 每 6 小時最多自動檢查一次）。
  * - 每次建置都用 repo 內同一把 keystore 簽章，所以可以直接覆蓋安裝、資料保留。
- * - 版本號 0.2.N：以「最新發布時間」那一版為準，再比較 N，避免舊版號規則留下的 v0.2.69 被誤判成較新。
+ * - 以「最新發布時間」那一版為準，再比較版本（主.次.修訂），避免舊版號規則留下的 v0.2.69 被誤判成較新。
+ * - 版本自 v1.0.1 起；0.2.x 開發版也能更新到 1.0.x。
  */
 object AppUpdater {
     private const val API = "https://api.github.com/repos/locopy0121-hub/ClaudeETF/releases?per_page=15"
@@ -48,7 +49,12 @@ object AppUpdater {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
     }.getOrDefault("")
 
-    private fun patchOf(v: String): Int = Regex("""0\.2\.(\d+)""").find(v)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+    /** 「主.次.修訂」換成可比較的數字：1.0.3 → 1_000_003；0.2.30 → 2_030 */
+    private fun patchOf(v: String): Int {
+        val m = Regex("""(\d+)\.(\d+)\.(\d+)""").find(v) ?: return -1
+        val (a, b, c) = m.destructured
+        return a.toInt() * 1_000_000 + b.toInt() * 1_000 + c.toInt()
+    }
 
     fun hasUpdate(context: Context): Boolean = latest?.let { it.patch > currentPatch(context) } ?: false
 
@@ -99,7 +105,7 @@ object AppUpdater {
             newest?.let { save(prefs, it) }
             message = when {
                 newest == null -> "找不到可下載的版本"
-                newest.patch > currentPatch(context) -> "有新版本 v0.2.${newest.patch}"
+                newest.patch > currentPatch(context) -> "有新版本 " + newest.tag
                 else -> "已是最新版本"
             }
             prompt = auto && hasUpdate(context) && prefs.getString("skipped", "") != newest?.tag

@@ -508,3 +508,7 @@ Kotlin · Jetpack Compose · Material 3 · Navigation Compose · minSdk 26 · ta
 - App 從 GitHub Releases（公開 repo，免權杖）檢查最新開發版；開啟 App 時自動檢查（6 小時一次，可關閉），有新版跳出提示並顯示更新內容（取自 commit 訊息）。
 - 「下載並安裝」：顯示進度，下載完交給系統安裝程式覆蓋更新；keystore 固定，資料保留。第一次需允許「安裝未知應用程式」。
 - 我的 › 關於 › 線上更新：手動檢查、更新。以最新發布時間的版本為準，避免舊版號 v0.2.69 被誤判。
+
+## v1.0：正式版起點
+- 版本號改為 **1.0.x**：第 99 次建置為 1.0.1，之後每次 +1（versionCode 仍為建置編號，可直接覆蓋更新）。
+- Release 改為正式版（Latest），標籤 v1.0.N、APK 檔名 ClaudeETF-v1.0.N.apk；App 線上更新改以「主.次.修訂」比較，0.2.x 可直接更新到 1.0.x。
