@@ -76,6 +76,14 @@ fun KeyLevelsBar(q: Quote, k: StockInfoRepo.KeyPrices?) {
             )
         }
         if (k != null && AppState.showKeyLevels) {
+            val has = AppState.alerts.any { it.type == com.claudeetf.app.data.AlertType.KEY_LEVEL && (it.symbol == q.symbol || it.symbol.isBlank()) }
+            Text(
+                if (has) "✓ 已設三關突破／跌破提醒" else "＋ 一鍵設定三關突破／跌破提醒",
+                color = if (has) C.Muted else C.Primary, fontSize = 12.sp,
+                modifier = Modifier.clickable(enabled = !has) {
+                    AppState.addAlert(q.symbol, com.claudeetf.app.data.AlertType.KEY_LEVEL, 0.0)
+                }.padding(vertical = 2.dp),
+            )
             val (pos, color) = KeyLevelsUi.position(q.price, k)
             Label("依 ${k.basisDate.replace("-", "/")} 高 ${Fmt.price(k.prevHigh)}、低 ${Fmt.price(k.prevLow)} 計算 · 現價：$pos", color = color)
         }

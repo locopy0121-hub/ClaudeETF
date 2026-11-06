@@ -30,6 +30,38 @@ object WatchExtras {
         }
     }
 
+    data class TwDaily(
+        val dayTradePct: Double?, val dayTradeLots: Double?,
+        val margin: com.claudeetf.app.data.remote.TwOpenData.Margin?,
+        val revenue: com.claudeetf.app.data.remote.TwOpenData.MonthlyRevenue?,
+    )
+    private var twDay = ""
+
+    /** 當沖比、融資融券、月營收（上市股票，證交所 OpenAPI，每天一次） */
+    suspend fun loadTwDaily() {
+        if (twDay == today() && AppState.twDaily.isNotEmpty()) return
+        val syms = AppState.quotes.filter { it.market == Market.TW }.map { it.symbol }
+        if (syms.isEmpty()) return
+        val res = withContext(Dispatchers.IO) {
+            val od = com.claudeetf.app.data.remote.TwOpenData
+            val margins = runCatching { od.marginAll() }.getOrDefault(emptyMap())
+            val dt = runCatching { od.dayTradeAll() }.getOrDefault(emptyMap())
+            val close = if (dt.isNotEmpty()) MarketData.closeAll() else emptyMap()
+            syms.associateWith { s ->
+                val vol = close[s]?.first?.volume
+                val d = dt[s]
+                TwDaily(
+                    if (d != null && vol != null && vol > 0) d / vol * 100 else null,
+                    d?.div(1000),
+                    margins[s],
+                    runCatching { od.monthlyRevenue(s) }.getOrNull(),
+                )
+            }
+        }
+        if (res.values.any { it.margin != null || it.revenue != null || it.dayTradePct != null }) twDay = today()
+        AppState.twDaily.clear(); AppState.twDaily.putAll(res)
+    }
+
     suspend fun loadInstitutional() {
         if (instDay == today() && AppState.institutional.isNotEmpty()) return
         val m = withContext(Dispatchers.IO) { runCatching { TwInstitutional.latest() }.getOrDefault(emptyMap()) }

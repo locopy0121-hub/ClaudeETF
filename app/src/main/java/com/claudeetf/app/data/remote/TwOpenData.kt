@@ -95,6 +95,37 @@ object TwOpenData {
         )
     }
 
+    // ---------- 融資融券（MI_MARGN）、當日沖銷（TWTB4U） ----------
+    /** 餘額單位：張 */
+    data class Margin(val financing: Double?, val financingPrev: Double?, val short: Double?, val shortPrev: Double?)
+
+    fun marginAll(): Map<String, Margin> {
+        val arr = dataset("/exchangeReport/MI_MARGN")
+        val out = HashMap<String, Margin>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val code = o.find("代號") ?: o.find("Code") ?: continue
+            out[code.trim()] = Margin(
+                toNum(o.find("融資", "今日餘額")), toNum(o.find("融資", "前日餘額")),
+                toNum(o.find("融券", "今日餘額")), toNum(o.find("融券", "前日餘額")),
+            )
+        }
+        return out
+    }
+
+    /** 代號 → 當日沖銷成交股數 */
+    fun dayTradeAll(): Map<String, Double> {
+        val arr = dataset("/exchangeReport/TWTB4U")
+        val out = HashMap<String, Double>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val code = o.find("代號") ?: o.find("Code") ?: continue
+            val shares = toNum(o.find("成交股數") ?: o.find("TradeVolume")) ?: continue
+            out[code.trim()] = shares
+        }
+        return out
+    }
+
     // ---------- 類股指數（MI_INDEX） ----------
     /** 回傳 (類股名稱, 漲跌%)；名稱含「類指數」者 */
     fun sectorIndices(): List<Pair<String, Double>> {

@@ -338,6 +338,14 @@ private fun ChartBlock(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Label("漲停 " + Fmt.price(u), color = Trend.fg(1.0)); HGap(10.dp)
                         Label("跌停 " + Fmt.price(d), color = Trend.fg(-1.0), modifier = Modifier.weight(1f))
+                        val hasLimit = AppState.alerts.any { it.symbol == q.symbol && it.type == com.claudeetf.app.data.AlertType.PRICE_ABOVE && it.value == u }
+                        Text(
+                            if (hasLimit) "✓ 漲跌停提醒" else "＋漲跌停提醒", color = if (hasLimit) C.Muted else C.Primary, fontSize = 12.sp,
+                            modifier = Modifier.clickable(enabled = !hasLimit) {
+                                AppState.addAlert(q.symbol, com.claudeetf.app.data.AlertType.PRICE_ABOVE, u)
+                                AppState.addAlert(q.symbol, com.claudeetf.app.data.AlertType.PRICE_BELOW, d)
+                            }.padding(4.dp),
+                        )
                         Text(
                             if (AppState.limitAxis) "漲跌停座標" else "自動座標", color = C.Primary, fontSize = 12.sp,
                             modifier = Modifier.clickable { AppState.updateLimitAxis(!AppState.limitAxis) }.padding(4.dp),

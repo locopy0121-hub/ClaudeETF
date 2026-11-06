@@ -61,6 +61,7 @@ fun WatchlistScreen(nav: NavController) {
         if (AppState.watchColumn == "keys" || AppState.watchLayout == "card") KeyLevelsUi.load(AppState.quotes.toList())
         if (AppState.watchColumn == "div") com.claudeetf.app.data.WatchExtras.loadDividends(AppState.quotes.toList())
         if (AppState.watchColumn == "inst") com.claudeetf.app.data.WatchExtras.loadInstitutional()
+        if (AppState.watchColumn in listOf("dt", "credit", "rev")) com.claudeetf.app.data.WatchExtras.loadTwDaily()
     }
     val base = AppState.quotes.filter { q ->
         (editing && group != null) || when (filter) {
@@ -305,7 +306,7 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
 }
 
-val watchColumns = listOf("spark" to "走勢", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "div" to "除權息", "inst" to "法人", "pe" to "本益比", "pnl" to "持股損益")
+val watchColumns = listOf("spark" to "走勢", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "div" to "除權息", "inst" to "法人", "dt" to "當沖", "credit" to "信用", "rev" to "月營收", "pe" to "本益比", "pnl" to "持股損益")
 
 /** 當日振幅 %：(最高 − 最低) ÷ 昨收 */
 fun amplitude(q: Quote): Double? {
@@ -333,6 +334,37 @@ private fun WatchCell(q: Quote) {
                 b.nextEx != null -> CellText("除息 " + d(b.nextEx), "上次 " + (b.lastAmount?.let { Fmt.num(it, 2) } ?: "—"), m)
                 b.lastTime != null -> CellText(Fmt.num(b.lastAmount ?: 0.0, 2), "上次 " + d(b.lastTime), m)
                 else -> CellText("—", "無配息", m)
+            }
+        }
+        "dt", "credit", "rev" -> {
+            val d = AppState.twDaily[q.symbol]
+            if (q.market != Market.TW) CellText("—", "美股", m)
+            else when (AppState.watchColumn) {
+                "dt" -> CellText(d?.dayTradePct?.let { Fmt.num(it, 1) + "%" } ?: "—", d?.dayTradeLots?.let { "當沖 " + Fmt.num(it) + " 張" } ?: "當沖比", m)
+                "credit" -> {
+                    val mg = d?.margin
+                    if (mg?.financing == null) CellText("—", "信用", m)
+                    else {
+                        val chg = mg.financingPrev?.let { mg.financing - it }
+                        Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                            NumText("資 " + Fmt.num(mg.financing), 12.sp)
+                            Text(
+                                (chg?.let { Fmt.signed(it) + " " } ?: "") + "券 " + (mg.short?.let { Fmt.num(it) } ?: "—"),
+                                color = chg?.let { Trend.fg(it) } ?: C.Muted, fontSize = 9.sp, maxLines = 1,
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    val r = d?.revenue
+                    val yoy = r?.yoyPct?.replace(",", "")?.toDoubleOrNull()
+                    if (r == null) CellText("—", "月營收", m)
+                    else Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                        NumText("年 " + (yoy?.let { Fmt.signedPct(it, 1) } ?: "—"), 12.sp, yoy?.let { Trend.fg(it) } ?: C.Text)
+                        Text(r.month + " 月 " + (r.momPct?.replace(",", "")?.toDoubleOrNull()?.let { Fmt.signedPct(it, 1) } ?: "—"),
+                            color = C.Muted, fontSize = 9.sp, maxLines = 1)
+                    }
+                }
             }
         }
         "inst" -> {

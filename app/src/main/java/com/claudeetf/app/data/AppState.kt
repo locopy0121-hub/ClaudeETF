@@ -159,6 +159,7 @@ object AppState {
     /** 自選除權息、法人欄位 */
     val divBriefs = mutableStateMapOf<String, WatchExtras.DivBrief>()
     val institutional = mutableStateMapOf<String, com.claudeetf.app.data.remote.TwInstitutional.Day>()
+    val twDaily = mutableStateMapOf<String, WatchExtras.TwDaily>()
     var showKeyLevels by mutableStateOf(true)
     /** 台股分時 Y 軸用漲跌停價 */
     var limitAxis by mutableStateOf(true)
