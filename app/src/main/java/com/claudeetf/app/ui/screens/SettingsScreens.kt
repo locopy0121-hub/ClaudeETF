@@ -369,6 +369,8 @@ fun SettingsScreen(nav: NavController) {
                         ApplyKeyLink("還沒有金鑰？到 Finnhub 免費註冊 ›", "https://finnhub.io/register",
                             "註冊後在 Dashboard 複製 API Key（免費方案每分鐘 60 次）")
                         AppState.sourceStatus["US"]?.let { Label("最近更新：$it", color = C.Text2) }
+                        Text("美股盤中更新頻率", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                        UsRefreshChooser()
                     }
                 }
                 item {
@@ -690,6 +692,30 @@ private fun ColorPickerDialog(title: String, initial: androidx.compose.ui.graphi
                 Text("取消", color = C.Muted, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp))
             }
         },
+    )
+}
+
+/** 美股更新頻率：即時（Finnhub 逐筆串流）、1／2／3／5／10 秒 */
+@Composable
+fun UsRefreshChooser() {
+    val opts = listOf(0L to "即時", 1_000L to "1 秒", 2_000L to "2 秒", 3_000L to "3 秒", 5_000L to "5 秒", 10_000L to "10 秒")
+    Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        opts.forEach { (v, n) ->
+            val on = AppState.usRefreshMs == v
+            Text(n, color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Primary else C.Bg)
+                    .clickable { AppState.updateUsRefreshMs(v) }.padding(horizontal = 12.dp, vertical = 7.dp))
+        }
+    }
+    Label(
+        when {
+            AppState.usRefreshMs == 0L && AppState.finnhubKey.isBlank() -> "「即時」需要 Finnhub 金鑰（上方填入）以逐筆串流；目前沒有金鑰，改為每 1 秒輪詢 Yahoo。"
+            AppState.usRefreshMs == 0L -> "Finnhub WebSocket 逐筆成交即時推送（免費方案最多 50 檔），Yahoo 每 15 秒補昨收與盤前盤後。" +
+                AppState.usStreamStatus.takeIf { it.isNotBlank() }?.let { "\n狀態：$it" }.orEmpty()
+            AppState.usRefreshMs < 5_000L -> "高頻輪詢 Yahoo；若被限流會自動拉長間隔（最多 10 秒），恢復後回到設定值。耗電與流量較高。"
+            else -> "盤中每 " + AppState.usRefreshMs / 1000 + " 秒更新；台股維持每 5 秒（或富果串流）。"
+        },
+        Modifier.padding(top = 4.dp),
     )
 }
 

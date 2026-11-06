@@ -231,6 +231,17 @@ object AppState {
     /** 收盤後仍顯示「收盤定案」的最終進場標籤；關閉則收盤後自動隱藏 */
     var showFinalSignal by mutableStateOf(true)
     fun updateShowLiveSignal(on: Boolean) { showLiveSignal = on; save() }
+
+    /** 美股盤中更新頻率（毫秒）；0 = 即時（Finnhub 逐筆串流，沒有金鑰時改為每秒輪詢） */
+    var usRefreshMs by mutableStateOf(5_000L)
+    fun updateUsRefreshMs(v: Long) { usRefreshMs = v; save() }
+    var usStreamStatus by mutableStateOf("")
+    /** 狀態列用的說明文字 */
+    fun usRefreshLabel(): String = when {
+        usRefreshMs == 0L && finnhubKey.isNotBlank() && com.claudeetf.app.data.remote.FinnhubStream.fresh() -> "美股逐筆即時"
+        usRefreshMs == 0L -> "美股每 1 秒"
+        else -> "美股每 " + (usRefreshMs / 1000) + " 秒"
+    }
     /** 自選卡片、清單與持股列顯示進場建議標籤 */
     var showCardEntry by mutableStateOf(true)
     fun updateShowCardEntry(on: Boolean) { showCardEntry = on; save() }
@@ -404,6 +415,7 @@ object AppState {
         showTradeMarks = p.getBoolean("showTradeMarks", true)
         showScoreBadge = p.getBoolean("showScoreBadge", true)
         showLiveSignal = p.getBoolean("showLiveSignal", true)
+        usRefreshMs = p.getLong("usRefreshMs", 5_000L)
         showCardEntry = p.getBoolean("showCardEntry", true)
         showFinalSignal = p.getBoolean("showFinalSignal", true)
         investBudget = p.getFloat("investBudget", 0f).toDouble()
@@ -600,6 +612,7 @@ object AppState {
             .putBoolean("showTradeMarks", showTradeMarks)
             .putBoolean("showScoreBadge", showScoreBadge)
             .putBoolean("showLiveSignal", showLiveSignal)
+            .putLong("usRefreshMs", usRefreshMs)
             .putBoolean("showCardEntry", showCardEntry)
             .putBoolean("showFinalSignal", showFinalSignal)
             .putFloat("investBudget", investBudget.toFloat())

@@ -146,6 +146,40 @@ class MainActivity : ComponentActivity() {
                 runCatching { com.claudeetf.app.alerts.AlertEngine.checkDividendDays(applicationContext) }
             }
         }
+        // 美股盤中：依「美股更新頻率」獨立輪詢（1～10 秒），或 Finnhub 逐筆串流（即時）
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var backoff = 0L
+                var lastPoll = 0L
+                try {
+                    while (true) {
+                        val live = MarketData.usLive()
+                        val ms = AppState.usRefreshMs
+                        val stream = live && ms == 0L && AppState.finnhubKey.isNotBlank()
+                        runCatching {
+                            com.claudeetf.app.data.remote.FinnhubStream.ensure(
+                                stream, AppState.finnhubKey,
+                                AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.US }.map { it.symbol },
+                            )
+                        }
+                        if (live) {
+                            val streaming = stream && com.claudeetf.app.data.remote.FinnhubStream.fresh()
+                            // 串流有成交時，Yahoo 每 15 秒補一次（昨收、高低、盤前盤後）；否則依設定頻率
+                            val every = if (streaming) 15_000L else maxOf(ms, 1_000L)
+                            if (System.currentTimeMillis() - lastPoll >= every + backoff) {
+                                lastPoll = System.currentTimeMillis()
+                                val ok = runCatching { MarketData.refreshUs(live = true, light = every < 5_000L) }.getOrDefault(false)
+                                // 失敗（多半是被限流）時逐步拉長間隔，最多 10 秒
+                                backoff = if (ok) 0L else (backoff * 2 + 1_000L).coerceAtMost(10_000L)
+                            }
+                        }
+                        delay(if (live) 250L else 30_000L)
+                    }
+                } finally {
+                    com.claudeetf.app.data.remote.FinnhubStream.stop()
+                }
+            }
+        }
         // App 在前景時自動更新行情：
         // 交易時段每 5 秒即時更新報價、每 60 秒完整更新（指數、匯率、提醒、淨值、小工具）；收盤後每 15 分鐘
         lifecycleScope.launch {

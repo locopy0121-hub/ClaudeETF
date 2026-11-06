@@ -580,13 +580,30 @@ fun LiveBanner() {
         Dot(if (last > 0 && System.currentTimeMillis() - last < 30_000) C.Green else C.Tw, 8.dp)
         HGap(8.dp)
         val synced = com.claudeetf.app.data.remote.FugleStream.connected && MarketData.isTwIntraday()
-        Text(
-            (if (synced) "台股與交易所同步（富果串流）" else "即時更新中・每 5 秒") + (if (last > 0) "・最後 " + java.time.Instant.ofEpochMilli(last)
-                .atZone(java.time.ZoneId.of("Asia/Taipei")).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")) else ""),
-            color = C.Text2, fontSize = 12.sp,
+        val parts = listOfNotNull(
+            if (MarketData.isTwIntraday()) (if (synced) "台股富果串流同步" else "台股每 5 秒") else null,
+            if (MarketData.usLive()) AppState.usRefreshLabel() else null,
         )
-        Spacer(Modifier.weight(1f))
-        Label(listOfNotNull(if (MarketData.isTwIntraday()) "台股" else null, if (MarketData.usLive()) "美股" else null).joinToString("・"))
+        Text(
+            "即時更新中・" + parts.joinToString("、") + (if (last > 0) "・最後 " + java.time.Instant.ofEpochMilli(last)
+                .atZone(java.time.ZoneId.of("Asia/Taipei")).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")) else ""),
+            Modifier.weight(1f), color = C.Text2, fontSize = 12.sp, maxLines = 2,
+        )
+        // 美股盤中可直接調整更新頻率
+        if (MarketData.usLive()) {
+            var menu by remember { mutableStateOf(false) }
+            Box {
+                Text("頻率 ▾", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clickable { menu = true }.padding(start = 8.dp, top = 4.dp, bottom = 4.dp))
+                androidx.compose.material3.DropdownMenu(menu, { menu = false }, containerColor = C.Card) {
+                    listOf(0L to "即時（Finnhub 逐筆）", 1_000L to "每 1 秒", 2_000L to "每 2 秒", 3_000L to "每 3 秒", 5_000L to "每 5 秒", 10_000L to "每 10 秒").forEach { (v, n) ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text((if (AppState.usRefreshMs == v) "✓ " else "　") + n, color = C.Text, fontSize = 14.sp) },
+                            onClick = { AppState.updateUsRefreshMs(v); menu = false },
+                        )
+                    }
+                }
+            }
+        } else Label(listOfNotNull(if (MarketData.isTwIntraday()) "台股" else null).joinToString("・"))
     }
 }
 

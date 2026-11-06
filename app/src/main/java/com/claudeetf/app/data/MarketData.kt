@@ -268,9 +268,10 @@ object MarketData {
      * 美股：Yahoo 批次即時報價（一次請求全部自選）；批次失敗改逐檔走勢 API，
      * 個別失敗且有 Finnhub 金鑰時以 Finnhub 備援。live = true 時只做批次。
      */
-    suspend fun refreshUs(live: Boolean = false) {
+    /** light = true：高頻輪詢用，批次報價失敗時不逐檔補抓（避免 1 秒一輪打爆 API）；回傳批次是否成功 */
+    suspend fun refreshUs(live: Boolean = false, light: Boolean = false): Boolean {
         val symbols = AppState.quotes.filter { it.market == Market.US }.map { it.symbol }
-        if (symbols.isEmpty()) return
+        if (symbols.isEmpty()) return true
         val now = System.currentTimeMillis()
         val done = HashSet<String>()
         val batch = withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.YahooExtra.quotes(symbols) } }
@@ -293,8 +294,10 @@ object MarketData {
         }
         if (live && done.isNotEmpty()) {
             AppState.setStatus("US", clockSec(now) + " Yahoo 即時 ${done.size}/${symbols.size} 檔")
-            return
+            AppState.lastLiveAt = now
+            return true
         }
+        if (light) return false
 
         val todo = symbols.filter { it !in done }
         val results = withContext(Dispatchers.IO) {
@@ -342,6 +345,7 @@ object MarketData {
                 (if (finnOk > 0) "，Finnhub 備援 $finnOk 檔" else "") +
                 (if (err != null && done.size + finnOk < symbols.size) "｜$err" else ""),
         )
+        return done.isNotEmpty() || finnOk > 0
     }
 
     /** 任一市場在交易時段 */
@@ -353,10 +357,11 @@ object MarketData {
     }
 
     /** 即時輪詢：只更新正在交易的市場報價，不寫入磁碟 */
-    suspend fun refreshLive() {
+    /** 盤中即時更新；美股由獨立迴圈依「美股更新頻率」處理（includeUs = false） */
+    suspend fun refreshLive(includeUs: Boolean = false) {
         coroutineScope {
             val tw = async { if (isTwIntraday()) { runCatching { refreshTw(live = true) } }; Unit }
-            val us = async { if (usLive()) { runCatching { refreshUs(live = true) } }; Unit }
+            val us = async { if (includeUs && usLive()) { runCatching { refreshUs(live = true) } }; Unit }
             tw.await(); us.await()
         }
         AppState.lastLiveAt = System.currentTimeMillis()
