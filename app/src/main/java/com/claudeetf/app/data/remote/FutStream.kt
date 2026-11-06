@@ -57,7 +57,7 @@ object FutStream {
         // 結算日 13:30 後改為下個月（盤後交易也已是次月合約）
         val s = settle(d)
         if (d.isAfter(s) || (d == s && now.toLocalTime() >= LocalTime.of(13, 30))) d = d.plusMonths(1)
-        return "TXF" + ('A' + (d.monthValue - 1)) + (d.year % 10)
+        return com.claudeetf.app.data.AppState.futProduct + ('A' + (d.monthValue - 1)) + (d.year % 10)
     }
 
     /** 目前交易時段：REGULAR、AFTERHOURS 或 null（休市） */
@@ -154,6 +154,8 @@ object FutStream {
             main.postDelayed({ if (users > 0 && ws == null) { users--; start(key) } }, delay)
         }
     }
+
+    val products = listOf("TXF" to "台指期", "MXF" to "小台指", "EXF" to "電子期", "FXF" to "金融期")
 
     fun stop() {
         users = maxOf(0, users - 1)

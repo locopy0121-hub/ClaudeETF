@@ -282,18 +282,28 @@ private fun PickRow(name: String, value: String, added: Boolean, onAdd: () -> Un
 fun FuturesCard(nav: NavController) {
     val fs = com.claudeetf.app.data.remote.FutStream
     val key = AppState.fugleKey
-    DisposableEffect(key) {
+    val product = AppState.futProduct
+    DisposableEffect(key, product) {
         fs.start(key)
         onDispose { fs.stop() }
     }
-    LaunchedEffect(key) {
+    LaunchedEffect(key, product) {
+        fs.quote = null; fs.spark = emptyList()
         if (key.isNotBlank()) runCatching { withContext(Dispatchers.IO) { fs.snapshot(key) } }
             .onFailure { e -> fs.status = "台指期：" + (e.message ?: "無法取得") }
     }
     val q = fs.quote
     val twii = AppState.twIndices.firstOrNull { it.symbol == "^TWII" }
     Card(Modifier.clickable { nav.navigate(Routes.index("^TWII")) }) {
-        CardTitle("台指期近月", if (fs.live) "● 串流同步" else null)
+        CardTitle((fs.products.firstOrNull { it.first == product }?.second ?: product) + "近月", if (fs.live) "● 串流同步" else null)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            fs.products.forEach { (code, name) ->
+                val on = code == product
+                Text(name, color = if (on) C.Text else C.Muted, fontSize = 11.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
+                        .clickable { AppState.updateFutProduct(code) }.padding(horizontal = 10.dp, vertical = 5.dp))
+            }
+        }
         if (key.isBlank()) { Label("需要富果金鑰（我的 › 行情資料來源）"); return@Card }
         if (q == null) { Label(fs.status.ifBlank { "載入中…" }); return@Card }
         Row(verticalAlignment = Alignment.Bottom) {
@@ -304,7 +314,7 @@ fun FuturesCard(nav: NavController) {
             }
         }
         if (fs.spark.size >= 2) Sparkline(fs.spark, Trend.fg(q.change), Modifier.fillMaxWidth().height(56.dp), fill = true)
-        val basis = twii?.takeIf { it.value > 0 }?.let { q.price - it.value }
+        val basis = if (product == "TXF" || product == "MXF") twii?.takeIf { it.value > 0 }?.let { q.price - it.value } else null
         Label(
             listOfNotNull(
                 q.symbol + if (q.afterHours) " 盤後" else " 一般盤",

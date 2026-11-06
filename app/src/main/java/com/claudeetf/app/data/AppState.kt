@@ -192,6 +192,13 @@ object AppState {
     var watchLayout by mutableStateOf("list")
     fun updateWatchLayout(l: String) { watchLayout = l; save() }
 
+    /** 持股排序（0 市值、1 今日損益、2 今日漲跌、3 報酬率、4 代號） */
+    var holdingSort by mutableIntStateOf(0)
+    fun updateHoldingSort(i: Int) { holdingSort = i; save() }
+    /** 首頁期貨卡片商品：TXF 台指、MXF 小台、EXF 電子、FXF 金融 */
+    var futProduct by mutableStateOf("TXF")
+    fun updateFutProduct(p: String) { futProduct = p; save() }
+
     /** 美股 1 日走勢含盤前盤後 */
     var usExtendedChart by mutableStateOf(true)
     fun updateUsExtendedChart(on: Boolean) { usExtendedChart = on; save() }
@@ -323,6 +330,8 @@ object AppState {
         showKeyLevels = p.getBoolean("showKeyLevels", true)
         limitAxis = p.getBoolean("limitAxis", true)
         usExtendedChart = p.getBoolean("usExtendedChart", true)
+        holdingSort = p.getInt("holdingSort", 0)
+        futProduct = p.getString("futProduct", "TXF") ?: "TXF"
         watchLayout = p.getString("watchLayout", "list") ?: "list"
         industries.clear()
         p.getString("industries", null)?.let { json ->
@@ -489,6 +498,8 @@ object AppState {
             .putBoolean("showKeyLevels", showKeyLevels)
             .putBoolean("limitAxis", limitAxis)
             .putBoolean("usExtendedChart", usExtendedChart)
+            .putInt("holdingSort", holdingSort)
+            .putString("futProduct", futProduct)
             .putString("watchLayout", watchLayout)
             .putString("industries", JSONObject().apply { industries.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("finnhubKey", finnhubKey)

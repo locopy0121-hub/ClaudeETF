@@ -84,8 +84,17 @@ fun PortfolioScreen(nav: NavController) {
     val mv = hs.sumOf { AppState.marketValueTwd(it) }
     val cost = hs.sumOf { AppState.costTwd(it) }
     val unreal = mv - cost
-    val tw = hs.filter { AppState.marketOf(it.symbol) == Market.TW }
-    val us = hs.filter { AppState.marketOf(it.symbol) == Market.US }
+    // 持股排序：0 市值、1 今日損益、2 今日漲跌幅、3 未實現報酬率、4 代號
+    fun dayPnl(h: Holding): Double = AppState.quote(h.symbol)?.let { it.change * h.shares * AppState.fxFor(it.market) } ?: 0.0
+    fun sorted(list: List<Holding>): List<Holding> = when (AppState.holdingSort) {
+        1 -> list.sortedByDescending { dayPnl(it) }
+        2 -> list.sortedByDescending { AppState.quote(it.symbol)?.changePct ?: 0.0 }
+        3 -> list.sortedByDescending { h -> AppState.quote(h.symbol)?.price?.let { p -> if (h.avgCost > 0) p / h.avgCost else 0.0 } ?: 0.0 }
+        4 -> list.sortedBy { it.symbol }
+        else -> list.sortedByDescending { AppState.marketValueTwd(it) }
+    }
+    val tw = sorted(hs.filter { AppState.marketOf(it.symbol) == Market.TW })
+    val us = sorted(hs.filter { AppState.marketOf(it.symbol) == Market.US })
     val usUsd = us.sumOf { AppState.marketValue(it) }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
@@ -212,6 +221,17 @@ fun PortfolioScreen(nav: NavController) {
                     ) { nav.navigate(Routes.stock(it)) }
                 }
                 item { Label("方塊大小＝持股市值（台幣），顏色＝今日漲跌，點方塊開個股頁") }
+            }
+            if (!heat) item {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Label("排序")
+                    listOf("市值", "今日損益", "今日漲跌", "報酬率", "代號").forEachIndexed { i, n ->
+                        val on = AppState.holdingSort == i
+                        Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Selected else C.Card)
+                                .clickable { AppState.updateHoldingSort(i) }.padding(horizontal = 12.dp, vertical = 7.dp))
+                    }
+                }
             }
             if (!heat) item { GroupHeader(Market.TW, tw.size, "NT$" + mask(Fmt.num(tw.sumOf { AppState.marketValueTwd(it) }))) }
             if (!heat) {
