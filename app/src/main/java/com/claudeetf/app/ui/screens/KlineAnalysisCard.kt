@@ -37,6 +37,22 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+fun entryColor(level: Int): Color = when {
+    level > 0 -> Trend.up
+    level < 0 -> Trend.down
+    else -> Trend.flat
+}
+
+/** 進場建議標籤 */
+@Composable
+fun EntryTag(e: KlineAnalysis.Entry, big: Boolean = false) {
+    val c = entryColor(e.level)
+    val icon = when (e.level) { 2 -> "✔ "; 1 -> "◐ "; 0 -> "⏸ "; -1 -> "✋ "; else -> "⛔ " }
+    Text(icon + e.label, color = if (big) Color.White else c, fontSize = if (big) 15.sp else 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(if (big) 10.dp else 6.dp)).background(if (big) c.copy(alpha = 0.9f) else c.copy(alpha = 0.16f))
+            .padding(horizontal = if (big) 12.dp else 7.dp, vertical = if (big) 6.dp else 2.dp))
+}
+
 private fun dirColor(d: KlineAnalysis.Dir): Color = when {
     d.bullish -> Trend.up
     d.bearish -> Trend.down
@@ -83,6 +99,17 @@ fun KlineAnalysisCard(q0: Quote) {
                 NumText(r.strength.toString(), 22.sp, dc, FontWeight.Bold)
             }
         }
+        // ---- 是否進場 ----
+        val held = AppState.holdings.any { it.symbol == q.symbol && it.shares > 0 }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(entryColor(r.entry.level).copy(alpha = 0.10f)).padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                Label("是否進場")
+                Text(r.entry.reason, color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp)
+                if (held) Text("已持有：" + r.entry.holderTip, color = C.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp))
+            }
+            EntryTag(r.entry, big = true)
+        }
         // 強度條：左空右多
         Box(Modifier.fillMaxWidth().padding(top = 6.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Bg)) {
             Box(Modifier.fillMaxHeight().fillMaxWidth(r.strength / 100f).clip(RoundedCornerShape(4.dp)).background(dc.copy(alpha = 0.85f)))
@@ -117,7 +144,7 @@ fun KlineAnalysisCard(q0: Quote) {
         // ---- 近 40 根 K 線與形態標記 ----
         PatternChart(r, Modifier.fillMaxWidth().height(170.dp).padding(top = 10.dp))
         Row(Modifier.fillMaxWidth()) {
-            Label("▲ 偏多形態　▼ 偏空形態　● 中性", Modifier.weight(1f))
+            Label("▲ 偏多　▼ 偏空（可信度 ≥ 72%）", Modifier.weight(1f))
             Label("近 40 根")
         }
 
@@ -229,7 +256,7 @@ private fun PatternChart(r: KlineAnalysis.Result, modifier: Modifier) {
             drawRect(col, Offset(x(k) - bw / 2, top), Size(bw, maxOf(1f, bot - top)))
         }
         // 形態標記（同一根多個形態只畫一個方向符號）
-        r.recent.groupBy { it.idx }.forEach { (k, hs) ->
+        r.recent.filter { it.conf >= 0.72 && it.pat.dir != KlineAnalysis.Dir.NEUTRAL }.groupBy { it.idx }.forEach { (k, hs) ->
             if (k < from) return@forEach
             val s = hs.sumOf { it.pat.dir.weight }
             val c = r.candles[k]

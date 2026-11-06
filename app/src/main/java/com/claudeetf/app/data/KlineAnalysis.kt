@@ -124,7 +124,11 @@ object KlineAnalysis {
         val stats: Map<Pat, Stat>,
         val forward: Int,
         val reasons: List<String>,
+        val entry: Entry,
     )
+
+    /** 進場建議：level 2 建議進場 … -2 不宜進場 */
+    data class Entry(val label: String, val level: Int, val reason: String, val holderTip: String)
 
     // ---------------------------------------------------------------- 指標
 
@@ -322,8 +326,44 @@ object KlineAnalysis {
         }
         val strength = (50 + score * 14).toInt().coerceIn(3, 97)
         val plan = plan(cur, dir, latest, ctx)
-        return Result(timeframe, cs, dir, strength, score, latest, recent, ctx, plan, stats, forward, reasons)
+        val entry = entry(dir, plan, ctx, latest, last)
+        return Result(timeframe, cs, dir, strength, score, latest, recent, ctx, plan, stats, forward, reasons, entry)
     }
+
+    /**
+     * 是否進場：綜合方向、盈虧比、位置與量價。
+     * 偏多但盈虧比不足或貼近壓力 → 等回測；偏空但最新一根出現止跌形態 → 等確認。
+     */
+    private fun entry(dir: Dir, plan: Plan?, x: Ctx, latest: List<Hit>, last: Int): Entry {
+        val rr = plan?.rr ?: 0.0
+        val bullRev = latest.any { it.idx == last && it.pat.dir.bullish && (it.pat.cat == Cat.REVERSAL || it.pat == Pat.BEAR_TRAP) }
+        val bearRev = latest.any { it.idx == last && it.pat.dir.bearish && (it.pat.cat == Cat.REVERSAL || it.pat == Pat.BULL_TRAP) }
+        val p = plan
+        return when {
+            dir == Dir.STRONG_BULL && rr >= 1.5 && x.vol != Vol.DIVERGENCE_TOP && x.loc != Loc.RESISTANCE ->
+                Entry("建議進場", 2, "多方訊號強、盈虧比 1:" + r2(rr) + "，可依布局區間進場，跌破 " + fmt(p!!.stop) + " 停損。", "可續抱，停利上移")
+            dir.bullish && rr >= 1.2 && x.loc != Loc.RESISTANCE && x.vol != Vol.DIVERGENCE_TOP ->
+                Entry("可分批進場", 1, "偏多、盈虧比 1:" + r2(rr) + "，先進 1/3～1/2，站穩形態高點再加碼。", "續抱")
+            dir.bullish ->
+                Entry("等回測再進", 0, when {
+                    x.vol == Vol.DIVERGENCE_TOP -> "價漲量縮，追價風險高，等回測支撐 " + fmt(x.support) + " 附近量縮不破再進。"
+                    x.loc == Loc.RESISTANCE -> "接近壓力 " + fmt(x.resistance) + "，等突破站穩或回測再進。"
+                    else -> "方向偏多但盈虧比僅 1:" + r2(rr) + "，等拉回到 " + fmt(p?.entryMin ?: x.ma20) + " 附近再進。"
+                }, "續抱")
+            dir == Dir.NEUTRAL && bullRev ->
+                Entry("觀察止跌", 0, "出現止跌形態但力道未確認，等下一根收紅並站上 " + fmt(x.ma20) + "（MA20）再考慮。", "續抱觀察")
+            dir == Dir.NEUTRAL ->
+                Entry("觀望", 0, "多空不明，等帶量突破 " + fmt(x.resistance) + " 或回測 " + fmt(x.support) + " 有撐再決定。", "續抱觀察")
+            dir.bearish && bullRev ->
+                Entry("等待止跌確認", -1, "空頭格局中出現止跌形態，尚未扭轉，等站回 MA20 " + fmt(x.ma20) + " 再評估。", "暫不加碼")
+            dir == Dir.BEAR ->
+                Entry("暫不進場", -1, "偏空" + (if (bearRev) "，最新出現轉弱形態" else "") + "，等止跌訊號出現再評估。", "反彈減碼、跌破 " + fmt(x.support) + " 防守")
+            else ->
+                Entry("不宜進場", -2, "強烈偏空" + (if (x.loc == Loc.BELOW) "且跌破支撐" else "") + "，避免接刀。", "建議減碼，嚴設停損")
+        }
+    }
+
+    private fun r2(v: Double) = com.claudeetf.app.util.Fmt.num(v, 2)
 
     private fun plan(cur: Candle, dir: Dir, latest: List<Hit>, x: Ctx): Plan? {
         val p = cur.c

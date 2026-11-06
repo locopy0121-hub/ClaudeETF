@@ -431,7 +431,8 @@ private fun KlineSummaryStrip(q: Quote, onClick: () -> Unit) {
         Text(res.dir.label + " " + res.strength, color = c, fontSize = 12.sp, fontWeight = FontWeight.Bold); HGap(8.dp)
         Text(res.latest.firstOrNull()?.pat?.cn ?: "近 3 根無明顯形態", Modifier.weight(1f), color = C.Text2, fontSize = 12.sp, maxLines = 1,
             overflow = TextOverflow.Ellipsis)
-        Text("分析 ›", color = C.Primary, fontSize = 12.sp)
+        EntryTag(res.entry); HGap(6.dp)
+        Text("›", color = C.Primary, fontSize = 14.sp)
     }
 }
 
