@@ -49,6 +49,18 @@ object AppState {
         private set
     var online by mutableStateOf(true)
 
+    /** App 安全鎖：開啟時需指紋或裝置密碼；locked 為目前是否鎖住 */
+    var appLock by mutableStateOf(false)
+        private set
+    var locked by mutableStateOf(false)
+    var backgroundAt = 0L
+    fun updateAppLock(on: Boolean) { appLock = on; save() }
+
+    /** 上次匯出完整備份的時間 */
+    var lastBackupAt by mutableLongStateOf(0L)
+        private set
+    fun markBackup() { lastBackupAt = System.currentTimeMillis(); save() }
+
     /** 每日收盤摘要通知 */
     var dailySummary by mutableStateOf(true)
         private set
@@ -92,6 +104,9 @@ object AppState {
     var finnhubKey by mutableStateOf("")
         private set
     var refreshing by mutableStateOf(false)
+    /** 富果串流狀態文字 */
+    var streamStatus by mutableStateOf("")
+
     /** 最近一次即時輪詢時間 */
     var lastLiveAt by mutableLongStateOf(0L)
     var fxSource by mutableStateOf("手動輸入")
@@ -159,6 +174,9 @@ object AppState {
         themeMode = p.getInt("themeMode", 1)
         onboarded = p.getBoolean("onboarded", false)
         dailySummary = p.getBoolean("dailySummary", true)
+        appLock = p.getBoolean("appLock", false)
+        locked = appLock
+        lastBackupAt = p.getLong("lastBackupAt", 0L)
         homeOrder.clear()
         val savedOrder = p.getString("homeOrder", null)?.split(",")?.filter { id -> allHomeCards.any { it.first == id } } ?: emptyList()
         homeOrder.addAll(savedOrder + allHomeCards.map { it.first }.filter { it !in savedOrder })
@@ -308,6 +326,8 @@ object AppState {
             .putFloat("usdTwd", usdTwd.toFloat())
             .putInt("themeMode", themeMode)
             .putBoolean("dailySummary", dailySummary)
+            .putBoolean("appLock", appLock)
+            .putLong("lastBackupAt", lastBackupAt)
             .putString("homeOrder", homeOrder.joinToString(","))
             .putString("homeHidden", homeHidden.joinToString(","))
             .putFloat("fontScale", fontScale)

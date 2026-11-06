@@ -6,9 +6,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBox
@@ -61,6 +65,62 @@ import com.claudeetf.app.ui.theme.AppTheme
 import com.claudeetf.app.ui.theme.C
 
 class MainActivity : ComponentActivity() {
+    // Android 8–8.1：用系統的裝置密碼確認畫面
+    private val confirmCredential = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { r -> if (r.resultCode == RESULT_OK) AppState.locked = false }
+
+    /** 裝置是否設定了螢幕鎖（指紋需搭配螢幕鎖） */
+    fun deviceSecure(): Boolean =
+        (getSystemService(KEYGUARD_SERVICE) as android.app.KeyguardManager).isDeviceSecure
+
+    /** 指紋／臉部或裝置密碼解鎖 */
+    fun unlock() {
+        if (!deviceSecure()) { AppState.locked = false; return }
+        val title = "解鎖台美股資產"
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            val b = android.hardware.biometrics.BiometricPrompt.Builder(this).setTitle(title).setSubtitle("使用指紋或裝置密碼")
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                b.setAllowedAuthenticators(
+                    android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                        android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                )
+            } else {
+                @Suppress("DEPRECATION") b.setDeviceCredentialAllowed(true)
+            }
+            runCatching {
+                b.build().authenticate(
+                    android.os.CancellationSignal(), mainExecutor,
+                    object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) {
+                            AppState.locked = false
+                        }
+                    },
+                )
+            }
+        } else {
+            val km = getSystemService(KEYGUARD_SERVICE) as android.app.KeyguardManager
+            @Suppress("DEPRECATION")
+            val intent = km.createConfirmDeviceCredentialIntent(title, "輸入裝置密碼")
+            if (intent != null) confirmCredential.launch(intent) else AppState.locked = false
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        AppState.backgroundAt = System.currentTimeMillis()
+        com.claudeetf.app.data.remote.FugleStream.stop()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // 離開超過 1 分鐘重新上鎖
+        if (AppState.appLock && AppState.backgroundAt > 0 && System.currentTimeMillis() - AppState.backgroundAt > 60_000) {
+            AppState.locked = true
+        }
+        if (AppState.locked) window.decorView.post { unlock() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.claudeetf.app.util.CrashLog.install(applicationContext)
@@ -69,8 +129,13 @@ class MainActivity : ComponentActivity() {
         AppState.systemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
         runCatching { AlertEngine.schedule(applicationContext) }
+        // 鎖定時不讓最近使用的 App 畫面顯示金額
+        if (AppState.appLock) window.setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE, android.view.WindowManager.LayoutParams.FLAG_SECURE)
         setContent {
-            AppTheme { AppRoot() }
+            AppTheme {
+                AppRoot()
+                if (AppState.locked) LockScreen { unlock() }
+            }
         }
         // App 在前景時自動更新行情：
         // 交易時段每 5 秒即時更新報價、每 60 秒完整更新（指數、匯率、提醒、淨值、小工具）；收盤後每 15 分鐘
@@ -79,6 +144,13 @@ class MainActivity : ComponentActivity() {
                 var lastFull = 0L
                 while (true) {
                     val live = MarketData.anyMarketLive()
+                    // 台股盤中有富果金鑰：保持 WebSocket 串流，與交易所同步
+                    runCatching {
+                        com.claudeetf.app.data.remote.FugleStream.ensure(
+                            MarketData.isTwIntraday(), AppState.fugleKey,
+                            AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol },
+                        )
+                    }
                     val now = System.currentTimeMillis()
                     if (now - lastFull >= (if (live) 60_000L else 15 * 60_000L)) {
                         runCatching { MarketData.refreshAll() }
@@ -107,6 +179,29 @@ private fun ComponentActivity.watchNetwork() {
             override fun onAvailable(network: android.net.Network) { runOnUiThread { AppState.online = true } }
             override fun onLost(network: android.net.Network) { runOnUiThread { AppState.online = false } }
         })
+    }
+}
+
+@Composable
+private fun LockScreen(onUnlock: () -> Unit) {
+    androidx.compose.foundation.layout.Box(
+        Modifier.fillMaxSize().background(C.Bg)
+            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {},
+        contentAlignment = androidx.compose.ui.Alignment.Center,
+    ) {
+        androidx.compose.foundation.layout.Column(
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+        ) {
+            Icon(androidx.compose.material.icons.Icons.Filled.Lock, contentDescription = null, tint = C.Primary,
+                modifier = Modifier.size(56.dp))
+            Text("台美股資產已鎖定", color = C.Text, fontSize = 18.sp)
+            androidx.compose.foundation.layout.Box(
+                Modifier.padding(horizontal = 48.dp).fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .background(C.Primary).clickable(onClick = onUnlock).padding(14.dp),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) { Text("解鎖", color = C.OnPrimary, fontSize = 16.sp) }
+        }
     }
 }
 

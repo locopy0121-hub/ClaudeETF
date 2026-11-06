@@ -365,8 +365,9 @@ fun LiveBanner() {
     ) {
         Dot(if (last > 0 && System.currentTimeMillis() - last < 30_000) C.Green else C.Tw, 8.dp)
         HGap(8.dp)
+        val synced = com.claudeetf.app.data.remote.FugleStream.connected && MarketData.isTwIntraday()
         Text(
-            "即時更新中・每 5 秒" + (if (last > 0) "・最後 " + java.time.Instant.ofEpochMilli(last)
+            (if (synced) "台股與交易所同步（富果串流）" else "即時更新中・每 5 秒") + (if (last > 0) "・最後 " + java.time.Instant.ofEpochMilli(last)
                 .atZone(java.time.ZoneId.of("Asia/Taipei")).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")) else ""),
             color = C.Text2, fontSize = 12.sp,
         )

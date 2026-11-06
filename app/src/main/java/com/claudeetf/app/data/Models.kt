@@ -12,6 +12,7 @@ enum class QuoteSource(val label: String) {
     TWSE("證交所收盤"),
     TPEX("櫃買收盤"),
     TWSE_LIVE("證交所即時"),
+    FUGLE_STREAM("富果串流"),
     FINNHUB("Finnhub"),
     YAHOO("Yahoo"),
 }

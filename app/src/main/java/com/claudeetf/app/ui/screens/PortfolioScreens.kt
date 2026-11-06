@@ -12,6 +12,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.DateRange
@@ -88,7 +89,30 @@ fun PortfolioScreen(nav: NavController) {
     val usUsd = us.sumOf { AppState.marketValue(it) }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        var shareAsk by remember { mutableStateOf(false) }
+        if (shareAsk) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { shareAsk = false },
+                containerColor = C.Card,
+                title = { Text("分享持股快照", color = C.Text, fontSize = 16.sp) },
+                text = { Text("產生配置比例與前十大持股的圖片。要顯示總資產金額嗎？", color = C.Text2, fontSize = 14.sp) },
+                confirmButton = {
+                    Text("隱藏金額", color = C.Primary, fontSize = 15.sp, modifier = Modifier.clickable {
+                        shareAsk = false; runCatching { com.claudeetf.app.util.Snapshot.share(ctx, true) }
+                    }.padding(12.dp))
+                },
+                dismissButton = {
+                    Text("顯示金額", color = C.Muted, fontSize = 15.sp, modifier = Modifier.clickable {
+                        shareAsk = false; runCatching { com.claudeetf.app.util.Snapshot.share(ctx, false) }
+                    }.padding(12.dp))
+                },
+            )
+        }
         TopBar("持股") {
+            IconButton(onClick = { shareAsk = true }) {
+                Icon(androidx.compose.material.icons.Icons.Filled.Share, contentDescription = "分享持股快照", tint = C.Text)
+            }
             IconButton(onClick = { nav.navigate(Routes.trade()) }) {
                 Icon(Icons.Filled.Add, contentDescription = "新增交易", tint = C.Text)
             }

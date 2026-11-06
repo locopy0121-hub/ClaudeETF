@@ -83,6 +83,18 @@ object AlertEngine {
         val todayKey = today.toString()
         val now = System.currentTimeMillis()
         dailySummaries(context, today)
+        // 每週備份提醒：有持股、超過 7 天沒備份，每週最多一次
+        if (AppState.holdings.isNotEmpty() && System.currentTimeMillis() - AppState.lastBackupAt > 7L * 86_400_000) {
+            val week = today.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR)
+            val key = "BK-${today.year}-$week"
+            if (!AppState.summarySent(key)) {
+                AppState.markSummarySent(key)
+                val text = if (AppState.lastBackupAt == 0L) "還沒有備份過資料。到「我的 › 備份與匯入」匯出到 Google 雲端硬碟，換手機也不怕資料遺失。"
+                else "距離上次備份已超過 7 天，建議到「我的 › 備份與匯入」再匯出一次。"
+                notify(context, 904, "記得備份資料", text)
+                AppState.logNotice("備份提醒：" + text)
+            }
+        }
         // 除息、拆股：發現尚未記錄的項目時通知一次
         runCatching {
             val fresh = com.claudeetf.app.data.CorporateActions.scan().filter { !AppState.actionNotified(it.key) }

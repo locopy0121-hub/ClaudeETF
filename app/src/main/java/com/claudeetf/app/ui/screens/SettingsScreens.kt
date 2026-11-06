@@ -237,7 +237,7 @@ fun SettingsScreen(nav: NavController) {
             item {
                 Card(padding = 14.dp) {
                     Text("台股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Label("盤中每 5 秒即時更新：有富果金鑰時富果優先（自動控制在免費額度內），其餘與未填金鑰時使用證交所即時行情；盤後改用證交所／櫃買收盤資料。")
+                    Label("盤中：填入富果金鑰後以 WebSocket 串流與交易所同步（每筆成交即時推送）；未填金鑰或超出訂閱上限的股票，改用證交所即時行情（約每 5 秒）。盤後使用證交所／櫃買收盤資料。")
                     KeyField(
                         label = "富果 Fugle API 金鑰",
                         initial = AppState.fugleKey,
@@ -245,6 +245,7 @@ fun SettingsScreen(nav: NavController) {
                         onTest = { MarketData.testFugle(it) },
                     )
                     Label("目前來源：" + MarketData.twSourcePlan())
+                    if (AppState.streamStatus.isNotBlank()) Label("串流：" + AppState.streamStatus, color = C.Text2)
                     AppState.sourceStatus["TW"]?.let { Label("最近更新：$it", color = C.Text2) }
                 }
             }
@@ -306,6 +307,38 @@ fun SettingsScreen(nav: NavController) {
 
             item { Group("備份與匯入") }
             item { DataCard() }
+
+            item { Group("安全") }
+            item {
+                var msg by remember { mutableStateOf<String?>(null) }
+                val act = context as? com.claudeetf.app.MainActivity
+                Card(padding = 14.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("App 安全鎖", color = C.Text, fontSize = 14.sp)
+                            Label("開啟 App 或離開超過 1 分鐘後，需指紋或裝置密碼解鎖；最近使用畫面不顯示內容")
+                        }
+                        Switch(
+                            checked = AppState.appLock,
+                            onCheckedChange = { on ->
+                                if (on && act?.deviceSecure() == false) {
+                                    msg = "請先在手機「設定 › 安全性」設定螢幕鎖（密碼、圖形或指紋）"
+                                } else {
+                                    AppState.updateAppLock(on)
+                                    msg = if (on) "已開啟，下次開啟 App 時需要解鎖" else "已關閉"
+                                    act?.window?.let { w ->
+                                        val f = android.view.WindowManager.LayoutParams.FLAG_SECURE
+                                        if (on) w.setFlags(f, f) else w.clearFlags(f)
+                                    }
+                                }
+                            },
+                            colors = SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary,
+                                uncheckedTrackColor = C.Border, uncheckedThumbColor = C.Muted, uncheckedBorderColor = C.Border),
+                        )
+                    }
+                    msg?.let { Label(it, color = C.Primary) }
+                }
+            }
 
             item { Group("顯示") }
             item {
@@ -514,7 +547,7 @@ private fun DataCard() {
     var restoreText by remember { mutableStateOf<String?>(null) }
 
     val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) msg = if (writeText(context, uri, Backup.export(context))) "備份已儲存" else "備份失敗"
+        if (uri != null) msg = if (writeText(context, uri, Backup.export(context))) { AppState.markBackup(); "備份已儲存" } else "備份失敗"
     }
     val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -534,6 +567,11 @@ private fun DataCard() {
 
     Card(padding = 14.dp) {
         Text("完整備份", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Label(
+            if (AppState.lastBackupAt == 0L) "尚未備份過，建議定期匯出（超過 7 天會提醒）"
+            else "上次備份：" + Fmt.time(AppState.lastBackupAt) + "（超過 7 天會提醒）",
+            color = if (AppState.lastBackupAt == 0L || System.currentTimeMillis() - AppState.lastBackupAt > 7L * 86_400_000) C.Tw else C.Muted,
+        )
         Label("交易、帳本、自選、提醒、稅務設定與淨值紀錄存成一個檔案。存檔時選 Google 雲端硬碟即可雲端備份；API 金鑰不會匯出。")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SmallButton("匯出備份", Modifier.weight(1f)) { exportBackup.launch(Backup.fileName("json")) }

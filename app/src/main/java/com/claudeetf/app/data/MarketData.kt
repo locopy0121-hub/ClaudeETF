@@ -44,8 +44,9 @@ object MarketData {
 
     fun twSourcePlan(): String = when {
         !isTwIntraday() -> "證交所／櫃買收盤資料（盤後）"
-        AppState.fugleKey.isBlank() -> "證交所即時（盤中每 5 秒）"
-        else -> "富果即時優先＋證交所即時（盤中每 5 秒）"
+        AppState.fugleKey.isBlank() -> "證交所即時（約每 5 秒；填富果金鑰可與交易所同步）"
+        com.claudeetf.app.data.remote.FugleStream.connected -> "富果串流：與交易所同步"
+        else -> "富果即時＋證交所即時（串流連線中）"
     }
 
     private fun clock(ms: Long): String =
@@ -91,9 +92,13 @@ object MarketData {
         var misError: String? = null
 
         if (intraday) {
-            // 1) 富果優先
-            if (AppState.fugleKey.isNotBlank()) {
+            // 0) 富果串流已同步的代號：由推播即時更新，不必輪詢
+            symbols.filter { com.claudeetf.app.data.remote.FugleStream.isStreaming(it) }.forEach { fugle += it }
+            // 1) 富果優先（串流未涵蓋的代號才用 REST）
+            val pending = symbols.filter { it !in fugle }
+            if (AppState.fugleKey.isNotBlank() && pending.isNotEmpty() && !com.claudeetf.app.data.remote.FugleStream.connected) {
                 val key = AppState.fugleKey
+                val symbols = pending
                 val batch = if (live) {
                     val n = minOf(FUGLE_PER_TICK, symbols.size)
                     (0 until n).map { symbols[(fugleCursor + it) % symbols.size] }.also { fugleCursor = (fugleCursor + n) % symbols.size }
