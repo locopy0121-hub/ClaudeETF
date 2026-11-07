@@ -79,6 +79,9 @@ fun NumText(
 /** 單一欄位樣式指定的字重（null = 依元件預設） */
 val LocalItemWeight = androidx.compose.runtime.compositionLocalOf<FontWeight?> { null }
 
+/** 單一欄位樣式指定的行距（dp）：多行資料的行與行之間額外加大 */
+val LocalItemLineGap = androidx.compose.runtime.compositionLocalOf { 0 }
+
 @Composable
 fun MarketTag(market: Market) {
     val (bg, fg) = if (market == Market.TW) C.TwBg to C.Tw else C.UsBg to C.Us

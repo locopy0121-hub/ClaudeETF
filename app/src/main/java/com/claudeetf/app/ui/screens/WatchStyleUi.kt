@@ -70,7 +70,11 @@ internal fun StyledItem(ist: com.claudeetf.app.data.ItemStyle, recolor: Boolean,
         .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)
         .drawWithContent { drawContent(); drawRect(tint, blendMode = androidx.compose.ui.graphics.BlendMode.SrcIn) }
     if (ist.fx > 0 && q != null) m = m.itemEffect(ist, q)
-    CompositionLocalProvider(LocalItemWeight provides (if (ist.weight > 0) FontWeight(ist.weight) else null)) {
+    if (ist.gap > 0) m = m.padding(vertical = (ist.gap / 2f).dp)
+    CompositionLocalProvider(
+        LocalItemWeight provides (if (ist.weight > 0) FontWeight(ist.weight) else null),
+        com.claudeetf.app.ui.LocalItemLineGap provides ist.gap,
+    ) {
         Box(m) { content() }
     }
 }
@@ -361,7 +365,8 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                         if (name.isNotEmpty()) Text(name, Modifier.width(52.dp), color = C.Muted, fontSize = st.sp(12), maxLines = 1)
                         // 數據太長時自動換行，不會被擠出畫面
                         Styled(st, "l:$id", q, Modifier.weight(1f)) {
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { line() }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy((2 + com.claudeetf.app.ui.LocalItemLineGap.current).dp)) { line() }
                         }
                     }
                 }
@@ -615,6 +620,15 @@ internal fun ItemStyleEditor(cur: com.claudeetf.app.data.ItemStyle, allowColor: 
         SmallBtn("－", cur.size > 50) { upd { it.copy(size = (it.size - 10).coerceAtLeast(50)) } }
         Text("${cur.size}%", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         SmallBtn("＋", cur.size < 250) { upd { it.copy(size = (it.size + 10).coerceAtMost(250)) } }
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("行距", color = C.Text, fontSize = 13.sp)
+            Text("項目上下間距；多行資料的行與行之間也一起加大", color = C.Muted, fontSize = 10.sp)
+        }
+        SmallBtn("－", cur.gap > 0) { upd { it.copy(gap = (it.gap - 2).coerceAtLeast(0)) } }
+        Text("${cur.gap} dp", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        SmallBtn("＋", cur.gap < 24) { upd { it.copy(gap = (it.gap + 2).coerceAtMost(24)) } }
     }
     Text("粗細", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
     Chips(listOf(0 to "預設", 300 to "300", 400 to "400", 500 to "500", 600 to "600", 700 to "700", 800 to "800", 900 to "900"), cur.weight) { v -> upd { it.copy(weight = v) } }

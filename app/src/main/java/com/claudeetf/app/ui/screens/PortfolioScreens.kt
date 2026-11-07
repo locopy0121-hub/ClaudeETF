@@ -578,7 +578,7 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Field("日期", date, { date = it }, Modifier.weight(1f), KeyboardType.Text)
+                    DateField("日期", date, { date = it }, Modifier.weight(1f))
                     Field(
                         when (tType) {
                             TradeType.DIVIDEND -> "配息股數"
@@ -701,6 +701,53 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
                 },
             contentAlignment = Alignment.Center,
         ) { Text("儲存交易", color = C.OnPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+    }
+}
+
+/** 日期欄位：點一下開月曆選擇（不用手動輸入），格式 yyyy/MM/dd */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun DateField(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    val fmt = DateTimeFormatter.ofPattern("yyyy/MM/dd")
+    val utc = java.time.ZoneOffset.UTC
+    var open by remember { mutableStateOf(false) }
+    val cur = runCatching { LocalDate.parse(value.trim().replace("-", "/"), fmt) }.getOrNull()
+    Box(modifier) {
+        OutlinedTextField(
+            value = value, onValueChange = {}, readOnly = true, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            label = { Text(label, maxLines = 1) },
+            trailingIcon = { Text("📅", fontSize = 16.sp) },
+            colors = fieldColors(),
+        )
+        // 蓋一層可點區域：唯讀欄位本身不會回應點擊
+        Box(Modifier.matchParentSize().padding(top = 8.dp).clip(RoundedCornerShape(4.dp)).clickable { open = true })
+    }
+    if (open) {
+        val state = androidx.compose.material3.rememberDatePickerState(
+            initialSelectedDateMillis = (cur ?: LocalDate.now()).atStartOfDay(utc).toInstant().toEpochMilli(),
+            // 交易日期不可晚於今天
+            selectableDates = object : androidx.compose.material3.SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long) =
+                    utcTimeMillis <= LocalDate.now().atStartOfDay(utc).toInstant().toEpochMilli()
+            },
+        )
+        androidx.compose.material3.DatePickerDialog(
+            onDismissRequest = { open = false },
+            confirmButton = {
+                Text("確定", color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable {
+                    state.selectedDateMillis?.let { onChange(java.time.Instant.ofEpochMilli(it).atZone(utc).toLocalDate().format(fmt)) }
+                    open = false
+                }.padding(12.dp))
+            },
+            dismissButton = {
+                Row {
+                    Text("今天", color = C.Primary, fontSize = 14.sp, modifier = Modifier.clickable { onChange(LocalDate.now().format(fmt)); open = false }.padding(12.dp))
+                    Text("取消", color = C.Muted, fontSize = 14.sp, modifier = Modifier.clickable { open = false }.padding(12.dp))
+                }
+            },
+        ) {
+            androidx.compose.material3.DatePicker(state = state, title = { Text("選擇交易日期", Modifier.padding(start = 24.dp, top = 16.dp), color = C.Text, fontSize = 14.sp) })
+        }
     }
 }
 
