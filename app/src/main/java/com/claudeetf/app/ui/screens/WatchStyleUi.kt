@@ -197,7 +197,20 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                     if (st.listShows("source")) Box(Modifier.tap(t, "source")) { WatchExtraItem(q, "source", st, list = true) }
                 }
                 // 第三行：進場建議標籤（K 棒訊號），在 TW／US 標籤的下一行
-                if (entryHere) Box(Modifier.tap(t, "entry")) { EntryTagFor(q) }
+                if (entryHere) Row(Modifier.tap(t, "entry"), verticalAlignment = Alignment.CenterVertically) {
+                    EntryTagFor(q)
+                    // 標籤後接 K 棒說明：最新一根的形態（沒有形態時用建議理由）＋ 多空強度
+                    com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol]?.let { r ->
+                        val last = r.candles.lastIndex
+                        val pats = r.latest.filter { it.idx == last }.distinctBy { it.pat }.joinToString("、") { it.pat.cn }
+                        val dc = when { r.dir.bullish -> Trend.up; r.dir.bearish -> Trend.down; else -> Trend.flat }
+                        HGap(8.dp)
+                        Text(
+                            (if (pats.isNotEmpty()) pats else r.entry.reason.substringBefore("，").substringBefore("。")) + " · " + r.dir.label + " " + r.strength,
+                            color = dc, fontSize = st.sp(11), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
             if (sparkInline && q.spark.size >= 2) {
                 HGap(8.dp)
