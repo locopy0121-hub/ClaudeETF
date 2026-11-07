@@ -109,10 +109,11 @@ private fun UpdateDialog(r: AppUpdater.Release, onLater: () -> Unit) {
         owner.lifecycle.currentStateFlow.collect { if (it == Lifecycle.State.RESUMED) canInstall = AppUpdater.canInstall(ctx) }
     }
     val p = AppUpdater.progress
+    val isReady = AppUpdater.ready == r.tag
     AlertDialog(
         onDismissRequest = { if (p == null) onLater() },
         containerColor = C.Card,
-        title = { Text("有新版本 " + r.tag.removeSuffix("-dev"), color = C.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold) },
+        title = { Text((if (isReady) "✓ 新版本 " else "有新版本 ") + r.tag.removeSuffix("-dev") + (if (isReady) " 已下載" else ""), color = C.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Label("目前 " + AppUpdater.currentVersion(ctx) + " → " + r.tag.removePrefix("v") + (sizeText(r.size).takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""))
@@ -124,8 +125,10 @@ private fun UpdateDialog(r: AppUpdater.Release, onLater: () -> Unit) {
                     Text("更新內容", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Text(notes, color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp)
                 }
+                if (isReady) Text("已在背景下載並驗證完成，按「立即安裝」即可更新。", color = C.Primary, fontSize = 13.sp)
+                else if (AppUpdater.prefetching && p == null) Label("背景下載中…")
                 if (p != null) {
-                    Label("下載中 " + (p * 100).toInt() + "%")
+                    Label(if (AppUpdater.prefetching) "等待背景下載完成…" else "下載中 " + (p * 100).toInt() + "%")
                     Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Bg)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(p).clip(RoundedCornerShape(4.dp)).background(C.Primary))
                     }
@@ -137,7 +140,7 @@ private fun UpdateDialog(r: AppUpdater.Release, onLater: () -> Unit) {
         },
         confirmButton = {
             Text(
-                if (p != null) "下載中…" else if (!canInstall) "前往允許安裝" else "下載並安裝",
+                if (p != null) "下載中…" else if (!canInstall) "前往允許安裝" else if (isReady) "立即安裝" else "下載並安裝",
                 color = if (p != null) C.Muted else C.Primary, fontSize = 15.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable(enabled = p == null) {
                     if (!canInstall) AppUpdater.openInstallPermission(ctx)
@@ -167,7 +170,7 @@ fun UpdateCard() {
                 Label("目前 " + AppUpdater.currentVersion(ctx) + (r?.let { " · 最新 " + it.tag.removePrefix("v") } ?: ""))
             }
             Text(
-                if (AppUpdater.checking) "檢查中…" else if (AppUpdater.hasUpdate(ctx)) "更新 ›" else "檢查更新",
+                if (AppUpdater.checking) "檢查中…" else if (AppUpdater.hasUpdate(ctx)) (if (AppUpdater.ready != null) "安裝 ›" else "更新 ›") else "檢查更新",
                 color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable(enabled = !AppUpdater.checking) {
                     if (AppUpdater.hasUpdate(ctx)) show = true
@@ -185,7 +188,20 @@ fun UpdateCard() {
             Text("開啟 App 時自動檢查", Modifier.weight(1f), color = C.Text2, fontSize = 13.sp)
             Switch(AppState.autoUpdateCheck, { AppState.updateAutoUpdateCheck(it) })
         }
-        Label("從 GitHub Releases 下載最新版，交給系統安裝程式覆蓋更新。回到 App 時自動檢查（15 分鐘一次），背景每 6 小時檢查並以通知提醒。")
+        // 預先下載：偵測到新版就先下載好，等使用者點安裝
+        var mode by remember { mutableStateOf(AppUpdater.prefetchMode(ctx)) }
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("新版本預先下載", Modifier.weight(1f), color = C.Text2, fontSize = 13.sp)
+            listOf(0 to "僅 Wi-Fi", 1 to "任何網路", 2 to "關閉").forEach { (v, n) ->
+                val on = mode == v
+                Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
+                        .clickable { mode = v; AppUpdater.setPrefetchMode(ctx, v) }.padding(horizontal = 10.dp, vertical = 4.dp))
+            }
+        }
+        if (AppUpdater.ready != null && AppUpdater.hasUpdate(ctx)) Text("✓ " + AppUpdater.ready!!.removePrefix("v") + " 已下載完成，點「更新 ›」立即安裝", color = C.Primary, fontSize = 12.sp)
+        else if (AppUpdater.prefetching) Label("背景下載新版中…")
+        Label("從 GitHub Releases 下載最新版並驗證，交給系統安裝程式覆蓋更新。回到 App 時自動檢查（15 分鐘一次），背景每 6 小時檢查；偵測到新版會先在背景下載好，再提示你點擊安裝。")
     }
     if (show && r != null) UpdateDialog(r, onLater = { show = false })
 }

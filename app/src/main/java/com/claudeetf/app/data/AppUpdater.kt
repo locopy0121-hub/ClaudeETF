@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -52,6 +53,56 @@ object AppUpdater {
         private set
     /** 剛完成更新：顯示「已更新至 vX」視窗（值為新版本號） */
     var justUpdated by mutableStateOf<String?>(null)
+    /** 已預先下載並驗證完成的版本（tag）；null = 尚未下載 */
+    var ready by mutableStateOf<String?>(null)
+        private set
+    /** 背景預先下載中 */
+    var prefetching by mutableStateOf(false)
+        private set
+    private val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
+
+    /** 預先下載：0 僅 Wi-Fi（預設）、1 任何網路、2 關閉（按下更新才下載） */
+    fun prefetchMode(context: Context): Int = context.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE).getInt("prefetch", 0)
+    fun setPrefetchMode(context: Context, v: Int) {
+        context.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE).edit().putInt("prefetch", v).apply()
+        if (v != 2) appScope.launch { prefetch(context) }
+    }
+
+    private fun apkFile(context: Context, r: Release) = File(File(context.cacheDir, "updates"), "ClaudeETF-${r.tag}.apk")
+
+    /** 最新版的安裝檔已下載驗證完成 */
+    fun readyFile(context: Context): File? = latest?.takeIf { hasUpdate(context) }?.let { r -> apkFile(context, r).takeIf { it.exists() && it.length() > 0 } }
+
+    private fun refreshReady(context: Context) { ready = readyFile(context)?.let { latest?.tag } }
+
+    private fun unmetered(context: Context): Boolean = runCatching {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == true
+    }.getOrDefault(false)
+
+    /**
+     * 偵測到新版時預先在背景下載並驗證（依設定限 Wi-Fi），完成後等使用者點「立即安裝」。
+     * 回傳 true = 安裝檔已就緒。
+     */
+    suspend fun prefetch(context: Context): Boolean {
+        val r = latest ?: return false
+        if (!hasUpdate(context)) return false
+        refreshReady(context)
+        if (ready == r.tag) return true
+        val mode = prefetchMode(context)
+        if (mode == 2 || (mode == 0 && !unmetered(context))) return false
+        if (progress != null || prefetching) return false
+        prefetching = true
+        return try {
+            download(context, r, showProgress = false)
+            refreshReady(context)
+            ready == r.tag
+        } catch (e: Exception) {
+            false
+        } finally {
+            prefetching = false
+        }
+    }
 
     /** App 啟動時呼叫：版本與上次執行不同 → 代表剛更新完成 */
     fun detectUpdated(context: Context) {
@@ -97,7 +148,8 @@ object AppUpdater {
         if (auto && now - prefs.getLong("lastCheck", 0L) < minGapMs) {
             // 用上次的結果
             restore(prefs)
-            if (popup) prompt = hasUpdate(context) && prefs.getString("skipped", "") != latest?.tag
+            refreshReady(context)
+            if (popup) afterCheckPopup(context, prefs)
             return
         }
         checking = true
@@ -120,7 +172,9 @@ object AppUpdater {
                 newest.patch > currentPatch(context) -> "有新版本 " + newest.tag
                 else -> "已是最新版本"
             }
-            if (popup) prompt = hasUpdate(context) && prefs.getString("skipped", "") != newest?.tag
+            refreshReady(context)
+            if (popup) afterCheckPopup(context, prefs)
+            else if (hasUpdate(context)) appScope.launch { prefetch(context) }
         } catch (e: Exception) {
             message = "檢查失敗：" + (e.message ?: e.javaClass.simpleName) + "，稍後會自動重試"
             restore(prefs)
@@ -223,6 +277,17 @@ object AppUpdater {
     }
 
     /** 背景通知用：這一版是否已通知過（每版只通知一次） */
+    /** 有新版：能預先下載就先下載完再提示「已下載，點擊安裝」；不能（非 Wi-Fi／關閉）就直接提示 */
+    private fun afterCheckPopup(context: Context, prefs: android.content.SharedPreferences) {
+        if (!hasUpdate(context) || prefs.getString("skipped", "") == latest?.tag) { prompt = false; return }
+        if (ready == latest?.tag) { prompt = true; return }
+        appScope.launch {
+            prefetch(context)
+            // 下載完成或無法預先下載，都跳出提示（已下載時按鈕為「立即安裝」）
+            prompt = hasUpdate(context) && prefs.getString("skipped", "") != latest?.tag
+        }
+    }
+
     fun shouldNotify(context: Context): Boolean {
         val r = latest ?: return false
         if (!hasUpdate(context)) return false
@@ -251,14 +316,34 @@ object AppUpdater {
         }
     }
 
-    /** 下載 APK（顯示進度），完成後開啟系統安裝畫面 */
+    /** 安裝：已預先下載就直接安裝；否則下載（顯示進度）後安裝 */
     suspend fun downloadAndInstall(context: Context) {
         val r = latest ?: return
         if (progress != null) return
-        progress = 0f
         message = null
+        readyFile(context)?.let { f -> runCatching { install(context, f) }.onFailure { message = "更新失敗：" + (it.message ?: it.javaClass.simpleName) }; return }
+        // 背景正在預先下載：等它完成再安裝，不重複下載
+        if (prefetching) {
+            progress = 0f
+            while (prefetching) kotlinx.coroutines.delay(300)
+            progress = null
+            readyFile(context)?.let { f -> install(context, f); return }
+        }
+        progress = 0f
         try {
-            val file = withContext(Dispatchers.IO) {
+            val file = download(context, r, showProgress = true)
+            progress = 1f
+            refreshReady(context)
+            install(context, file)
+        } catch (e: Exception) {
+            message = "更新失敗：" + (e.message ?: e.javaClass.simpleName)
+        } finally {
+            progress = null
+        }
+    }
+
+    /** 下載並驗證（長度與 SHA-256），回傳安裝檔 */
+    private suspend fun download(context: Context, r: Release, showProgress: Boolean): File = withContext(Dispatchers.IO) {
                 val dir = File(context.cacheDir, "updates").apply { mkdirs() }
                 dir.listFiles()?.forEach { it.delete() }
                 val out = File(dir, "ClaudeETF-${r.tag}.apk")
@@ -281,7 +366,7 @@ object AppUpdater {
                                 val n = input.read(buf); if (n < 0) break
                                 o.write(buf, 0, n); md.update(buf, 0, n); done += n
                                 val t = System.currentTimeMillis()
-                                if (total > 0 && t - lastUi > 150) {
+                                if (showProgress && total > 0 && t - lastUi > 150) {
                                     lastUi = t
                                     val p = (done.toFloat() / total).coerceIn(0f, 1f)
                                     withContext(Dispatchers.Main) { progress = p }
@@ -296,14 +381,6 @@ object AppUpdater {
                 if (r.sha256.isNotEmpty() && !hash.equals(r.sha256, ignoreCase = true)) { part.delete(); throw IllegalStateException("檔案校驗失敗（SHA-256 不符），已刪除") }
                 if (!part.renameTo(out)) throw IllegalStateException("無法儲存安裝檔")
                 out
-            }
-            progress = 1f
-            install(context, file)
-        } catch (e: Exception) {
-            message = "更新失敗：" + (e.message ?: e.javaClass.simpleName)
-        } finally {
-            progress = null
-        }
     }
 
     /**
