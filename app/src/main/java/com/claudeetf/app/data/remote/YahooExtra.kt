@@ -36,8 +36,8 @@ object YahooExtra {
     /** range：1d 5d 1mo 6mo 1y 5y */
     /** range：1d 5d 1mo 3mo 6mo 1y 2y 5y；K 線看日線時多抓一段算均線 */
     /** prePost = true：含美股盤前（04:00）與盤後（至 20:00） */
-    fun history(symbol: String, range: String, prePost: Boolean = false): History {
-        val interval = when (range) {
+    fun history(symbol: String, range: String, prePost: Boolean = false, intervalOverride: String? = null): History {
+        val interval = intervalOverride ?: when (range) {
             "1d" -> "5m"
             "5d" -> "15m"
             "1mo", "3mo", "6mo", "1y", "2y" -> "1d"
