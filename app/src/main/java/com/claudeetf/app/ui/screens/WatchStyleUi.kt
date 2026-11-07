@@ -181,11 +181,6 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
     val sparkInline = "spark" in cols || st.listShows("spark")
     val tableCols = cols.filter { it != "spark" }
     // 清單項目：市場標籤、報價時間留在名稱下方；其餘進表格（與欄位重複的不再顯示）
-    val dupOf = mapOf("keys" to "keys", "volume" to "volume", "amp" to "amp")
-    val tableItems = st.listItems.filter { id ->
-        st.listShows(id) && id !in setOf("market", "source", "spark") &&
-            !(id == "entry" && st.tagPos != 0) && dupOf[id]?.let { it in tableCols } != true
-    }
     Column(modifier.fillMaxWidth().padding(vertical = vpad, horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (st.density == 0) 2.dp else 4.dp)) {
@@ -216,21 +211,19 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                 }
             }
         }
-        // 下層表格：每格等寬
-        val cellsAll: List<Pair<String, @Composable () -> Unit>> =
-            tableCols.map { col -> col to @Composable { WatchCell(q, col, table = true) } } +
-                tableItems.mapNotNull { id -> tableItem(q, id, st)?.let { id to it } }
-        if (cellsAll.isNotEmpty()) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(C.Card2.copy(alpha = 0.5f))) {
-                cellsAll.chunked(3).forEachIndexed { r, row ->
-                    if (r > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(C.Bg))
-                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
-                        row.forEachIndexed { i, (id, content) ->
-                            if (i > 0) Box(Modifier.width(1.dp).fillMaxHeight().background(C.Bg))
-                            Box(Modifier.weight(1f).tap(t, id).padding(horizontal = 8.dp, vertical = 5.dp), contentAlignment = Alignment.CenterStart) { content() }
-                        }
-                        // 不足 3 格補空位，讓每格寬度一致
-                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+        // 下層：一項一行（左側名稱、右側數據橫向排開）；隱藏或沒有資料的項目整行不顯示
+        val rowIds = st.listItems.filter { id -> id !in setOf("market", "source", "spark") && (st.listShows(id) || id in tableCols) &&
+            !(id == "entry" && st.tagPos != 0) } + tableCols.filter { it !in st.listItems }
+        val lines = rowIds.mapNotNull { id -> infoLine(q, id, st)?.let { id to it } }
+        if (lines.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(C.Card2.copy(alpha = 0.5f)).padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                lines.forEach { (id, line) ->
+                    Row(Modifier.fillMaxWidth().tap(t, id), verticalAlignment = Alignment.CenterVertically) {
+                        // 進場建議本身就是標籤，不另外顯示名稱
+                        val name = LINE_NAMES[id] ?: id
+                        if (name.isNotEmpty()) Text(name, Modifier.width(52.dp), color = C.Muted, fontSize = st.sp(12), maxLines = 1)
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { line() }
                     }
                 }
             }
@@ -238,23 +231,85 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
     }
 }
 
-/** 清單下層表格的單格：上方數值、下方說明 */
-private fun tableItem(q: Quote, id: String, st: WatchStyle): (@Composable () -> Unit)? = when (id) {
-    "entry" -> { { Column { EntryTagFor(q); Text("進場建議", color = C.Muted, fontSize = 10.sp) } } }
-    "keys" -> { {
-        val k = AppState.keyPrices[q.symbol]
-        Column {
-            if (k == null) NumText("—", 12.sp) else {
-                val (pos, color) = KeyLevelsUi.position(q.price, k)
-                Text(pos, color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+private val LINE_NAMES = mapOf(
+    "entry" to "", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "limit" to "漲跌停", "ext" to "盤前盤後",
+    "div" to "除權息", "inst" to "法人", "dt" to "當沖", "credit" to "信用", "rev" to "月營收", "pe" to "本益比", "pnl" to "損益",
+)
+
+private fun line(c: @Composable RowScope.() -> Unit): @Composable RowScope.() -> Unit = c
+
+/** 清單下層的一行數據（橫向）；沒有資料回傳 null，該行不顯示 */
+private fun infoLine(q: Quote, id: String, st: WatchStyle): (@Composable RowScope.() -> Unit)? {
+    val sz = st.sp(12)
+    val tw = q.market == Market.TW
+    val md = java.time.format.DateTimeFormatter.ofPattern("M/d")
+    fun d(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.of("Asia/Taipei")).format(md)
+    return when (id) {
+        "entry" -> {
+            if (!AppState.showCardEntry) null else line {
+                EntryTagFor(q)
+                com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol]?.let { r ->
+                    val c = when { r.dir.bullish -> Trend.up; r.dir.bearish -> Trend.down; else -> Trend.flat }
+                    Text(r.dir.label + " " + r.strength, color = c, fontSize = sz, maxLines = 1)
+                }
             }
-            Text("三關", color = C.Muted, fontSize = 10.sp)
         }
-    } }
-    "volume", "amp", "ext" -> { { Column { WatchExtraItem(q, id, st, list = true); Text(when (id) { "volume" -> "成交量"; "amp" -> "振幅"; else -> "盤前盤後" }, color = C.Muted, fontSize = 10.sp) } } }
-    "limit" -> if (q.market == Market.TW && com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00")) != null)
-        { { Column { WatchExtraItem(q, "limit", st); Text("漲跌停", color = C.Muted, fontSize = 10.sp) } } } else null
-    else -> null
+        "keys" -> AppState.keyPrices[q.symbol]?.let { k -> line {
+            val (pos, color) = KeyLevelsUi.position(q.price, k)
+            Text(pos, color = color, fontSize = sz, fontWeight = FontWeight.Bold, maxLines = 1)
+            NumText("上 " + Fmt.price(k.upper), sz, KeyLevelColors.upper)
+            NumText("下 " + Fmt.price(k.lower), sz, KeyLevelColors.lower)
+        } }
+        "volume" -> AppState.dayStats[q.symbol]?.volume?.let { v -> line { NumText(volumeText(v, q.market), sz, C.Text) } }
+        "amp" -> amplitude(q)?.let { a -> line { NumText(Fmt.num(a, 2) + "%", sz, C.Text) } }
+        "limit" -> if (!tw) null else com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00"))?.let { s ->
+            line { Text(s, color = Trend.fg(if (s == "漲停") 1.0 else -1.0), fontSize = sz, fontWeight = FontWeight.Bold) }
+        }
+        "ext" -> AppState.extended[q.symbol]?.let { e -> line {
+            Text(e.label, color = C.Text2, fontSize = sz)
+            NumText(Fmt.price(e.price), sz, Trend.fg(e.changePct))
+            NumText(Fmt.signedPct(e.changePct), sz, Trend.fg(e.changePct))
+        } }
+        "div" -> AppState.divBriefs[q.symbol]?.takeIf { it.lastTime != null || it.nextEx != null }?.let { b -> line {
+            b.nextEx?.let { Text("下次除息 " + d(it), color = C.Primary, fontSize = sz) }
+            b.lastAmount?.let { NumText(Fmt.num(it, 3), sz, C.Text, FontWeight.Bold) }
+            b.lastTime?.let { Text("上次 " + d(it), color = C.Text2, fontSize = sz) }
+        } }
+        "inst" -> if (!tw) null else AppState.institutional[q.symbol]?.let { i -> line {
+            val lots = i.total / 1000.0
+            NumText(Fmt.signed(lots) + " 張", sz, Trend.fg(lots), FontWeight.Bold)
+            Text("外資 " + Fmt.signed(i.foreign / 1000.0), color = Trend.fg(i.foreign), fontSize = sz, maxLines = 1)
+            Text("投信 " + Fmt.signed(i.trust / 1000.0), color = Trend.fg(i.trust), fontSize = sz, maxLines = 1)
+        } }
+        "dt" -> if (!tw) null else AppState.twDaily[q.symbol]?.dayTradePct?.let { pct -> line {
+            NumText(Fmt.num(pct, 1) + "%", sz, C.Text, FontWeight.Bold)
+            AppState.twDaily[q.symbol]?.dayTradeLots?.let { Text("當沖 " + Fmt.num(it) + " 張", color = C.Text2, fontSize = sz) }
+        } }
+        "credit" -> if (!tw) null else AppState.twDaily[q.symbol]?.margin?.takeIf { it.financing != null }?.let { mg -> line {
+            val chg = mg.financingPrev?.let { mg.financing!! - it }
+            NumText("資 " + Fmt.num(mg.financing!!), sz, C.Text)
+            chg?.let { NumText(Fmt.signed(it), sz, Trend.fg(it)) }
+            NumText("券 " + (mg.short?.let { Fmt.num(it) } ?: "—"), sz, C.Text2)
+        } }
+        "rev" -> if (!tw) null else AppState.twDaily[q.symbol]?.revenue?.let { r -> line {
+            val yoy = r.yoyPct?.replace(",", "")?.toDoubleOrNull()
+            val mom = r.momPct?.replace(",", "")?.toDoubleOrNull()
+            Text(r.month + " 月", color = C.Text2, fontSize = sz)
+            NumText("年增 " + (yoy?.let { Fmt.signedPct(it, 1) } ?: "—"), sz, yoy?.let { Trend.fg(it) } ?: C.Text)
+            NumText("月增 " + (mom?.let { Fmt.signedPct(it, 1) } ?: "—"), sz, mom?.let { Trend.fg(it) } ?: C.Text2)
+        } }
+        "pe" -> (AppState.peMap[q.symbol]?.let { Fmt.num(it, 1) } ?: q.stats?.pe?.takeIf { it.isNotBlank() && it != "—" })?.let { pe -> line {
+            NumText(pe + " 倍", sz, C.Text)
+        } }
+        "pnl" -> AppState.holdings.firstOrNull { it.symbol == q.symbol && it.shares > 0 }?.takeIf { q.price > 0 }?.let { h -> line {
+            val pl = (q.price - h.avgCost) * h.shares
+            val pct = if (h.avgCost > 0) (q.price / h.avgCost - 1) * 100 else 0.0
+            NumText(com.claudeetf.app.ui.mask(Fmt.signed(pl, if (q.market == Market.US) 2 else 0)), sz, Trend.fg(pl), FontWeight.Bold)
+            NumText(Fmt.signedPct(pct), sz, Trend.fg(pl))
+            Text(Fmt.shares(h.shares) + " 股", color = C.Text2, fontSize = sz)
+        } }
+        else -> null
+    }
 }
 
 // ============================== 設定 ==============================

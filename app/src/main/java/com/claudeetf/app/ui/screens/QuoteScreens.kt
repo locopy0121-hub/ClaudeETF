@@ -231,10 +231,14 @@ fun WatchlistScreen(nav: NavController) {
                     }
                     DropPick("排序", sortNames[sort], sortNames.mapIndexed { i, n -> i.toString() to n }, sort.toString(), Modifier.weight(1f)) { sort = it.toInt() }
                     if (!heat) {
-                        DropPick("欄位", watchColumns.firstOrNull { it.first == AppState.watchColumn }?.second ?: "—", watchColumns, AppState.watchColumn,
-                            Modifier.weight(1f)) { AppState.updateWatchColumn(it) }
+                        DropPick("欄位", watchColumns.firstOrNull { it.first == AppState.watchColumn }?.second ?: "不顯示",
+                            listOf("" to "不顯示") + watchColumns, AppState.watchColumn, Modifier.weight(1f)) { v ->
+                            AppState.updateWatchColumn(v)
+                            // 欄位與第二欄相同時清掉第二欄
+                            if (v.isNotEmpty() && AppState.watchColumn2 == v) AppState.updateWatchColumn2("")
+                        }
                         DropPick("第二欄", watchColumns.firstOrNull { it.first == AppState.watchColumn2 }?.second ?: "不顯示",
-                            listOf("" to "不顯示") + watchColumns.filter { it.first != AppState.watchColumn }, AppState.watchColumn2,
+                            listOf("" to "不顯示") + watchColumns.filter { it.first != AppState.watchColumn || AppState.watchColumn.isEmpty() }, AppState.watchColumn2,
                             Modifier.weight(1f)) { AppState.updateWatchColumn2(it) }
                     } else Spacer(Modifier.weight(2f))
                 }
