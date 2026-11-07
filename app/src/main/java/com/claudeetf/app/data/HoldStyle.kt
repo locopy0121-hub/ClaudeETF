@@ -29,6 +29,11 @@ data class HoldStyle(
     val divider: Boolean = true,
     /** 單一欄位樣式（字級、粗細、顏色、動畫），與行情卡片分開保存 */
     val itemStyles: Map<String, ItemStyle> = emptyMap(),
+    /** 外觀：背景、邊框色（0 = 無）、圓角、列與列間距（dp） */
+    val rowBg: Long = 0L,
+    val rowBorder: Long = 0L,
+    val radius: Int = 0,
+    val gapDp: Int = 0,
 ) {
     fun shows(id: String) = id !in hidden
     fun style(id: String): ItemStyle = itemStyles[id] ?: ItemStyle()
@@ -39,6 +44,7 @@ data class HoldStyle(
         .put("items", JSONArray(items)).put("hidden", JSONArray(hidden.toList()))
         .put("showMv", showMv).put("showPl", showPl).put("showPct", showPct)
         .put("entryAnim", entryAnim).put("marquee", marquee).put("divider", divider)
+        .put("rowBg", rowBg).put("rowBorder", rowBorder).put("radius", radius).put("gapDp", gapDp)
         .put("itemStyles", JSONObject().apply { itemStyles.filterValues { !it.isDefault }.forEach { (k, v) -> put(k, v.toJson()) } })
         .toString()
 
@@ -70,6 +76,7 @@ data class HoldStyle(
                     o.optBoolean("showMv", true), o.optBoolean("showPl", true), o.optBoolean("showPct", true),
                     o.optInt("entryAnim", 2), o.optBoolean("marquee", true), o.optBoolean("divider", true),
                     o.optJSONObject("itemStyles")?.let { m -> m.keys().asSequence().associateWith { ItemStyle.fromJson(m.optJSONObject(it)) } } ?: emptyMap(),
+                    o.optLong("rowBg", 0L), o.optLong("rowBorder", 0L), o.optInt("radius", 0), o.optInt("gapDp", 0),
                 )
             }.getOrDefault(HoldStyle())
         }

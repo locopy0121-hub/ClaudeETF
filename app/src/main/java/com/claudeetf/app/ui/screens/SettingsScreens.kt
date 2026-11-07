@@ -1226,7 +1226,43 @@ private fun HoldStyleSettings() {
         Text("其他", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
         AnimChooser(st.entryAnim) { v -> set { it.copy(entryAnim = v) } }
         OptToggle("持有建議文字過長時以跑馬燈捲動", st.marquee) { v -> set { it.copy(marquee = v) } }
-        OptToggle("各列之間顯示分隔線", st.divider) { v -> set { it.copy(divider = v) } }
+        OptToggle("各列之間顯示分隔線（設定底色或邊框時自動隱藏）", st.divider) { v -> set { it.copy(divider = v) } }
+        Text("外觀", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        HoldColorRow("卡片背景", st.rowBg) { v -> set { it.copy(rowBg = v) } }
+        HoldColorRow("卡片邊框", st.rowBorder) { v -> set { it.copy(rowBorder = v) } }
+        HoldStepper("圓角", st.radius, 0, 28, 2) { v -> set { it.copy(radius = v) } }
+        HoldStepper("列間距", st.gapDp, 0, 24, 2) { v -> set { it.copy(gapDp = v) } }
         Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.updateHoldStyle(com.claudeetf.app.data.HoldStyle()) }.padding(vertical = 6.dp))
+    }
+}
+
+
+@Composable
+private fun HoldColorRow(title: String, value: Long, set: (Long) -> Unit) {
+    var picking by remember { mutableStateOf(false) }
+    if (picking) ColorPickerDialog(
+        title = title, initial = if (value != 0L) androidx.compose.ui.graphics.Color(value.toInt()) else C.Card,
+        onPick = { c -> set(c.toArgb().toLong() and 0xFFFFFFFFL); picking = false },
+        onReset = { set(0L); picking = false }, onDismiss = { picking = false },
+    )
+    Row(Modifier.fillMaxWidth().clickable { picking = true }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+        if (value == 0L) Label("無", Modifier.padding(end = 8.dp))
+        else Text("清除", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clickable { set(0L) }.padding(end = 8.dp))
+        Box(Modifier.size(width = 44.dp, height = 26.dp).clip(RoundedCornerShape(8.dp))
+            .background(if (value != 0L) androidx.compose.ui.graphics.Color(value.toInt()) else C.Bg)
+            .border(1.dp, C.Border, RoundedCornerShape(8.dp)))
+    }
+}
+
+@Composable
+private fun HoldStepper(title: String, value: Int, min: Int, max: Int, step: Int, set: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+        Text("－", color = if (value > min) C.Primary else C.Border, fontSize = 18.sp,
+            modifier = Modifier.clickable(enabled = value > min) { set((value - step).coerceAtLeast(min)) }.padding(horizontal = 12.dp))
+        Text("$value dp", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text("＋", color = if (value < max) C.Primary else C.Border, fontSize = 18.sp,
+            modifier = Modifier.clickable(enabled = value < max) { set((value + step).coerceAtMost(max)) }.padding(horizontal = 12.dp))
     }
 }

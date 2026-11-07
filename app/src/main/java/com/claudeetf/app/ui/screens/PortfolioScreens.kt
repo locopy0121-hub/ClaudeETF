@@ -404,8 +404,14 @@ internal fun HoldingRow(
     val vPad = when (st.density) { 0 -> 4.dp; 2 -> 12.dp; else -> 8.dp }
     val entry = if (q != null && (st.shows("entry") || st.shows("tip"))) entryResultFor(q)?.entry else null
 
+    val shape = RoundedCornerShape(st.radius.coerceIn(0, 28).dp)
+    val boxed = st.rowBg != 0L || st.rowBorder != 0L
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = vPad, horizontal = 4.dp),
+        Modifier.fillMaxWidth().padding(vertical = (st.gapDp.coerceIn(0, 24) / 2f).dp)
+            .then(if (boxed || st.radius > 0) Modifier.clip(shape) else Modifier)
+            .then(if (st.rowBg != 0L) Modifier.background(androidx.compose.ui.graphics.Color(st.rowBg.toInt())) else Modifier)
+            .then(if (st.rowBorder != 0L) Modifier.border(1.dp, androidx.compose.ui.graphics.Color(st.rowBorder.toInt()), shape) else Modifier)
+            .clickable(onClick = onClick).padding(vertical = vPad, horizontal = if (boxed) 10.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (st.density == 0) 1.dp else 2.dp)) {
@@ -460,7 +466,7 @@ internal fun HoldingRow(
             }
         }
     }
-    if (st.divider) Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
+    if (st.divider && st.rowBg == 0L && st.rowBorder == 0L) Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
 }
 
 // ============================== 新增交易 ==============================
