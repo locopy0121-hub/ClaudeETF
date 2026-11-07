@@ -120,12 +120,21 @@ object StockInfoRepo {
         k ?: return@withContext null
         // Yahoo 為 Float，先取 4 位消除誤差；台股三關依升降單位無條件捨去
         fun clean(v: Float) = java.math.BigDecimal.valueOf(v.toDouble()).setScale(4, java.math.RoundingMode.HALF_UP).toDouble()
-        val hi = clean(h.highs[k]); val lo = clean(h.lows[k])
+        var hi = clean(h.highs[k]); var lo = clean(h.lows[k])
+        var basis = day(k)
+        // Yahoo 最後一根尚未定案時最高＝最低（三關上下會相同）：改用報價記錄的當日高低，否則往前找正常的 K 棒
+        if (hi <= lo) {
+            val ds = AppState.dayStats[q.symbol]
+            // 當日高低只在「基準日＝最後交易日」時適用（盤中的 dayStats 是今天的，不能拿來當昨天）
+            val sameDay = q.market == Market.TW && day(k) == MarketData.lastTradingDay() && !MarketData.isTwIntraday()
+            if (sameDay && ds?.high != null && ds.low != null && ds.high > ds.low) { hi = ds.high; lo = ds.low }
+            else valid.lastOrNull { it < k && h.highs[it] > h.lows[it] }?.let { j -> hi = clean(h.highs[j]); lo = clean(h.lows[j]); basis = day(j) }
+        }
         val r = hi - lo
         val tw = q.market == Market.TW
         val etf = q.isEtf || q.symbol.startsWith("00")
         fun px(v: Double) = if (tw) com.claudeetf.app.util.TwSession.snap(v, etf) else v
-        val kp = KeyPrices(px(lo + r * 1.382), px((hi + lo) / 2), px(hi - r * 1.382), hi, lo, day(k).toString())
+        val kp = KeyPrices(px(lo + r * 1.382), px((hi + lo) / 2), px(hi - r * 1.382), hi, lo, basis.toString())
         keyCache[q.symbol] = System.currentTimeMillis() to kp
         kp
     }

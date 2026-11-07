@@ -166,51 +166,95 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
 
 // ============================== 清單 ==============================
 
+/**
+ * 清單版面（兩層）：
+ *  上層：名稱／代號／報價時間（左，占滿剩餘寬度）＋ 走勢圖（有選時）＋ 價格與漲跌（右）
+ *  下層：其餘資訊（欄位、第二欄、三關、進場建議、成交量…）平均分配成表格，每列最多 3 格
+ */
 @Composable
 fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, sel: String? = null, onTap: ((String) -> Unit)? = null) {
     val t = Tap(sel, onTap)
     val vpad = when (st.density) { 0 -> 6.dp; 2 -> 13.dp; else -> 10.dp }
     val c = Trend.fg(q.change)
-    Row(modifier.fillMaxWidth().padding(vertical = vpad, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (st.density == 0) 2.dp else 4.dp)) {
-            Row(Modifier.tap(t, "name"), verticalAlignment = Alignment.CenterVertically) {
-                // 名稱在前且不顯示市場標籤時，代號接在名稱後
-                WatchName(q, st, 15, Modifier.weight(1f, fill = false), showCode = !st.listShows("market"))
-                if (st.tagPos == 1) { HGap(6.dp); EntryTagFor(q) }
+    // 欄位、第二欄（行情頁選的）
+    val cols = if (cells) listOf(AppState.watchColumn, AppState.watchColumn2).filter { it.isNotEmpty() }.distinct() else emptyList()
+    val sparkInline = "spark" in cols || st.listShows("spark")
+    val tableCols = cols.filter { it != "spark" }
+    // 清單項目：市場標籤、報價時間留在名稱下方；其餘進表格（與欄位重複的不再顯示）
+    val dupOf = mapOf("keys" to "keys", "volume" to "volume", "amp" to "amp")
+    val tableItems = st.listItems.filter { id ->
+        st.listShows(id) && id !in setOf("market", "source", "spark") &&
+            !(id == "entry" && st.tagPos != 0) && dupOf[id]?.let { it in tableCols } != true
+    }
+    Column(modifier.fillMaxWidth().padding(vertical = vpad, horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (st.density == 0) 2.dp else 4.dp)) {
+                Row(Modifier.tap(t, "name"), verticalAlignment = Alignment.CenterVertically) {
+                    WatchName(q, st, 15, Modifier.weight(1f, fill = false), showCode = !st.listShows("market"))
+                    if (st.tagPos == 1) { HGap(6.dp); EntryTagFor(q) }
+                }
+                if (st.listShows("market") || st.listShows("source")) Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (st.listShows("market")) Box(Modifier.tap(t, "market")) { WatchExtraItem(q, "market", st, list = true) }
+                    if (st.listShows("market") && st.listShows("source")) HGap(8.dp)
+                    if (st.listShows("source")) Box(Modifier.tap(t, "source")) { WatchExtraItem(q, "source", st, list = true) }
+                }
             }
-            // 中間欄已顯示三關時，左側不重複
-            val keysInCell = cells && (AppState.watchColumn == "keys" || AppState.watchColumn2 == "keys")
-            val ids = st.listItems.filter { st.listShows(it) && !(it == "entry" && st.tagPos != 0) && !(it == "keys" && keysInCell) }
-            groups(ids, setOf("market", "source", "volume", "amp", "limit")).forEach { g ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    g.forEach { id ->
-                        Box(Modifier.tap(t, id)) {
-                            if (id == "spark") { if (q.spark.size >= 2) Sparkline(q.spark, c, Modifier.width(90.dp).height(18.dp), fill = true) }
-                            else WatchExtraItem(q, id, st, list = true)
+            if (sparkInline && q.spark.size >= 2) {
+                HGap(8.dp)
+                Box(Modifier.tap(t, "spark")) { Sparkline(q.spark, c, Modifier.width(72.dp).height(28.dp), fill = true) }
+            }
+            HGap(10.dp)
+            Column(Modifier.widthIn(min = 88.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(Modifier.tap(t, "price"), verticalAlignment = Alignment.CenterVertically) {
+                    if (st.tagPos == 2) { EntryTagFor(q); HGap(6.dp) }
+                    NumText(if (q.price > 0) Fmt.price(q.price) else "—", st.sp(16), Trend.price(q.change), FontWeight.Bold)
+                }
+                Row(Modifier.tap(t, "change"), verticalAlignment = Alignment.CenterVertically) {
+                    if (st.changeMode != 1) NumText(Fmt.signed(q.change, 2), st.sp(11), c)
+                    if (st.changeMode == 0) HGap(6.dp)
+                    if (st.changeMode != 2) { if (st.changeStyle == 1) ChangePill(q.changePct) else NumText(Fmt.pct(q.changePct), st.sp(11), c) }
+                }
+            }
+        }
+        // 下層表格：每格等寬
+        val cellsAll: List<Pair<String, @Composable () -> Unit>> =
+            tableCols.map { col -> col to @Composable { WatchCell(q, col, table = true) } } +
+                tableItems.mapNotNull { id -> tableItem(q, id, st)?.let { id to it } }
+        if (cellsAll.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(C.Card2.copy(alpha = 0.5f))) {
+                cellsAll.chunked(3).forEachIndexed { r, row ->
+                    if (r > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(C.Bg))
+                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
+                        row.forEachIndexed { i, (id, content) ->
+                            if (i > 0) Box(Modifier.width(1.dp).fillMaxHeight().background(C.Bg))
+                            Box(Modifier.weight(1f).tap(t, id).padding(horizontal = 8.dp, vertical = 5.dp), contentAlignment = Alignment.CenterStart) { content() }
                         }
+                        // 不足 3 格補空位，讓每格寬度一致
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
         }
-        if (cells) {
-            WatchCell(q, AppState.watchColumn)
-            if (AppState.watchColumn2.isNotEmpty() && AppState.watchColumn2 != AppState.watchColumn) {
-                HGap(6.dp)
-                WatchCell(q, AppState.watchColumn2)
-            }
-        }
-        HGap(10.dp)
-        Column(Modifier.widthIn(min = 96.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(Modifier.tap(t, "price"), verticalAlignment = Alignment.CenterVertically) {
-                if (st.tagPos == 2) { EntryTagFor(q); HGap(6.dp) }
-                NumText(if (q.price > 0) Fmt.price(q.price) else "—", st.sp(15), Trend.price(q.change), FontWeight.Bold)
-            }
-            Column(Modifier.tap(t, "change"), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                if (st.changeMode != 1) NumText(Fmt.signed(q.change, 2), st.sp(11), c)
-                if (st.changeMode != 2) { if (st.changeStyle == 1) ChangePill(q.changePct) else NumText(Fmt.pct(q.changePct), st.sp(12), c) }
-            }
-        }
     }
+}
+
+/** 清單下層表格的單格：上方數值、下方說明 */
+private fun tableItem(q: Quote, id: String, st: WatchStyle): (@Composable () -> Unit)? = when (id) {
+    "entry" -> { { Column { EntryTagFor(q); Text("進場建議", color = C.Muted, fontSize = 10.sp) } } }
+    "keys" -> { {
+        val k = AppState.keyPrices[q.symbol]
+        Column {
+            if (k == null) NumText("—", 12.sp) else {
+                val (pos, color) = KeyLevelsUi.position(q.price, k)
+                Text(pos, color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text("三關", color = C.Muted, fontSize = 10.sp)
+        }
+    } }
+    "volume", "amp", "ext" -> { { Column { WatchExtraItem(q, id, st, list = true); Text(when (id) { "volume" -> "成交量"; "amp" -> "振幅"; else -> "盤前盤後" }, color = C.Muted, fontSize = 10.sp) } } }
+    "limit" -> if (q.market == Market.TW && com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00")) != null)
+        { { Column { WatchExtraItem(q, "limit", st); Text("漲跌停", color = C.Muted, fontSize = 10.sp) } } } else null
+    else -> null
 }
 
 // ============================== 設定 ==============================

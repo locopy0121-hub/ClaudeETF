@@ -440,6 +440,9 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
 
 val watchColumns = listOf("spark" to "走勢", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "div" to "除權息", "inst" to "法人", "dt" to "當沖", "credit" to "信用", "rev" to "月營收", "pe" to "本益比", "pnl" to "持股損益")
 
+/** 配息金額：小數第三位（例 0.138、0.600） */
+private fun divAmt(v: Double) = Fmt.num(v, 3)
+
 /** 行情頁工具列的下拉選單：上方小字標題、下方目前值 ▾ */
 @Composable
 private fun DropPick(title: String, value: String, opts: List<Pair<String, String>>, sel: String, modifier: Modifier, onPick: (String) -> Unit) {
@@ -478,40 +481,41 @@ fun amplitude(q: Quote): Double? {
 
 /** 自選清單中間欄，依設定顯示不同資訊 */
 @Composable
-fun WatchCell(q: Quote, col: String) {
-    // 高度依內容自動撐開（系統字體放大時不會截掉第二行），寬度 76～96dp
-    val m = Modifier.widthIn(min = 76.dp, max = 96.dp).heightIn(min = 30.dp)
+fun WatchCell(q: Quote, col: String, table: Boolean = false) {
+    // 高度依內容自動撐開（系統字體放大時不會截掉第二行）；表格模式填滿格子、靠左對齊
+    val m = if (table) Modifier.fillMaxWidth().heightIn(min = 30.dp) else Modifier.widthIn(min = 76.dp, max = 96.dp).heightIn(min = 30.dp)
+    val al = if (table) Alignment.Start else Alignment.End
     when (col) {
-        "volume" -> CellText(AppState.dayStats[q.symbol]?.volume?.let { volumeText(it, q.market) } ?: "—", "量", m)
-        "amp" -> CellText(amplitude(q)?.let { Fmt.num(it, 2) + "%" } ?: "—", "振幅", m)
+        "volume" -> CellText(AppState.dayStats[q.symbol]?.volume?.let { volumeText(it, q.market) } ?: "—", "量", m, al)
+        "amp" -> CellText(amplitude(q)?.let { Fmt.num(it, 2) + "%" } ?: "—", "振幅", m, al)
         "pe" -> {
             val etf = q.isEtf || (q.market == Market.TW && q.symbol.startsWith("00"))
             val pe = AppState.peMap[q.symbol]?.let { Fmt.num(it, 1) } ?: q.stats?.pe?.takeIf { it.isNotBlank() && it != "—" }
-            CellText(pe ?: "—", if (etf && pe == null) "ETF 無" else "本益比", m)
+            CellText(pe ?: "—", if (etf && pe == null) "ETF 無" else "本益比", m, al)
         }
         "div" -> {
             val b = AppState.divBriefs[q.symbol]
             val md = java.time.format.DateTimeFormatter.ofPattern("M/d")
             fun d(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.of("Asia/Taipei")).format(md)
             when {
-                b == null -> CellText("…", "除權息", m)
-                b.nextEx != null -> CellText("除息 " + d(b.nextEx), "上次 " + (b.lastAmount?.let { Fmt.num(it, 2) } ?: "—"), m)
-                b.lastTime != null -> CellText(Fmt.num(b.lastAmount ?: 0.0, 2), "上次 " + d(b.lastTime), m)
-                else -> CellText("—", "無配息", m)
+                b == null -> CellText("…", "除權息", m, al)
+                b.nextEx != null -> CellText("除息 " + d(b.nextEx), "上次 " + (b.lastAmount?.let { divAmt(it) } ?: "—"), m, al)
+                b.lastTime != null -> CellText(divAmt(b.lastAmount ?: 0.0), "上次除息 " + d(b.lastTime), m, al)
+                else -> CellText("—", "無配息", m, al)
             }
         }
         "dt", "credit", "rev" -> {
             val d = AppState.twDaily[q.symbol]
-            if (q.market != Market.TW) CellText("—", "美股", m)
+            if (q.market != Market.TW) CellText("—", "美股", m, al)
             else when (col) {
                 "dt" -> CellText(d?.dayTradePct?.let { Fmt.num(it, 1) + "%" } ?: "—",
-                    d?.dayTradeLots?.let { "當沖 " + Fmt.num(it) + " 張" } ?: "當沖比（上市）", m)
+                    d?.dayTradeLots?.let { "當沖 " + Fmt.num(it) + " 張" } ?: "當沖比（上市）", m, al)
                 "credit" -> {
                     val mg = d?.margin
-                    if (mg?.financing == null) CellText("—", "信用", m)
+                    if (mg?.financing == null) CellText("—", "信用", m, al)
                     else {
                         val chg = mg.financingPrev?.let { mg.financing - it }
-                        Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                        Column(m, horizontalAlignment = al, verticalArrangement = Arrangement.Center) {
                             NumText("資 " + Fmt.num(mg.financing), 12.sp)
                             Text(
                                 (chg?.let { Fmt.signed(it) + " " } ?: "") + "券 " + (mg.short?.let { Fmt.num(it) } ?: "—"),
@@ -523,8 +527,8 @@ fun WatchCell(q: Quote, col: String) {
                 else -> {
                     val r = d?.revenue
                     val yoy = r?.yoyPct?.replace(",", "")?.toDoubleOrNull()
-                    if (r == null) CellText("—", if (q.isEtf || q.symbol.startsWith("00")) "ETF 無營收" else "月營收", m)
-                    else Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                    if (r == null) CellText("—", if (q.isEtf || q.symbol.startsWith("00")) "ETF 無營收" else "月營收", m, al)
+                    else Column(m, horizontalAlignment = al, verticalArrangement = Arrangement.Center) {
                         NumText("年 " + (yoy?.let { Fmt.signedPct(it, 1) } ?: "—"), 12.sp, yoy?.let { Trend.fg(it) } ?: C.Text)
                         Text(r.month + " 月 " + (r.momPct?.replace(",", "")?.toDoubleOrNull()?.let { Fmt.signedPct(it, 1) } ?: "—"),
                             color = C.Muted, fontSize = 9.sp, maxLines = 1)
@@ -534,11 +538,11 @@ fun WatchCell(q: Quote, col: String) {
         }
         "inst" -> {
             val i = AppState.institutional[q.symbol]
-            if (q.market != Market.TW) CellText("—", "美股", m)
-            else if (i == null) CellText("—", "法人", m)
+            if (q.market != Market.TW) CellText("—", "美股", m, al)
+            else if (i == null) CellText("—", "法人", m, al)
             else {
                 val lots = i.total / 1000.0
-                Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                Column(m, horizontalAlignment = al, verticalArrangement = Arrangement.Center) {
                     NumText(Fmt.signed(lots) + " 張", 12.sp, Trend.fg(lots))
                     Text("外" + Fmt.signed(i.foreign / 1000.0) + " 投" + Fmt.signed(i.trust / 1000.0), color = C.Muted, fontSize = 9.sp, maxLines = 1)
                 }
@@ -546,10 +550,10 @@ fun WatchCell(q: Quote, col: String) {
         }
         "keys" -> {
             val k = AppState.keyPrices[q.symbol]
-            if (k == null) CellText("—", "三關", m)
+            if (k == null) CellText("—", "三關", m, al)
             else {
                 val (pos, color) = KeyLevelsUi.position(q.price, k)
-                Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                Column(m, horizontalAlignment = al, verticalArrangement = Arrangement.Center) {
                     Text(pos, color = color, fontSize = 11.sp, maxLines = 1, fontWeight = FontWeight.Bold, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     // 上關、下關分兩行，價格較長也不會被截斷
                     NumText("上 " + Fmt.price(k.upper), 9.sp, KeyLevelColors.upper)
@@ -559,11 +563,11 @@ fun WatchCell(q: Quote, col: String) {
         }
         "pnl" -> {
             val h = AppState.holdings.firstOrNull { it.symbol == q.symbol }
-            if (h == null || q.price <= 0) CellText("—", "未持有", m)
+            if (h == null || q.price <= 0) CellText("—", "未持有", m, al)
             else {
                 val pl = (q.price - h.avgCost) * h.shares
                 val pct = if (h.avgCost > 0) (q.price / h.avgCost - 1) * 100 else 0.0
-                Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                Column(m, horizontalAlignment = al, verticalArrangement = Arrangement.Center) {
                     NumText(com.claudeetf.app.ui.mask(Fmt.signed(pl, if (q.market == Market.US) 2 else 0)), 12.sp, Trend.fg(pl))
                     Text(Fmt.signedPct(pct), color = Trend.fg(pl), fontSize = 10.sp, maxLines = 1)
                 }
@@ -576,8 +580,8 @@ fun WatchCell(q: Quote, col: String) {
 }
 
 @Composable
-private fun CellText(value: String, caption: String, modifier: Modifier) {
-    Column(modifier, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+private fun CellText(value: String, caption: String, modifier: Modifier, align: Alignment.Horizontal = Alignment.End) {
+    Column(modifier, horizontalAlignment = align, verticalArrangement = Arrangement.Center) {
         NumText(value, 12.sp)
         Text(caption, color = C.Muted, fontSize = 10.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
