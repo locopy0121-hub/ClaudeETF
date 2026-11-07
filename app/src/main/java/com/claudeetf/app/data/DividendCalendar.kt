@@ -161,7 +161,10 @@ object DividendCalendar {
                 }
                 out
             }
+            // 已除息但尚未發放的保留到發放日，讓「發放日」提醒還看得到
+            val keep = AppState.divPlans.filterValues { p -> p.payDate != null && !p.payDate.isBefore(today()) && p.symbol !in result }
             AppState.divPlans.clear()
+            AppState.divPlans.putAll(keep)
             AppState.divPlans.putAll(result)
             // 證交所或任何一檔查到才算今天更新完成；網路失敗下次開 App 再試
             if (ok || result.isNotEmpty()) day = today().toString()
@@ -169,6 +172,19 @@ object DividendCalendar {
         } finally {
             loading = false
         }
+    }
+
+    private var twCache: Pair<String, Map<String, Plan>>? = null
+
+    /** 單一個股（不在自選／持股中也可）：查詢下一次除權息 */
+    suspend fun planFor(q: Quote): Plan? = withContext(Dispatchers.IO) {
+        AppState.divPlans[q.symbol]?.let { return@withContext it }
+        val tw = if (q.market == Market.TW) (twCache?.takeIf { it.first == today().toString() }?.second
+            ?: runCatching { twse() }.getOrNull()?.also { twCache = today().toString() to it }) else null
+        val y = runCatching { yahoo(q) }.getOrNull()
+        val official = tw?.get(q.symbol)
+        val plan = if (official != null) official.copy(payDate = y?.payDate?.takeIf { y.exDate == official.exDate }) else y
+        plan?.also { withContext(Dispatchers.Main) { AppState.divPlans[q.symbol] = it } }
     }
 
     /** 依目前持股估算可領金額；台股單筆 ≥ 2 萬扣二代健保 2.11%，美股預扣 30% */

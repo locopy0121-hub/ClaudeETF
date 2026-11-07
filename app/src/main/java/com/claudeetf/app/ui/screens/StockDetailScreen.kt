@@ -291,7 +291,28 @@ private fun EtfTagRow(q: Quote) {
     }
     val band = com.claudeetf.app.data.InvestAnalysis.results[q.symbol]?.band
     if (!T.isEtf(q)) {
-        if (band != null) Row(Modifier.padding(top = 2.dp)) { EtfChip("光譜 " + band.zoneName, zoneColor(band.zone)) { } }
+        // 個股：市場別、產業（美股含細分產業）、光譜；點產業看同產業的自選／持股
+        LaunchedEffect(q.symbol) { runCatching { com.claudeetf.app.data.IndustryRepo.detail(q) } }
+        val d = com.claudeetf.app.data.IndustryRepo.details[q.symbol]
+        var peers by remember { mutableStateOf(false) }
+        Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            d?.board?.let { EtfChip(it, C.Text2) }
+            d?.sector?.let { EtfChip(it, androidx.compose.ui.graphics.Color(0xFF5B8DEF)) { peers = true } }
+            d?.industry?.let { EtfChip(it, androidx.compose.ui.graphics.Color(0xFF26A69A)) { peers = true } }
+            if (band != null) EtfChip("光譜 " + band.zoneName, zoneColor(band.zone)) { }
+        }
+        if (peers && d?.sector != null) {
+            val same = (AppState.quotes.map { it.symbol } + AppState.holdings.map { it.symbol }).distinct()
+                .filter { it != q.symbol && com.claudeetf.app.data.IndustryRepo.details[it]?.let { o -> o.sector == d.sector } ?: (AppState.industries[it]?.endsWith(d.sector) == true) }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { peers = false }, containerColor = C.Card,
+                title = { Text("產業：" + d.sector + (d.industry?.let { " · $it" } ?: ""), color = C.Text, fontSize = 16.sp) },
+                text = { Text(if (same.isEmpty()) "自選與持股中沒有同產業的其他個股。" else "自選與持股中的同產業個股：\n" +
+                    same.joinToString("\n") { s0 -> s0 + " " + (AppState.quote(s0)?.name ?: "") }, color = C.Text2, fontSize = 14.sp) },
+                confirmButton = { Text("關閉", color = C.Primary, modifier = Modifier.clickable { peers = false }.padding(8.dp)) },
+            )
+        }
         return
     }
     LaunchedEffect(q.symbol) { T.ensureFreq(q) }
@@ -359,6 +380,53 @@ private fun EtfChip(text: String, color: androidx.compose.ui.graphics.Color, onC
     )
 }
 
+/**
+ * 除權息日期提醒：最後買進日 → 除權息日 → 發放日，依序顯示；
+ * 已過的日期自動隱藏，三個都過了（或沒有公告）整列不顯示。
+ */
+@Composable
+private fun DivDatesStrip(q: Quote) {
+    LaunchedEffect(q.symbol) { runCatching { com.claudeetf.app.data.DividendCalendar.planFor(q) } }
+    val p = AppState.divPlans[q.symbol] ?: return
+    val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei"))
+    fun md(d: java.time.LocalDate) = "${d.monthValue}/${d.dayOfMonth}"
+    fun left(d: java.time.LocalDate): String {
+        val n = java.time.temporal.ChronoUnit.DAYS.between(today, d)
+        return when (n) { 0L -> "今天"; 1L -> "明天"; else -> "${n} 天後" }
+    }
+    val items = buildList {
+        if (!p.lastBuy.isBefore(today)) add(Triple("最後買進", p.lastBuy, if (p.lastBuy == today) C.Red else androidx.compose.ui.graphics.Color(0xFFE6C34A)))
+        if (!p.exDate.isBefore(today)) add(Triple(p.type, p.exDate, androidx.compose.ui.graphics.Color(0xFF5B8DEF)))
+        p.payDate?.takeIf { !it.isBefore(today) }?.let { add(Triple("發放", it, androidx.compose.ui.graphics.Color(0xFF26A69A))) }
+    }
+    if (items.isEmpty()) return
+    var info by remember { mutableStateOf(false) }
+    Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()).clickable { info = true },
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("📅", fontSize = 12.sp)
+        items.forEach { (n, d, c) -> EtfChip(n + " " + md(d) + "（" + left(d) + "）", c) { info = true } }
+        p.cash?.let { Label((if (p.announced) "每股 " else "約 ") + Fmt.num(it, 3) + (if (q.market == com.claudeetf.app.data.Market.US) " 美元" else " 元")) }
+    }
+    if (info) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { info = false }, containerColor = C.Card,
+        title = { Text(q.symbol + " " + p.type + "資訊", color = C.Text, fontSize = 16.sp) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("最後買進日：" + p.lastBuy + "（這天收盤前買進才參與" + p.type + "）", color = C.Text2, fontSize = 14.sp)
+                Text(p.type + "日：" + p.exDate, color = C.Text2, fontSize = 14.sp)
+                Text("發放日：" + (p.payDate?.toString() ?: "尚未公告"), color = C.Text2, fontSize = 14.sp)
+                p.cash?.let { Text("現金股利：每股 " + Fmt.num(it, 3) + (if (p.announced) "（官方公告）" else "（以上次配息估計）"), color = C.Text2, fontSize = 14.sp) }
+                p.stock?.let { Text("股票股利：每股 " + Fmt.num(it, 3) + " 股", color = C.Text2, fontSize = 14.sp) }
+                com.claudeetf.app.data.DividendCalendar.estimate(p)?.let { e ->
+                    Text("依目前持股預估實收：" + Fmt.num(e.net, if (q.market == com.claudeetf.app.data.Market.US) 2 else 0), color = C.Primary, fontSize = 14.sp)
+                }
+                Label("來源：" + p.source + "。最後買進日為除息前一個交易日（遇國定假日以券商公告為準）；日期過了會自動隱藏。")
+            }
+        },
+        confirmButton = { Text("關閉", color = C.Primary, modifier = Modifier.clickable { info = false }.padding(8.dp)) },
+    )
+}
+
 @Composable
 private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -368,6 +436,7 @@ private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info
             Label(StockInfoRepo.yahooSymbol(q) + " · " + q.market.currency)
         }
         EtfTagRow(q)
+        DivDatesStrip(q)
         Row(verticalAlignment = Alignment.Bottom) {
             // 股價顏色依漲跌：漲紅、平黃、跌綠（依配色設定）
             NumText(if (q.price > 0) Fmt.price(q.price) else "—", 32.sp, if (q.price > 0 && q.prevClose > 0) Trend.price(q.change) else C.Text, FontWeight.Bold)

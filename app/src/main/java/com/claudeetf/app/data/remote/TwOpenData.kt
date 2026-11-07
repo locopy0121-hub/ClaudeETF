@@ -181,6 +181,9 @@ object TwOpenData {
     )
 
     /** 全部上市公司：代號 → 產業名稱 */
+    /** 產業別代碼 → 名稱（上市、上櫃共用） */
+    fun industryName(code: String): String = industryCodes[code.trim().padStart(2, '0')] ?: code.trim()
+
     fun industries(): Map<String, String> {
         val arr = dataset("/opendata/t187ap03_L")
         val out = HashMap<String, String>()
