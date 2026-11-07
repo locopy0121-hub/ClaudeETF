@@ -71,6 +71,7 @@ internal fun StyledItem(ist: com.claudeetf.app.data.ItemStyle, recolor: Boolean,
         .drawWithContent { drawContent(); drawRect(tint, blendMode = androidx.compose.ui.graphics.BlendMode.SrcIn) }
     if (ist.fx > 0 && q != null) m = m.itemEffect(ist, q)
     if (ist.gap > 0) m = m.padding(vertical = (ist.gap / 2f).dp)
+    if (ist.pad > 0) m = m.padding(ist.pad.dp)
     CompositionLocalProvider(
         LocalItemWeight provides (if (ist.weight > 0) FontWeight(ist.weight) else null),
         com.claudeetf.app.ui.LocalItemLineGap provides ist.gap,
@@ -130,19 +131,35 @@ private fun Modifier.tap(t: Tap?, id: String): Modifier =
         .clickable { t.onTap.invoke(id) }
         .padding(horizontal = 2.dp, vertical = 1.dp)
 
-/** 名稱與代號（依格式） */
+/**
+ * 名稱與代號（依格式）。prefix 不為 null 時（卡片 "c:"、清單 "l:"），
+ * 代號與名稱分別套用各自的單一欄位樣式（鍵 prefix+"code"／prefix+"name"），pick 提供預覽點選。
+ */
 @Composable
-fun WatchName(q: Quote, st: WatchStyle, base: Int, modifier: Modifier = Modifier, showCode: Boolean = false) {
+fun WatchName(q: Quote, st: WatchStyle, base: Int, modifier: Modifier = Modifier, showCode: Boolean = false,
+              prefix: String? = null, pick: (String) -> Modifier = { Modifier }) {
     val name = q.name.ifBlank { q.symbol }
+    @Composable fun Code(size: Int, color: Color, bold: Boolean) {
+        if (prefix == null) NumText(q.symbol, st.sp(size), color, if (bold) FontWeight.Bold else FontWeight.Normal)
+        else StyledItem(st.style(prefix + "code"), true, q, pick("code")) {
+            NumText(q.symbol, st.at(prefix + "code").sp(size), color, if (bold) FontWeight.Bold else FontWeight.Normal)
+        }
+    }
+    @Composable fun Name(size: Int, color: Color, mod: Modifier) {
+        if (prefix == null) Text(name, mod, color = color, fontSize = st.sp(size), fontWeight = LocalItemWeight.current, maxLines = st.nameLines, overflow = TextOverflow.Ellipsis)
+        else StyledItem(st.style(prefix + "name"), true, q, mod.then(pick("name"))) {
+            Text(name, color = color, fontSize = st.at(prefix + "name").sp(size), fontWeight = LocalItemWeight.current, maxLines = st.nameLines, overflow = TextOverflow.Ellipsis)
+        }
+    }
     when (st.nameMode) {
         1 -> Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-            NumText(q.symbol, st.sp(base), C.Text, FontWeight.Bold); HGap(6.dp)
-            Text(name, color = C.Text2, fontSize = st.sp(base - 2), fontWeight = LocalItemWeight.current, maxLines = st.nameLines, overflow = TextOverflow.Ellipsis)
+            Code(base, C.Text, true); HGap(6.dp)
+            Name(base - 2, C.Text2, Modifier.weight(1f, fill = false))
         }
-        3 -> NumText(q.symbol, st.sp(base), C.Text, FontWeight.Bold, modifier)
+        3 -> Box(modifier) { Code(base, C.Text, true) }
         else -> Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-            Text(name, Modifier.weight(1f, fill = false), color = C.Text, fontSize = st.sp(base), fontWeight = LocalItemWeight.current, maxLines = st.nameLines, overflow = TextOverflow.Ellipsis)
-            if (showCode && st.nameMode == 0) { HGap(6.dp); NumText(q.symbol, st.sp(base - 2), C.Muted) }
+            Name(base, C.Text, Modifier.weight(1f, fill = false))
+            if (showCode && st.nameMode == 0) { HGap(6.dp); Code(base - 2, C.Muted, false) }
         }
     }
 }
@@ -247,8 +264,8 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
     Column(modifier.clip(shape).background(bg)
         .then(if (st.cardBorder != 0L) Modifier.border(1.dp, Color(st.cardBorder.toInt()), shape) else Modifier)
         .padding(pad), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Row(Modifier.fillMaxWidth().tap(t, "name"), verticalAlignment = Alignment.CenterVertically) {
-            Styled(st, "c:name", q, Modifier.weight(1f)) { s -> WatchName(q, s, if (small) 12 else 13) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            WatchName(q, st, if (small) 12 else 13, Modifier.weight(1f), prefix = "c:", pick = { id -> Modifier.tap(t, if (id == "code") "code" else "name") })
             if (st.tagPos == 1) EntryTagFor(q)
             else if (st.nameMode == 0 && !small) NumText(q.symbol, st.sp(11), C.Muted)
         }
@@ -302,8 +319,9 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
     Column(modifier.fillMaxWidth().padding(vertical = vpad, horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (st.density == 0) 2.dp else 4.dp)) {
-                Row(Modifier.tap(t, "name"), verticalAlignment = Alignment.CenterVertically) {
-                    Styled(st, "l:name", q, Modifier.weight(1f, fill = false)) { s -> WatchName(q, s, 15, showCode = !st.listShows("market")) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    WatchName(q, st, 15, Modifier.weight(1f, fill = false), showCode = !st.listShows("market"), prefix = "l:",
+                        pick = { id -> Modifier.tap(t, if (id == "code") "code" else "name") })
                     if (st.tagPos == 1) { HGap(6.dp); EntryTagFor(q) }
                 }
                 // 第二行：市場標籤、報價時間
@@ -538,7 +556,7 @@ private fun Editor(target: String, st: WatchStyle, set: ((WatchStyle) -> WatchSt
     val card = target.startsWith("c:")
     val id = target.substringAfter(":")
     val names = if (card) WatchStyle.CARD_NAMES else WatchStyle.LIST_NAMES
-    val title = when (id) { "name" -> "名稱與代號"; "price" -> "價格"; "change" -> "漲跌"; else -> names[id] ?: id }
+    val title = when (id) { "name" -> "名稱"; "code" -> "代號"; "price" -> "價格"; "change" -> "漲跌"; else -> names[id] ?: id }
     Column(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).background(C.Primary.copy(alpha = 0.10f))
         .border(1.dp, C.Primary.copy(alpha = 0.5f), RoundedCornerShape(10.dp)).padding(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -551,6 +569,7 @@ private fun Editor(target: String, st: WatchStyle, set: ((WatchStyle) -> WatchSt
                 if (st.nameMode != 3) Chips(listOf(1 to "1 行", 2 to "最多 2 行"), st.nameLines) { v -> set { it.copy(nameLines = v) } }
                 Chips(listOf(0 to "精簡", 1 to "標準", 2 to "大字"), st.density) { v -> set { it.copy(density = v) } }
             }
+            "code" -> Chips(listOf(0 to "名稱在前", 1 to "代號在前", 2 to "只顯示名稱", 3 to "只顯示代號"), st.nameMode) { v -> set { it.copy(nameMode = v) } }
             "price" -> {
                 if (card) Chips(listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), st.priceAlign) { v -> set { it.copy(priceAlign = v) } }
                 Chips(listOf(0 to "精簡", 1 to "標準", 2 to "大字"), st.density) { v -> set { it.copy(density = v) } }
@@ -629,6 +648,15 @@ internal fun ItemStyleEditor(cur: com.claudeetf.app.data.ItemStyle, allowColor: 
         SmallBtn("－", cur.gap > 0) { upd { it.copy(gap = (it.gap - 2).coerceAtLeast(0)) } }
         Text("${cur.gap} dp", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         SmallBtn("＋", cur.gap < 24) { upd { it.copy(gap = (it.gap + 2).coerceAtMost(24)) } }
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("內距", color = C.Text, fontSize = 13.sp)
+            Text("項目四周留白", color = C.Muted, fontSize = 10.sp)
+        }
+        SmallBtn("－", cur.pad > 0) { upd { it.copy(pad = (it.pad - 1).coerceAtLeast(0)) } }
+        Text("${cur.pad} dp", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        SmallBtn("＋", cur.pad < 24) { upd { it.copy(pad = (it.pad + 1).coerceAtMost(24)) } }
     }
     Text("粗細", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
     Chips(listOf(0 to "預設", 300 to "300", 400 to "400", 500 to "500", 600 to "600", 700 to "700", 800 to "800", 900 to "900"), cur.weight) { v -> upd { it.copy(weight = v) } }

@@ -1175,53 +1175,78 @@ internal fun AnimChooser(sel: Int, set: (Int) -> Unit) {
 @Composable
 private fun HoldStyleSettings() {
     val st = AppState.holdStyle
+    val HS = com.claudeetf.app.data.HoldStyle
     fun set(f: (com.claudeetf.app.data.HoldStyle) -> com.claudeetf.app.data.HoldStyle) = AppState.updateHoldStyle(f(AppState.holdStyle))
+    fun move(id: String, d: Int) = set { s ->
+        val l = s.items.toMutableList(); val i = l.indexOf(id); val j = i + d
+        if (i < 0 || j !in l.indices) s else s.copy(items = l.also { it.add(j, it.removeAt(i)) })
+    }
     Card(padding = 14.dp) {
         Text("持股卡片顯示格式", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         Label("只影響「持股」頁；自選行情的卡片在「行情卡片樣式」另外設定，兩者互不影響")
-        // 即時預覽：用前兩檔持股（沒有持股時以示意資料）
+        // 即時預覽：用前兩檔持股（沒有持股時以示意資料）；兩檔都可點選項目
         val samples = AppState.holdings.take(2).ifEmpty { listOf(com.claudeetf.app.data.Holding("0050", 1000.0, 85.0)) }
         var target by remember { mutableStateOf<String?>(null) }
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg).padding(horizontal = 8.dp, vertical = 4.dp)) {
-            Label("預覽（點任一項目可單獨調整字級、粗細、顏色與動畫）", Modifier.padding(top = 4.dp))
-            samples.forEachIndexed { i, h -> HoldingRow(h, true, st, sel = target, onPick = if (i == 0) ({ target = it }) else null) {} }
+            Label("預覽：點任一項目，可調整位置（左／中／右欄）、對齊、同行、字級、行距、內距、顏色與動畫", Modifier.padding(top = 4.dp))
+            samples.forEach { h -> HoldingRow(h, true, st, sel = target, onPick = { target = it }) {} }
         }
         target?.let { id ->
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Primary.copy(alpha = 0.10f))
                 .border(1.dp, C.Primary.copy(alpha = 0.5f), RoundedCornerShape(10.dp)).padding(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("持股卡片 › " + (com.claudeetf.app.data.HoldStyle.STYLE_NAMES[id] ?: id), Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("持股卡片 › " + (HS.NAMES[id] ?: id), Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Text("完成", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { target = null }.padding(6.dp))
                 }
-                ItemStyleEditor(st.style(id), id !in setOf("entry", "market", "pct")) { f -> set { it.withStyle(id, f(it.style(id))) } }
+                Text("位置", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                ChipRow(listOf(0 to "左欄", 1 to "中欄", 2 to "右欄"), st.zoneOf(id)) { v -> set { it.copy(zone = it.zone + (id to v), align = it.align - id) } }
+                Text("對齊", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                ChipRow(listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), st.alignOf(id)) { v -> set { it.copy(align = it.align + (id to v)) } }
+                OptToggle("與上一個項目排在同一行", id in st.inline) { v -> set { it.copy(inline = if (v) it.inline + id else it.inline - id) } }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("順序", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+                    Text("↑ 往前", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { move(id, -1) }.padding(8.dp))
+                    Text("↓ 往後", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { move(id, 1) }.padding(8.dp))
+                    Text("隱藏", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { set { it.copy(hidden = it.hidden + id) }; target = null }.padding(8.dp))
+                }
+                ItemStyleEditor(st.style(id), id !in HS.NO_RECOLOR) { f -> set { it.withStyle(id, f(it.style(id))) } }
             }
         }
-        Text("列高", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-        ChipRow(listOf(0 to "精簡", 1 to "標準", 2 to "寬鬆"), st.density) { v -> set { it.copy(density = v) } }
-        Text("名稱與代號", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-        ChipRow(listOf(0 to "名稱在前", 1 to "代號在前", 2 to "只顯示名稱", 3 to "只顯示代號"), st.nameMode) { v -> set { it.copy(nameMode = v) } }
-        Text("名稱字級", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-        ChipRow(listOf(0 to "小", 1 to "標準", 2 to "大"), st.nameSize) { v -> set { it.copy(nameSize = v) } }
 
-        Text("左側項目與順序", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Text("欄寬", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+        Label("自動＝依內容；設定百分比後，未設定的欄平分剩下的寬度")
+        (0..2).forEach { z ->
+            val w = st.colW[z]
+            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(HS.ZONE_NAMES[z], Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+                Text("－", color = if (w > 0) C.Primary else C.Border, fontSize = 18.sp, modifier = Modifier.clickable(enabled = w > 0) {
+                    set { s -> s.copy(colW = s.colW.toMutableList().also { it[z] = (w - 5).let { v -> if (v < 10) 0 else v } }) } }.padding(horizontal = 12.dp))
+                Text(if (w == 0) "自動" else "$w%", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text("＋", color = if (w < 90) C.Primary else C.Border, fontSize = 18.sp, modifier = Modifier.clickable(enabled = w < 90) {
+                    set { s -> s.copy(colW = s.colW.toMutableList().also { it[z] = if (w == 0) 30 else (w + 5).coerceAtMost(90) }) } }.padding(horizontal = 12.dp))
+            }
+        }
+
+        Text("列高", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        ChipRow(listOf(0 to "精簡", 1 to "標準", 2 to "寬鬆"), st.density) { v -> set { it.copy(density = v) } }
+
+        Text("全部項目", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Label("開關顯示、調整順序；點名稱可編輯該項目")
         st.items.forEachIndexed { i, id ->
             val on = st.shows(id)
-            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(com.claudeetf.app.data.HoldStyle.NAMES[id] ?: id, Modifier.weight(1f), color = if (on) C.Text else C.Muted, fontSize = 14.sp)
-                Text("↑", color = if (i > 0) C.Primary else C.Line, fontSize = 18.sp, modifier = Modifier.clickable(enabled = i > 0) {
-                    set { s -> s.copy(items = s.items.toMutableList().also { l -> l.add(i - 1, l.removeAt(i)) }) }
-                }.padding(horizontal = 10.dp, vertical = 4.dp))
-                Text("↓", color = if (i < st.items.lastIndex) C.Primary else C.Line, fontSize = 18.sp, modifier = Modifier.clickable(enabled = i < st.items.lastIndex) {
-                    set { s -> s.copy(items = s.items.toMutableList().also { l -> l.add(i + 1, l.removeAt(i)) }) }
-                }.padding(horizontal = 10.dp, vertical = 4.dp))
-                androidx.compose.material3.Switch(on, { v -> set { s -> s.copy(hidden = if (v) s.hidden - id else s.hidden + id) } },
-                    colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary, uncheckedTrackColor = C.Border))
+            Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).clickable { target = id }) {
+                    Text(HS.NAMES[id] ?: id, color = if (on) C.Text else C.Muted, fontSize = 14.sp)
+                    Text(HS.ZONE_NAMES[st.zoneOf(id)] + (if (id in st.inline) " · 同上一行" else ""), color = C.Muted, fontSize = 10.sp)
+                }
+                Text("↑", color = if (i > 0) C.Primary else C.Line, fontSize = 18.sp, modifier = Modifier.clickable(enabled = i > 0) { move(id, -1) }.padding(horizontal = 10.dp, vertical = 4.dp))
+                Text("↓", color = if (i < st.items.lastIndex) C.Primary else C.Line, fontSize = 18.sp, modifier = Modifier.clickable(enabled = i < st.items.lastIndex) { move(id, 1) }.padding(horizontal = 10.dp, vertical = 4.dp))
+                androidx.compose.material3.Switch(on, { v ->
+                    set { s -> s.copy(hidden = if (v) s.hidden - id else s.hidden + id) }
+                    if (v && id == "price" && !AppState.priceBoxShow) AppState.updatePriceBox(show = true)
+                }, colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary, uncheckedTrackColor = C.Border))
             }
         }
-        Text("右側項目", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-        OptToggle("市值", st.showMv) { v -> set { it.copy(showMv = v) } }
-        OptToggle("損益金額", st.showPl) { v -> set { it.copy(showPl = v) } }
-        OptToggle("報酬率", st.showPct) { v -> set { it.copy(showPct = v) } }
 
         Text("其他", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
         AnimChooser(st.entryAnim) { v -> set { it.copy(entryAnim = v) } }
