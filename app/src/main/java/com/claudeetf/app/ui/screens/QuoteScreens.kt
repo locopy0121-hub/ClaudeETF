@@ -41,11 +41,13 @@ import com.claudeetf.app.ui.theme.C
 import com.claudeetf.app.ui.theme.Trend
 import com.claudeetf.app.util.Fmt
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun WatchlistScreen(nav: NavController) {
-    var filter by remember { mutableStateOf("all") } // all / tw / us / etf / g<id>
-    var sort by remember { mutableIntStateOf(0) }
-    var heat by remember { mutableStateOf(false) }
+    // 篩選、排序、熱度圖：進出個股頁後保留
+    var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("all") } // all / tw / us / etf / g<id>
+    var sort by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+    var heat by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var quick by remember { mutableStateOf<Quote?>(null) }
     quick?.let { qq -> QuickTradeDialog(qq) { quick = null } }
     var editing by remember { mutableStateOf(false) }
@@ -63,11 +65,15 @@ fun WatchlistScreen(nav: NavController) {
     LaunchedEffect(swipeMsg) { if (swipeMsg != null) { kotlinx.coroutines.delay(6_000); swipeMsg = null; undo = null; undoGroup = null } }
     groupPick?.let { gq -> GroupPickDialog(gq) { groupPick = null } }
     val group = if (filter.startsWith("g")) AppState.groups.firstOrNull { "g" + it.id == filter } else null
-    val sortNames = listOf("自訂", "漲幅", "跌幅", "代號", "價格", "成交量", "振幅")
+    // 選取中的群組被刪除：回到「全部」
+    LaunchedEffect(filter, AppState.groups.size) { if (filter.startsWith("g") && group == null) filter = "all" }
+    val sortNames = listOf("自訂", "漲幅", "跌幅", "代號", "價格", "成交值", "振幅")
     // 三關欄位或卡片版面：背景補抓各檔三關價
     LaunchedEffect(AppState.watchColumn, AppState.watchColumn2, AppState.watchLayout, AppState.quotes.size) {
         val cols = setOf(AppState.watchColumn, AppState.watchColumn2)
-        if ("keys" in cols || AppState.watchLayout == "card") KeyLevelsUi.load(AppState.quotes.toList())
+        val st = AppState.watchStyle
+        val keysVisible = "keys" in cols || (AppState.watchLayout == "card" && st.shows("keys")) || (AppState.watchLayout != "card" && st.listShows("keys"))
+        if (keysVisible) KeyLevelsUi.load(AppState.quotes.toList())
         if ("div" in cols) com.claudeetf.app.data.WatchExtras.loadDividends(AppState.quotes.toList())
         if ("inst" in cols) com.claudeetf.app.data.WatchExtras.loadInstitutional()
         if ("pe" in cols) com.claudeetf.app.data.WatchExtras.loadPe()
@@ -82,13 +88,15 @@ fun WatchlistScreen(nav: NavController) {
             else -> group?.symbols?.contains(q.symbol) == true
         }
     }.filter { q -> query.isBlank() || q.symbol.contains(query, true) || q.name.contains(query, true) }
+    // 沒有報價的排在最後，避免打亂排序
+    val (priced, unpriced) = base.partition { it.price > 0 }
     val list = when (sort) {
-        1 -> base.sortedByDescending { it.changePct }
-        2 -> base.sortedBy { it.changePct }
+        1 -> priced.sortedByDescending { it.changePct } + unpriced
+        2 -> priced.sortedBy { it.changePct } + unpriced
         3 -> base.sortedBy { it.symbol }
-        4 -> base.sortedByDescending { it.price * AppState.fxFor(it.market) }
-        5 -> base.sortedByDescending { (AppState.dayStats[it.symbol]?.volume ?: 0.0) * it.price * AppState.fxFor(it.market) }
-        6 -> base.sortedByDescending { amplitude(it) ?: -1.0 }
+        4 -> priced.sortedByDescending { it.price * AppState.fxFor(it.market) } + unpriced
+        5 -> priced.sortedByDescending { (AppState.dayStats[it.symbol]?.volume ?: 0.0) * it.price * AppState.fxFor(it.market) } + unpriced
+        6 -> priced.sortedByDescending { amplitude(it) ?: -1.0 } + unpriced
         else -> base
     }
 
@@ -212,26 +220,25 @@ fun WatchlistScreen(nav: NavController) {
             } else if (editing) {
                 Label("用 ↑ ↓ 調整順序（排序為「自訂」時套用）")
             } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    StatusChip(Market.TW, com.claudeetf.app.util.TwSession.info().label, Modifier.weight(1f))
-                    HGap(8.dp)
-                    StatusChip(Market.US, session.phase.label.take(4) + " · 收 " + session.closeTw, Modifier.weight(1f))
-                }
-                LiveBanner()
-                // 版面、排序、欄位、第二欄：整合成一行下拉選單
+                // 市場狀態＋即時更新＋自選漲跌家數：一行
+                MarketStatusBar(session, list)
+                // 版面（卡片／清單／熱度圖）、排序、欄位、第二欄：一行下拉選單
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val card = AppState.watchLayout == "card"
-                    DropPick("版面", if (card) "卡片" else "清單", listOf("card" to "卡片", "list" to "清單"), AppState.watchLayout,
-                        Modifier.weight(0.9f)) { AppState.updateWatchLayout(it) }
-                    DropPick("排序", if (heat) "熱度圖" else sortNames[sort], listOf("heat" to "熱度圖") + sortNames.mapIndexed { i, n -> i.toString() to n },
-                        if (heat) "heat" else sort.toString(), Modifier.weight(1f)) { v -> if (v == "heat") heat = true else { sort = v.toInt(); heat = false } }
-                    DropPick("欄位", watchColumns.firstOrNull { it.first == AppState.watchColumn }?.second ?: "—", watchColumns, AppState.watchColumn,
-                        Modifier.weight(1f)) { AppState.updateWatchColumn(it) }
-                    DropPick("第二欄", watchColumns.firstOrNull { it.first == AppState.watchColumn2 }?.second ?: "不顯示",
-                        listOf("" to "不顯示") + watchColumns.filter { it.first != AppState.watchColumn }, AppState.watchColumn2,
-                        Modifier.weight(1f)) { AppState.updateWatchColumn2(it) }
+                    val layout = if (heat) "heat" else AppState.watchLayout
+                    DropPick("版面", when (layout) { "heat" -> "熱度圖"; "card" -> "卡片"; else -> "清單" },
+                        listOf("card" to "卡片", "list" to "清單", "heat" to "熱度圖"), layout, Modifier.weight(1f)) { v ->
+                        if (v == "heat") heat = true else { heat = false; AppState.updateWatchLayout(v) }
+                    }
+                    DropPick("排序", sortNames[sort], sortNames.mapIndexed { i, n -> i.toString() to n }, sort.toString(), Modifier.weight(1f)) { sort = it.toInt() }
+                    if (!heat) {
+                        DropPick("欄位", watchColumns.firstOrNull { it.first == AppState.watchColumn }?.second ?: "—", watchColumns, AppState.watchColumn,
+                            Modifier.weight(1f)) { AppState.updateWatchColumn(it) }
+                        DropPick("第二欄", watchColumns.firstOrNull { it.first == AppState.watchColumn2 }?.second ?: "不顯示",
+                            listOf("" to "不顯示") + watchColumns.filter { it.first != AppState.watchColumn }, AppState.watchColumn2,
+                            Modifier.weight(1f)) { AppState.updateWatchColumn2(it) }
+                    } else Spacer(Modifier.weight(2f))
                 }
-                if (sort != 0 && !heat && list.isNotEmpty()) {
+                if (sort != 0 && list.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text("套用為自訂順序", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clickable {
                             AppState.applyQuoteOrder(list.map { it.symbol }); sort = 0
@@ -244,14 +251,31 @@ fun WatchlistScreen(nav: NavController) {
                 }
             }
         }
-        LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
-            if (list.isEmpty()) item { Label(if (group != null) "群組是空的，按「編輯」勾選股票" else "沒有符合的股票", Modifier.padding(vertical = 20.dp)) }
+        // 下拉重新整理
+        androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+            isRefreshing = AppState.refreshing,
+            onRefresh = { scope.launch { MarketData.refreshAll() } },
+            modifier = Modifier.fillMaxSize(),
+        ) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+            if (list.isEmpty()) item {
+                Label(
+                    when {
+                        searching && query.isNotBlank() -> "自選中沒有「${query.trim()}」，可從上方搜尋結果按 ＋ 加入"
+                        group != null -> "群組是空的，按「編輯」勾選股票"
+                        else -> "沒有符合的股票"
+                    },
+                    Modifier.padding(vertical = 20.dp),
+                )
+            }
             if (heat && !editing) {
                 item {
                     Heatmap(
                         list.filter { it.price > 0 }.map { q ->
                             // 自選沒有市值資料，以漲跌幅大小加權，讓變動大的更顯眼
-                            HeatItem(q.symbol, q.symbol, 1.0 + kotlin.math.abs(q.changePct), q.changePct)
+                            // 台股顯示中文簡稱，美股顯示代號
+                            HeatItem(q.symbol, if (q.market == Market.TW && q.name != q.symbol) q.name.take(5) else q.symbol,
+                                1.0 + kotlin.math.abs(q.changePct), q.changePct)
                         },
                         height = 360.dp,
                     ) { nav.navigate(Routes.stock(it)) }
@@ -307,10 +331,11 @@ fun WatchlistScreen(nav: NavController) {
             }
             item {
                 Label(
-                    "美股價格以 USD 顯示；長按個股可快速記帳",
-                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    "下拉可重新整理；長按個股快速記帳" + (if (AppState.watchLayout != "card" && !heat) "，左滑移除、右滑加入群組" else "") + "；美股價格以 USD 顯示",
+                    Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp),
                 )
             }
+        }
         }
     }
 }
@@ -326,6 +351,58 @@ private fun FilterChipText(text: String, on: Boolean, onClick: () -> Unit) {
 }
 
 fun twStatus(): String = com.claudeetf.app.util.TwSession.info().let { it.label + " · " + it.detail }
+
+/**
+ * 精簡狀態列：台股／美股交易狀態、即時更新燈號與時間（美股盤中可調頻率）、目前清單漲跌家數。
+ * 取代原本的兩格狀態＋整列即時橫幅，節省約兩行高度。
+ */
+@Composable
+private fun MarketStatusBar(session: com.claudeetf.app.util.UsSession.Info, list: List<Quote>) {
+    val live = MarketData.anyMarketLive()
+    val last = AppState.lastLiveAt
+    // 每秒更新燈號顏色（超過 30 秒沒更新轉黃）
+    var tick by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(live) { while (live) { kotlinx.coroutines.delay(1_000); tick = System.currentTimeMillis() } }
+    val up = list.count { it.price > 0 && it.change > 0 }
+    val down = list.count { it.price > 0 && it.change < 0 }
+    val flat = list.count { it.price > 0 && it.change == 0.0 }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Card).padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MarketTag(Market.TW); HGap(4.dp)
+        Text(com.claudeetf.app.util.TwSession.info().label, color = C.Text2, fontSize = 12.sp, maxLines = 1)
+        HGap(10.dp)
+        MarketTag(Market.US); HGap(4.dp)
+        Text(session.phase.label.take(4), color = C.Text2, fontSize = 12.sp, maxLines = 1)
+        if (live) {
+            HGap(10.dp)
+            Dot(if (last > 0 && tick - last < 30_000) C.Green else C.Tw, 7.dp); HGap(4.dp)
+            Text(if (last > 0) java.time.Instant.ofEpochMilli(last).atZone(java.time.ZoneId.of("Asia/Taipei"))
+                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")) else "即時", color = C.Text2, fontSize = 12.sp, maxLines = 1)
+            if (MarketData.usLive()) {
+                var menu by remember { mutableStateOf(false) }
+                Box {
+                    Text(" ▾", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clickable { menu = true }.padding(horizontal = 4.dp, vertical = 2.dp))
+                    androidx.compose.material3.DropdownMenu(menu, { menu = false }, containerColor = C.Card) {
+                        Text("美股更新頻率", color = C.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                        listOf(0L to "即時（Finnhub 逐筆）", 1_000L to "每 1 秒", 2_000L to "每 2 秒", 3_000L to "每 3 秒", 5_000L to "每 5 秒", 10_000L to "每 10 秒").forEach { (v, n) ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text((if (AppState.usRefreshMs == v) "✓ " else "　") + n, color = C.Text, fontSize = 14.sp) },
+                                onClick = { AppState.updateUsRefreshMs(v); menu = false },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        // 漲跌家數（依目前篩選）
+        NumText("▲$up", 12.sp, Trend.up); HGap(6.dp)
+        NumText("▼$down", 12.sp, Trend.down)
+        if (flat > 0) { HGap(6.dp); NumText("－$flat", 12.sp, Trend.flat) }
+    }
+}
 
 @Composable
 private fun StatusChip(market: Market, text: String, modifier: Modifier) {
