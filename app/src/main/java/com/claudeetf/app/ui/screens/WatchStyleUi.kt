@@ -54,20 +54,24 @@ private val NO_RECOLOR = setOf("entry", "spark", "market")
  */
 @Composable
 private fun Styled(st: WatchStyle, key: String, q: Quote, modifier: Modifier = Modifier, content: @Composable (WatchStyle) -> Unit) {
-    val ist = st.style(key)
-    val id = key.substringAfter(":")
+    StyledItem(st.style(key), key.substringAfter(":") !in NO_RECOLOR, q, modifier) { content(st.at(key)) }
+}
+
+/** 通用單一欄位樣式容器（行情卡片與持股卡片共用邏輯，設定各自保存） */
+@Composable
+internal fun StyledItem(ist: com.claudeetf.app.data.ItemStyle, recolor: Boolean, q: Quote?, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val tint: Color? = when {
-        id in NO_RECOLOR -> null
-        ist.trend -> Trend.fg(q.change)
+        !recolor -> null
+        ist.trend -> Trend.fg(q?.change ?: 0.0)
         ist.color != 0L -> Color(ist.color.toInt())
         else -> null
     }
     var m = if (tint == null) modifier else modifier
         .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)
         .drawWithContent { drawContent(); drawRect(tint, blendMode = androidx.compose.ui.graphics.BlendMode.SrcIn) }
-    if (ist.fx > 0) m = m.itemEffect(ist, q)
+    if (ist.fx > 0 && q != null) m = m.itemEffect(ist, q)
     CompositionLocalProvider(LocalItemWeight provides (if (ist.weight > 0) FontWeight(ist.weight) else null)) {
-        Box(m) { content(st.at(key)) }
+        Box(m) { content() }
     }
 }
 
@@ -596,11 +600,15 @@ private fun Stepper(title: String, value: Int, min: Int, max: Int, step: Int, un
 private fun ItemStyleControls(key: String, st: WatchStyle, set: ((WatchStyle) -> WatchStyle) -> Unit) {
     val id = key.substringAfter(":")
     if (id == "spark") return
-    val cur = st.style(key)
-    fun upd(f: (com.claudeetf.app.data.ItemStyle) -> com.claudeetf.app.data.ItemStyle) = set { s ->
-        val n = f(s.style(key))
-        s.copy(itemStyles = if (n.isDefault) s.itemStyles - key else s.itemStyles + (key to n))
-    }
+    ItemStyleEditor(st.style(key), id !in setOf("entry", "market"), { f ->
+        set { s -> val n = f(s.style(key)); s.copy(itemStyles = if (n.isDefault) s.itemStyles - key else s.itemStyles + (key to n)) }
+    })
+}
+
+/** 通用單一欄位編輯：字級、粗細、文字顏色、動畫 */
+@Composable
+internal fun ItemStyleEditor(cur: com.claudeetf.app.data.ItemStyle, allowColor: Boolean,
+                             upd: ((com.claudeetf.app.data.ItemStyle) -> com.claudeetf.app.data.ItemStyle) -> Unit) {
     Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(1.dp).background(C.Border))
     Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("字級", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
@@ -610,7 +618,7 @@ private fun ItemStyleControls(key: String, st: WatchStyle, set: ((WatchStyle) ->
     }
     Text("粗細", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
     Chips(listOf(0 to "預設", 300 to "300", 400 to "400", 500 to "500", 600 to "600", 700 to "700", 800 to "800", 900 to "900"), cur.weight) { v -> upd { it.copy(weight = v) } }
-    if (id !in setOf("entry", "market")) {
+    if (allowColor) {
         var picking by remember { mutableStateOf(false) }
         if (picking) ColorPickerDialog(
             title = "文字顏色", initial = if (cur.color != 0L) Color(cur.color.toInt()) else C.Text,
@@ -640,7 +648,7 @@ private fun ItemStyleControls(key: String, st: WatchStyle, set: ((WatchStyle) ->
         Chips(listOf(0 to "弱", 1 to "中", 2 to "強"), cur.power) { v -> upd { it.copy(power = v) } }
     }
     if (!cur.isDefault) Text("此欄位恢復預設", color = C.Muted, fontSize = 12.sp,
-        modifier = Modifier.clickable { set { s -> s.copy(itemStyles = s.itemStyles - key) } }.padding(top = 6.dp))
+        modifier = Modifier.clickable { upd { com.claudeetf.app.data.ItemStyle() } }.padding(top = 6.dp))
 }
 
 @Composable

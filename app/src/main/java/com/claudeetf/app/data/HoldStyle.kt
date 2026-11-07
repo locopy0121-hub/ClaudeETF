@@ -27,14 +27,19 @@ data class HoldStyle(
     val marquee: Boolean = true,
     /** 各列之間的分隔線 */
     val divider: Boolean = true,
+    /** 單一欄位樣式（字級、粗細、顏色、動畫），與行情卡片分開保存 */
+    val itemStyles: Map<String, ItemStyle> = emptyMap(),
 ) {
     fun shows(id: String) = id !in hidden
+    fun style(id: String): ItemStyle = itemStyles[id] ?: ItemStyle()
+    fun withStyle(id: String, s: ItemStyle) = copy(itemStyles = if (s.isDefault) itemStyles - id else itemStyles + (id to s))
 
     fun toJson(): String = JSONObject()
         .put("v", 1).put("density", density).put("nameMode", nameMode).put("nameSize", nameSize)
         .put("items", JSONArray(items)).put("hidden", JSONArray(hidden.toList()))
         .put("showMv", showMv).put("showPl", showPl).put("showPct", showPct)
         .put("entryAnim", entryAnim).put("marquee", marquee).put("divider", divider)
+        .put("itemStyles", JSONObject().apply { itemStyles.filterValues { !it.isDefault }.forEach { (k, v) -> put(k, v.toJson()) } })
         .toString()
 
     companion object {
@@ -49,6 +54,8 @@ data class HoldStyle(
         )
         val DEFAULT = NAMES.keys.toList()
         val HIDDEN = setOf("cost", "weight", "market")
+        /** 可單獨設定樣式的位置（含固定項目：名稱、市值、損益、報酬率） */
+        val STYLE_NAMES = linkedMapOf("name" to "名稱與代號") + NAMES + linkedMapOf("mv" to "市值", "pl" to "損益金額", "pct" to "報酬率")
 
         fun fromJson(s: String?): HoldStyle {
             if (s.isNullOrBlank()) return HoldStyle()
@@ -62,6 +69,7 @@ data class HoldStyle(
                     list("hidden")?.toSet() ?: HIDDEN,
                     o.optBoolean("showMv", true), o.optBoolean("showPl", true), o.optBoolean("showPct", true),
                     o.optInt("entryAnim", 2), o.optBoolean("marquee", true), o.optBoolean("divider", true),
+                    o.optJSONObject("itemStyles")?.let { m -> m.keys().asSequence().associateWith { ItemStyle.fromJson(m.optJSONObject(it)) } } ?: emptyMap(),
                 )
             }.getOrDefault(HoldStyle())
         }

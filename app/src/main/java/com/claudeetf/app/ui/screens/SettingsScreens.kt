@@ -1181,9 +1181,20 @@ private fun HoldStyleSettings() {
         Label("只影響「持股」頁；自選行情的卡片在「行情卡片樣式」另外設定，兩者互不影響")
         // 即時預覽：用前兩檔持股（沒有持股時以示意資料）
         val samples = AppState.holdings.take(2).ifEmpty { listOf(com.claudeetf.app.data.Holding("0050", 1000.0, 85.0)) }
+        var target by remember { mutableStateOf<String?>(null) }
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg).padding(horizontal = 8.dp, vertical = 4.dp)) {
-            Label("預覽", Modifier.padding(top = 4.dp))
-            samples.forEach { h -> HoldingRow(h, true, st) {} }
+            Label("預覽（點任一項目可單獨調整字級、粗細、顏色與動畫）", Modifier.padding(top = 4.dp))
+            samples.forEachIndexed { i, h -> HoldingRow(h, true, st, sel = target, onPick = if (i == 0) ({ target = it }) else null) {} }
+        }
+        target?.let { id ->
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Primary.copy(alpha = 0.10f))
+                .border(1.dp, C.Primary.copy(alpha = 0.5f), RoundedCornerShape(10.dp)).padding(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("持股卡片 › " + (com.claudeetf.app.data.HoldStyle.STYLE_NAMES[id] ?: id), Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("完成", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { target = null }.padding(6.dp))
+                }
+                ItemStyleEditor(st.style(id), id !in setOf("entry", "market", "pct")) { f -> set { it.withStyle(id, f(it.style(id))) } }
+            }
         }
         Text("列高", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
         ChipRow(listOf(0 to "精簡", 1 to "標準", 2 to "寬鬆"), st.density) { v -> set { it.copy(density = v) } }
