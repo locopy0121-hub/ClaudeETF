@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -171,6 +172,7 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
  *  上層：名稱／代號／報價時間（左，占滿剩餘寬度）＋ 走勢圖（有選時）＋ 價格與漲跌（右）
  *  下層：其餘資訊（欄位、第二欄、三關、進場建議、成交量…）平均分配成表格，每列最多 3 格
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, sel: String? = null, onTap: ((String) -> Unit)? = null) {
     val t = Tap(sel, onTap)
@@ -188,10 +190,12 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                     WatchName(q, st, 15, Modifier.weight(1f, fill = false), showCode = !st.listShows("market"))
                     if (st.tagPos == 1) { HGap(6.dp); EntryTagFor(q) }
                 }
-                if (st.listShows("market") || st.listShows("source")) Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (st.listShows("market")) Box(Modifier.tap(t, "market")) { WatchExtraItem(q, "market", st, list = true) }
-                    if (st.listShows("market") && st.listShows("source")) HGap(8.dp)
-                    if (st.listShows("source")) Box(Modifier.tap(t, "source")) { WatchExtraItem(q, "source", st, list = true) }
+                // 第二行：市場標籤、報價時間、進場建議標籤（K 棒訊號），不放進下方資訊框
+                val entryHere = st.listShows("entry") && st.tagPos == 0 && AppState.showCardEntry
+                if (st.listShows("market") || st.listShows("source") || entryHere) Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (st.listShows("market")) { Box(Modifier.tap(t, "market")) { WatchExtraItem(q, "market", st, list = true) }; HGap(8.dp) }
+                    if (st.listShows("source")) { Box(Modifier.weight(1f, fill = false).tap(t, "source")) { WatchExtraItem(q, "source", st, list = true) }; HGap(8.dp) }
+                    if (entryHere) Box(Modifier.tap(t, "entry")) { EntryTagFor(q) }
                 }
             }
             if (sparkInline && q.spark.size >= 2) {
@@ -212,8 +216,8 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
             }
         }
         // 下層：一項一行（左側名稱、右側數據橫向排開）；隱藏或沒有資料的項目整行不顯示
-        val rowIds = st.listItems.filter { id -> id !in setOf("market", "source", "spark") && (st.listShows(id) || id in tableCols) &&
-            !(id == "entry" && st.tagPos != 0) } + tableCols.filter { it !in st.listItems }
+        val rowIds = st.listItems.filter { id -> id !in setOf("market", "source", "spark", "entry") && (st.listShows(id) || id in tableCols) } +
+            tableCols.filter { it !in st.listItems }
         val lines = rowIds.mapNotNull { id -> infoLine(q, id, st)?.let { id to it } }
         if (lines.isNotEmpty()) {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(C.Card2.copy(alpha = 0.5f)).padding(horizontal = 10.dp, vertical = 6.dp),
@@ -221,9 +225,11 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                 lines.forEach { (id, line) ->
                     Row(Modifier.fillMaxWidth().tap(t, id), verticalAlignment = Alignment.CenterVertically) {
                         // 進場建議本身就是標籤，不另外顯示名稱
-                        val name = LINE_NAMES[id] ?: id
+                        // 盤前／盤後依目前時段顯示名稱
+                        val name = if (id == "ext") AppState.extended[q.symbol]?.label ?: "盤前盤後" else LINE_NAMES[id] ?: id
                         if (name.isNotEmpty()) Text(name, Modifier.width(52.dp), color = C.Muted, fontSize = st.sp(12), maxLines = 1)
-                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { line() }
+                        // 數據太長時自動換行，不會被擠出畫面
+                        FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { line() }
                     }
                 }
             }
@@ -260,13 +266,16 @@ private fun infoLine(q: Quote, id: String, st: WatchStyle): (@Composable RowScop
             NumText("上 " + Fmt.price(k.upper), sz, KeyLevelColors.upper)
             NumText("下 " + Fmt.price(k.lower), sz, KeyLevelColors.lower)
         } }
-        "volume" -> AppState.dayStats[q.symbol]?.volume?.let { v -> line { NumText(volumeText(v, q.market), sz, C.Text) } }
+        // 休市時沒有即時量：改用最後交易日的量（Yahoo 日 K）
+        "volume" -> (AppState.dayStats[q.symbol]?.volume ?: com.claudeetf.app.data.KlineAnalysis.volumeOn(q))?.let { v -> line {
+            NumText(volumeText(v, q.market), sz, C.Text)
+            if (!com.claudeetf.app.data.MarketData.anyMarketLive()) Text("最後交易日", color = C.Muted, fontSize = st.sp(10))
+        } }
         "amp" -> amplitude(q)?.let { a -> line { NumText(Fmt.num(a, 2) + "%", sz, C.Text) } }
         "limit" -> if (!tw) null else com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00"))?.let { s ->
             line { Text(s, color = Trend.fg(if (s == "漲停") 1.0 else -1.0), fontSize = sz, fontWeight = FontWeight.Bold) }
         }
         "ext" -> AppState.extended[q.symbol]?.let { e -> line {
-            Text(e.label, color = C.Text2, fontSize = sz)
             NumText(Fmt.price(e.price), sz, Trend.fg(e.changePct))
             NumText(Fmt.signedPct(e.changePct), sz, Trend.fg(e.changePct))
         } }

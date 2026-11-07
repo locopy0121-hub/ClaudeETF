@@ -446,6 +446,15 @@ object AppState {
         usRefreshMs = p.getLong("usRefreshMs", 5_000L)
         autoUpdateCheck = p.getBoolean("autoUpdateCheck", true)
         watchStyle = WatchStyle.fromJson(p.getString("watchStyle", null))
+        // 當日高低與成交量：重開 App 後保留（休市時仍顯示最後交易日的量）
+        runCatching {
+            val o = org.json.JSONObject(p.getString("dayStats", "{}") ?: "{}")
+            o.keys().forEach { k ->
+                val a = o.optJSONArray(k) ?: return@forEach
+                fun v(i: Int) = a.optDouble(i, -1.0).takeIf { it >= 0 }
+                dayStats[k] = DayStat(v(0), v(1), v(2), a.optLong(3))
+            }
+        }
         divPayAlert = p.getBoolean("divPayAlert", true)
         divPayMuted.clear(); divPayMuted.addAll((p.getString("divPayMuted", "") ?: "").split(",").filter { it.isNotBlank() })
         priceBoxShow = p.getBoolean("priceBoxShow", true)
@@ -652,6 +661,9 @@ object AppState {
             .putLong("usRefreshMs", usRefreshMs)
             .putBoolean("autoUpdateCheck", autoUpdateCheck)
             .putString("watchStyle", watchStyle.toJson())
+            .putString("dayStats", org.json.JSONObject().also { o ->
+                dayStats.forEach { (k, d) -> o.put(k, org.json.JSONArray().put(d.high ?: -1.0).put(d.low ?: -1.0).put(d.volume ?: -1.0).put(d.at)) }
+            }.toString())
             .putBoolean("divPayAlert", divPayAlert)
             .putString("divPayMuted", divPayMuted.joinToString(","))
             .putBoolean("priceBoxShow", priceBoxShow)

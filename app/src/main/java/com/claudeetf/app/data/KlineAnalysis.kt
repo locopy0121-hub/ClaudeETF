@@ -482,6 +482,15 @@ object KlineAnalysis {
         return r
     }
 
+    /** 某檔最後交易日的成交量（Yahoo 日 K 同一天那根；沒有載入或日期不符回傳 null） */
+    fun volumeOn(q: Quote): Double? {
+        val cs = raw[q.symbol + "|d"]?.second ?: return null
+        val zone = java.time.ZoneId.of(if (q.market == Market.TW) "Asia/Taipei" else "America/New_York")
+        val day = (if (q.market == Market.TW) MarketData.quoteDay(q.symbol) else null)
+            ?: q.updatedAt.takeIf { it > 0 }?.let { java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate() } ?: return null
+        return cs.lastOrNull { java.time.Instant.ofEpochMilli(it.t).atZone(zone).toLocalDate() == day }?.v?.takeIf { it > 0 }
+    }
+
     /** 長線（投資指數建議投入比例）× 短線（K 線進場建議）→ 現在先投入多少 */
     fun combined(ratio: Int, entry: Entry): Pair<String, Int> {
         fun r5(v: Double) = (Math.round(v / 5) * 5).toInt()

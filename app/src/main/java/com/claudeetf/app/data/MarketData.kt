@@ -244,7 +244,14 @@ object MarketData {
                     val (rq, src) = data[s] ?: return@filter false
                     val cur = quoteDay(s)
                     // 有日期：比目前報價舊就略過；沒日期：目前報價已是最近交易日的就不可能更新，也略過
-                    if (cur != null && (if (rq.date != null) rq.date < cur else cur >= lastDay)) return@filter false
+                    if (cur != null && (if (rq.date != null) rq.date < cur else cur >= lastDay)) {
+                        // 價格不覆蓋，但當日成交量／高低若還沒有（例如重開 App 後），且是同一交易日的資料就補上
+                        val same = rq.date != null && rq.date == cur
+                        val ds = AppState.dayStats[s]
+                        if (same && (ds?.volume == null || ds.high == null)) AppState.dayStats[s] =
+                            AppState.DayStat(ds?.high ?: rq.high, ds?.low ?: rq.low, ds?.volume ?: rq.volume, now)
+                        return@filter false
+                    }
                     AppState.applyRemote(rq, src, now)
                     rq.date?.let { closeDay[s] = it }
                     true

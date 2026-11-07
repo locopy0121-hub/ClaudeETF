@@ -38,7 +38,7 @@ data class WatchStyle(
     fun listShows(id: String) = id !in listHidden
 
     fun toJson(): String = JSONObject()
-        .put("v", 2)
+        .put("v", 3)
         .put("density", density).put("nameMode", nameMode).put("nameLines", nameLines).put("priceAlign", priceAlign)
         .put("changeMode", changeMode).put("changeStyle", changeStyle).put("cardCols", cardCols).put("tintBg", tintBg)
         .put("tagPos", tagPos).put("tagAlign", tagAlign)
@@ -76,7 +76,8 @@ data class WatchStyle(
         val CARD_DEFAULT = CARD_NAMES.keys.toList()
         val CARD_HIDDEN = setOf("market", "volume", "amp")
         val LIST_DEFAULT = LIST_NAMES.keys.toList()
-        val LIST_HIDDEN = setOf("volume", "amp", "spark")
+        /** 清單預設只顯示行情頁「欄位／第二欄」選的資訊；其餘需在設定開啟 */
+        val LIST_HIDDEN = setOf("keys", "volume", "amp", "limit", "ext", "spark")
 
         fun fromJson(s: String?): WatchStyle {
             if (s.isNullOrBlank()) return WatchStyle()
@@ -96,7 +97,8 @@ data class WatchStyle(
                     order("items", CARD_NAMES, CARD_DEFAULT),
                     if (v2) list("hidden")?.toSet() ?: CARD_HIDDEN else CARD_HIDDEN,
                     order("listItems", LIST_NAMES, LIST_DEFAULT),
-                    if (v2) list("listHidden")?.toSet() ?: LIST_HIDDEN else LIST_HIDDEN,
+                    // v3 起清單預設精簡：舊版的清單隱藏設定重設為新預設
+                    if (o.optInt("v", 1) >= 3) list("listHidden")?.toSet() ?: LIST_HIDDEN else LIST_HIDDEN,
                 )
             }.getOrDefault(WatchStyle())
         }
