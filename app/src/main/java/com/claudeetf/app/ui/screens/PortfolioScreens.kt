@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -167,6 +169,13 @@ fun PortfolioScreen(nav: NavController) {
                     Shortcut("比較", Icons.Filled.Search, Modifier.weight(1f)) {
                         nav.navigate(Routes.compare(AppState.holdings.take(3).joinToString(",") { it.symbol }))
                     }
+                }
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Shortcut("複利試算", Icons.Filled.Add, Modifier.weight(1f)) { nav.navigate(Routes.DRIP) }
+                    Shortcut("交易紀錄", Icons.Filled.List, Modifier.weight(1f)) { nav.navigate(Routes.TRADES) }
+                    Shortcut("資料健檢", Icons.Filled.CheckCircle, Modifier.weight(1f)) { nav.navigate(Routes.HEALTH) }
                 }
             }
             item { EtfDividendCard { nav.navigate(Routes.stock(it)) } }
@@ -790,7 +799,7 @@ fun DividendScreen(nav: NavController) {
                     Label("每檔的稅務類型與應稅比例可在個股頁「股息」分頁調整。")
                     Text("查看年度報表（報稅參考） ›", color = C.Primary, fontSize = 13.sp,
                         modifier = Modifier.clickable { nav.navigate(Routes.REPORT) }.padding(vertical = 6.dp))
-                    Text("股息再投入試算（複利） ›", color = C.Primary, fontSize = 13.sp,
+                    Text("複利試算（股息再投入） ›", color = C.Primary, fontSize = 13.sp,
                         modifier = Modifier.clickable { nav.navigate(Routes.DRIP) }.padding(vertical = 6.dp))
                 }
             }
