@@ -30,6 +30,11 @@ object Backup {
             }
             data.put(k, entry)
         }
+        // 金鑰已改存加密儲存，主 prefs 裡不一定有：要匯出時直接取目前值
+        if (includeKeys) {
+            if (AppState.fugleKey.isNotEmpty()) data.put("fugleKey", JSONObject().put("t", "s").put("v", AppState.fugleKey))
+            if (AppState.finnhubKey.isNotEmpty()) data.put("finnhubKey", JSONObject().put("t", "s").put("v", AppState.finnhubKey))
+        }
         return JSONObject()
             .put("app", "ClaudeETF")
             .put("format", 1)
@@ -48,6 +53,8 @@ object Backup {
         val e = p.edit().clear()
         data.keys().forEach { k ->
             val entry = data.optJSONObject(k) ?: return@forEach
+            // 金鑰寫入加密儲存，不放回明文 prefs
+            if (k in secretKeys) { AppState.restoreSecret(context, k, entry.optString("v")); return@forEach }
             when (entry.optString("t")) {
                 "s" -> e.putString(k, entry.optString("v"))
                 "i" -> e.putInt(k, entry.optInt("v"))
@@ -57,7 +64,7 @@ object Backup {
             }
         }
         // 備份檔沒有金鑰時保留手機上原本的金鑰
-        keepKeys.forEach { (k, v) -> if (!data.has(k)) e.putString(k, v) }
+        keepKeys.forEach { (k, v) -> if (!data.has(k) && v.isNotEmpty()) e.putString(k, v) }
         e.commit()
         AppState.reload(context)
         return null

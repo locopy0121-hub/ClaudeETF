@@ -397,10 +397,12 @@ object AppState {
         com.claudeetf.app.data.remote.Http.cacheDir = java.io.File(context.applicationContext.cacheDir, "http")
         val p = context.getSharedPreferences("claudeetf", Context.MODE_PRIVATE)
         prefs = p
+        appCtx = context.applicationContext
+        secretOk = SecretStore.probe(context.applicationContext)
         customUp = p.getLong("customUp", 0L); customDown = p.getLong("customDown", 0L); customFlat = p.getLong("customFlat", 0L)
         colorMode = runCatching { ColorMode.valueOf(p.getString("colorMode", "TW") ?: "TW") }
             .getOrDefault(ColorMode.TW)
-        usdTwd = p.getFloat("usdTwd", 32.02f).toDouble()
+        usdTwd = p.getD("usdTwd", 32.02f)
         themeMode = p.getInt("themeMode", 1)
         onboarded = p.getBoolean("onboarded", false)
         dailySummary = p.getBoolean("dailySummary", true)
@@ -432,11 +434,11 @@ object AppState {
         watchColumn2 = p.getString("watchColumn2", "") ?: ""
         goalAmount = p.getLong("goalAmount", 0L).toDouble()
         goalMonth = p.getString("goalMonth", "") ?: ""
-        realizedTwdYtd = p.getFloat("realized", 56_800f).toDouble()
-        dividendTwYtd = p.getFloat("divTw", 61_300f).toDouble()
-        dividendUsGrossYtd = p.getFloat("divUs", 1_120.73f).toDouble()
-        cashTwd = p.getFloat("cash", 164_000f).toDouble()
-        fugleKey = p.getString("fugleKey", "") ?: ""
+        realizedTwdYtd = p.getD("realized", 56_800f)
+        dividendTwYtd = p.getD("divTw", 61_300f)
+        dividendUsGrossYtd = p.getD("divUs", 1_120.73f)
+        cashTwd = p.getD("cash", 164_000f)
+        fugleKey = loadSecret(p, "fugleKey")
         twIntradaySource = p.getString("twIntradaySource", "fugle") ?: "fugle"
         monthlyReport = p.getBoolean("monthlyReport", true)
         showKeyLevels = p.getBoolean("showKeyLevels", true)
@@ -471,7 +473,7 @@ object AppState {
         entryAnim = p.getInt("entryAnim", 2)
         marqueeDesc = p.getBoolean("marqueeDesc", true)
         showFinalSignal = p.getBoolean("showFinalSignal", true)
-        investBudget = p.getFloat("investBudget", 0f).toDouble()
+        investBudget = p.getD("investBudget", 0f)
         p.getString("newsSources", null)?.let { j ->
             runCatching { val a = JSONArray(j); newsSources.clear(); for (k in 0 until a.length()) newsSources.add(a.getString(k)) }
         }
@@ -493,7 +495,7 @@ object AppState {
         p.getString("industries", null)?.let { json ->
             runCatching { val o = JSONObject(json); o.keys().forEach { k -> industries[k] = o.getString(k) } }
         }
-        finnhubKey = p.getString("finnhubKey", "") ?: ""
+        finnhubKey = loadSecret(p, "finnhubKey")
         fxSource = p.getString("fxSource", "手動輸入") ?: "手動輸入"
         fxUpdatedAt = p.getLong("fxUpdatedAt", 0L)
 
@@ -628,12 +630,45 @@ object AppState {
         migrateLedger(p)
     }
 
+    /**
+     * 金額以 Double 原始位元（Long）精確保存：Float 只有約 7 位有效數字，
+     * 千萬級的現金、帳本基準存成 Float 會有數元到數十元的誤差。
+     * 同時保留 Float 舊鍵讓舊版本／備份仍可讀；讀取時優先用精確值。
+     */
+    private fun SharedPreferences.Editor.putD(k: String, v: Double): SharedPreferences.Editor =
+        putLong(k + "_d", java.lang.Double.doubleToRawLongBits(v)).putFloat(k, v.toFloat())
+    private fun SharedPreferences.getD(k: String, def: Float): Double =
+        if (contains(k + "_d")) java.lang.Double.longBitsToDouble(getLong(k + "_d", 0L)) else getFloat(k, def).toDouble()
+
+    private var appCtx: Context? = null
+    /** Keystore 可用（加密儲存讀寫驗證成功）；不可用時退回舊的明文儲存，避免金鑰遺失 */
+    private var secretOk = false
+
+    /** 讀 API 金鑰：舊版明文存在主 prefs 的先搬進 SecretStore，驗證可讀回才從明文移除 */
+    private fun loadSecret(p: SharedPreferences, name: String): String {
+        val ctx = appCtx ?: return p.getString(name, "") ?: ""
+        val legacy = p.getString(name, null)
+        if (legacy != null) {
+            if (secretOk) SecretStore.put(ctx, name, legacy)
+            if (SecretStore.get(ctx, name) != legacy && legacy.isNotEmpty()) secretOk = false
+            return legacy
+        }
+        return SecretStore.get(ctx, name) ?: ""
+    }
+
+    private fun saveSecret(name: String, value: String) {
+        appCtx?.let { SecretStore.put(it, name, value) }
+    }
+
+    /** 備份還原：把備份檔中的金鑰寫入加密儲存 */
+    fun restoreSecret(context: Context, name: String, value: String) = SecretStore.put(context.applicationContext, name, value)
+
     private fun save() {
         val p = prefs ?: return
         p.edit()
             .putString("colorMode", colorMode.name)
             .putLong("customUp", customUp).putLong("customDown", customDown).putLong("customFlat", customFlat)
-            .putFloat("usdTwd", usdTwd.toFloat())
+            .putD("usdTwd", usdTwd)
             .putInt("themeMode", themeMode)
             .putBoolean("dailySummary", dailySummary)
             .putBoolean("appLock", appLock)
@@ -645,15 +680,15 @@ object AppState {
             .putString("watchColumn2", watchColumn2)
             .putLong("goalAmount", Math.round(goalAmount))
             .putString("goalMonth", goalMonth)
-            .putFloat("realized", realizedTwdYtd.toFloat())
-            .putFloat("divTw", dividendTwYtd.toFloat())
-            .putFloat("divUs", dividendUsGrossYtd.toFloat())
-            .putFloat("cash", cashTwd.toFloat())
+            .putD("realized", realizedTwdYtd)
+            .putD("divTw", dividendTwYtd)
+            .putD("divUs", dividendUsGrossYtd)
+            .putD("cash", cashTwd)
             .putString("holdings", holdingsJson())
             .putString("trades", tradesJson())
             .putString("alertsV2", alertsJson())
             .putString("alertHistory", JSONArray().apply { alertHistory.take(60).forEach { put(JSONObject().put("t", it.time).put("x", it.text)) } }.toString())
-            .putString("fugleKey", fugleKey)
+            .apply { if (secretOk) remove("fugleKey") else putString("fugleKey", fugleKey) }
             .putString("twIntradaySource", twIntradaySource)
             .putBoolean("monthlyReport", monthlyReport)
             .putBoolean("showKeyLevels", showKeyLevels)
@@ -682,7 +717,7 @@ object AppState {
             .putInt("entryAnim", entryAnim)
             .putBoolean("marqueeDesc", marqueeDesc)
             .putBoolean("showFinalSignal", showFinalSignal)
-            .putFloat("investBudget", investBudget.toFloat())
+            .putD("investBudget", investBudget)
             .putString("newsSources", JSONArray(newsSources.toList()).toString())
             .putString("customFeeds", JSONArray().apply { customFeeds.forEach { put(JSONObject().put("n", it.first).put("u", it.second)) } }.toString())
             .putInt("heatSize", heatSize)
@@ -694,17 +729,17 @@ object AppState {
             .putBoolean("indexShowRange", indexShowRange)
             .putString("watchLayout", watchLayout)
             .putString("industries", JSONObject().apply { industries.forEach { (k, v) -> put(k, v) } }.toString())
-            .putString("finnhubKey", finnhubKey)
+            .apply { if (secretOk) remove("finnhubKey") else putString("finnhubKey", finnhubKey) }
             .putString("fxSource", fxSource)
             .putLong("fxUpdatedAt", fxUpdatedAt)
             .putString("quotes", quotesJson())
             .putString("taxKinds", JSONObject().apply { taxKindOverride.forEach { (k, v) -> put(k, v.name) } }.toString())
             .putString("taxRatios", JSONObject().apply { taxRatioOverride.forEach { (k, v) -> put(k, v) } }.toString())
-            .putFloat("baseCash", base.cash.toFloat())
+            .putD("baseCash", base.cash)
             .putInt("baseYear", base.year)
-            .putFloat("baseRealized", base.realized.toFloat())
-            .putFloat("baseDivTw", base.divTw.toFloat())
-            .putFloat("baseDivUs", base.divUsGross.toFloat())
+            .putD("baseRealized", base.realized)
+            .putD("baseDivTw", base.divTw)
+            .putD("baseDivUs", base.divUsGross)
             .putString("accounts", JSONArray().apply {
                 accounts.forEach {
                     put(JSONObject().put("id", it.id).put("n", it.name).put("m", it.market.name).put("d", it.discount)
@@ -787,11 +822,13 @@ object AppState {
 
     fun updateFugleKey(key: String) {
         fugleKey = key.trim()
+        saveSecret("fugleKey", fugleKey)
         save()
     }
 
     fun updateFinnhubKey(key: String) {
         finnhubKey = key.trim()
+        saveSecret("finnhubKey", finnhubKey)
         save()
     }
 
@@ -1273,11 +1310,11 @@ object AppState {
     private fun migrateLedger(p: SharedPreferences) {
         if (p.getInt("ledgerV", 0) >= 1) {
             base = LedgerBase(
-                p.getFloat("baseCash", 0f).toDouble(),
+                p.getD("baseCash", 0f),
                 p.getInt("baseYear", year()),
-                p.getFloat("baseRealized", 0f).toDouble(),
-                p.getFloat("baseDivTw", 0f).toDouble(),
-                p.getFloat("baseDivUs", 0f).toDouble(),
+                p.getD("baseRealized", 0f),
+                p.getD("baseDivTw", 0f),
+                p.getD("baseDivUs", 0f),
             )
             recompute()
             return

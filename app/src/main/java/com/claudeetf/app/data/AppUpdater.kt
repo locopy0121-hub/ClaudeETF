@@ -30,7 +30,7 @@ object AppUpdater {
     private const val API_LATEST = "https://api.github.com/repos/$REPO/releases/latest"
     private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
 
-    data class Release(val tag: String, val patch: Int, val name: String, val notes: String, val apkUrl: String, val size: Long, val publishedAt: String)
+    data class Release(val tag: String, val patch: Int, val name: String, val notes: String, val apkUrl: String, val size: Long, val publishedAt: String, val sha256: String = "")
 
     /** 檢查結果：null = 尚未檢查 */
     var latest by mutableStateOf<Release?>(null)
@@ -141,7 +141,9 @@ object AppUpdater {
         for (k in 0 until assets.length()) {
             val a = assets.optJSONObject(k) ?: continue
             if (a.optString("name").endsWith(".apk"))
-                return Release(tag, patch, o.optString("name"), o.optString("body"), a.optString("browser_download_url"), a.optLong("size"), o.optString("published_at"))
+                return Release(tag, patch, o.optString("name"), o.optString("body"), a.optString("browser_download_url"), a.optLong("size"), o.optString("published_at"),
+                    // GitHub 會提供資產的 SHA-256（"digest": "sha256:…"），用來驗證下載完整性
+                    a.optString("digest").removePrefix("sha256:").takeIf { it.length == 64 } ?: "")
         }
         return null
     }
@@ -209,7 +211,7 @@ object AppUpdater {
 
     private fun save(p: android.content.SharedPreferences, r: Release) {
         p.edit().putString("tag", r.tag).putInt("patch", r.patch).putString("name", r.name).putString("notes", r.notes)
-            .putString("url", r.apkUrl).putLong("size", r.size).putString("pub", r.publishedAt).apply()
+            .putString("url", r.apkUrl).putLong("size", r.size).putString("pub", r.publishedAt).putString("sha", r.sha256).apply()
     }
 
     private fun restore(p: android.content.SharedPreferences) {
@@ -217,7 +219,7 @@ object AppUpdater {
         if (latest != null) return
         val tag = p.getString("tag", null) ?: return
         latest = Release(tag, p.getInt("patch", -1), p.getString("name", "") ?: "", p.getString("notes", "") ?: "",
-            p.getString("url", "") ?: "", p.getLong("size", 0), p.getString("pub", "") ?: "")
+            p.getString("url", "") ?: "", p.getLong("size", 0), p.getString("pub", "") ?: "", p.getString("sha", "") ?: "")
     }
 
     /** 背景通知用：這一版是否已通知過（每版只通知一次） */
@@ -260,18 +262,24 @@ object AppUpdater {
                 val dir = File(context.cacheDir, "updates").apply { mkdirs() }
                 dir.listFiles()?.forEach { it.delete() }
                 val out = File(dir, "ClaudeETF-${r.tag}.apk")
+                // 先下載到 .part，驗證長度與 SHA-256 後才改名，避免把殘缺檔交給安裝程式
+                val part = File(dir, out.name + ".part")
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                var expected = 0L
+                var got = 0L
                 client.newCall(Request.Builder().url(r.apkUrl).header("User-Agent", "ClaudeETF-Android").build()).execute().use { resp ->
                     if (!resp.isSuccessful) throw IllegalStateException("下載失敗 HTTP ${resp.code}")
                     val body = resp.body ?: throw IllegalStateException("下載內容為空")
                     val total = body.contentLength().takeIf { it > 0 } ?: r.size
+                    expected = total
                     body.byteStream().use { input ->
-                        out.outputStream().use { o ->
+                        part.outputStream().use { o ->
                             val buf = ByteArray(64 * 1024)
                             var done = 0L
                             var lastUi = 0L
                             while (true) {
                                 val n = input.read(buf); if (n < 0) break
-                                o.write(buf, 0, n); done += n
+                                o.write(buf, 0, n); md.update(buf, 0, n); done += n
                                 val t = System.currentTimeMillis()
                                 if (total > 0 && t - lastUi > 150) {
                                     lastUi = t
@@ -279,9 +287,14 @@ object AppUpdater {
                                     withContext(Dispatchers.Main) { progress = p }
                                 }
                             }
+                            got = done
                         }
                     }
                 }
+                if (expected > 0 && got != expected) { part.delete(); throw IllegalStateException("下載不完整（$got / $expected bytes），請重試") }
+                val hash = md.digest().joinToString("") { "%02x".format(it) }
+                if (r.sha256.isNotEmpty() && !hash.equals(r.sha256, ignoreCase = true)) { part.delete(); throw IllegalStateException("檔案校驗失敗（SHA-256 不符），已刪除") }
+                if (!part.renameTo(out)) throw IllegalStateException("無法儲存安裝檔")
                 out
             }
             progress = 1f
@@ -312,7 +325,8 @@ object AppUpdater {
         if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         if (Build.VERSION.SDK_INT >= 34) params.setPackageSource(android.content.pm.PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE)
         val id = pi.createSession(params)
-        pi.openSession(id).use { session ->
+        // 寫入或提交失敗要放棄工作階段，否則系統會殘留未完成的安裝工作階段（佔用空間）
+        try { pi.openSession(id).use { session ->
             session.openWrite("base.apk", 0, file.length()).use { out ->
                 file.inputStream().use { it.copyTo(out, 64 * 1024) }
                 session.fsync(out)
@@ -321,6 +335,9 @@ object AppUpdater {
             val flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) android.app.PendingIntent.FLAG_MUTABLE else 0)
             val sender = android.app.PendingIntent.getBroadcast(context, id, intent, flags)
             session.commit(sender.intentSender)
+        } } catch (e: Exception) {
+            runCatching { pi.abandonSession(id) }
+            throw e
         }
         withContext(Dispatchers.Main) { message = "安裝中…完成後 App 會重新啟動" }
     }
@@ -340,10 +357,16 @@ object AppUpdater {
                 confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let { runCatching { context.startActivity(it) } }
             }
             android.content.pm.PackageInstaller.STATUS_SUCCESS -> message = "更新完成"
+            // 使用者在確認畫面按了取消：不要再跳一次安裝畫面
+            android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> message = "已取消更新"
+            // 簽章不符或空間不足：改用系統安裝畫面也一樣會失敗，直接告知原因
+            android.content.pm.PackageInstaller.STATUS_FAILURE_CONFLICT,
+            android.content.pm.PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> message = "更新失敗：與已安裝版本簽章不符，請先移除舊版再安裝"
+            android.content.pm.PackageInstaller.STATUS_FAILURE_STORAGE -> message = "更新失敗：手機儲存空間不足"
             else -> {
                 message = "更新失敗：" + (msg ?: "代碼 $status")
-                // 工作階段安裝失敗：改用系統安裝畫面
-                File(context.cacheDir, "updates").listFiles()?.firstOrNull { it.name.endsWith(".apk") }?.let { installViaIntent(context, it) }
+                // 其他工作階段失敗：改用系統安裝畫面
+                File(context.cacheDir, "updates").listFiles()?.firstOrNull { it.name.endsWith(".apk") }?.let { runCatching { installViaIntent(context, it) } }
             }
         }
     }

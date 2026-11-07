@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+：雲端備份與裝置轉移都排除加密金鑰檔與更新暫存 -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="claudeetf_secret.xml" />
+        <exclude domain="sharedpref" path="claudeetf_update.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="claudeetf_secret.xml" />
+        <exclude domain="sharedpref" path="claudeetf_update.xml" />
+    </device-transfer>
+</data-extraction-rules>

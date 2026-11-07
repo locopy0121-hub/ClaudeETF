@@ -58,29 +58,36 @@ fun EntryTag(e: KlineAnalysis.Entry, big: Boolean = false) {
     if (anim > 0) {
         val tr = rememberInfiniteTransition(label = "entry")
         val period = if (strong) 700 else 1100
-        // 0→1→0 循環：控制跳動、閃爍與光暈
-        val p by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(period, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "p")
-        val ring by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(period * 2, easing = LinearEasing), RepeatMode.Restart), label = "ring")
+        // 0→1→0 循環。只在 graphicsLayer／drawBehind（繪製階段）讀取動畫值，
+        // 不觸發重組：清單很多列同時播放也只重畫、不重算版面
+        val pS = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(period, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "p")
+        val ringS = tr.animateFloat(0f, 1f, infiniteRepeatable(tween(period * 2, easing = LinearEasing), RepeatMode.Restart), label = "ring")
         val bounce = if (strong) 0.10f else if (anim == 2) 0.06f else 0.03f
         val glow = if (anim == 2) 1f else 0.5f
-        mod = Modifier
-            .graphicsLayer { val sc = 1f + bounce * p; scaleX = sc; scaleY = sc; translationY = -(if (strong) 2.5f else 1.2f) * p * density }
-            .drawBehind {
-                val r = (if (big) 10.dp else 6.dp).toPx()
-                // 內層光暈（呼吸）
-                for (i in 1..3) {
-                    val g = i * 2.5f * density * (0.6f + 0.4f * p)
-                    drawRoundRect(c.copy(alpha = glow * 0.22f * p / i), Offset(-g, -g), Size(size.width + 2 * g, size.height + 2 * g),
-                        androidx.compose.ui.geometry.CornerRadius(r + g))
+        val lift = if (strong) 2.5f else 1.2f
+        val baseA = if (big) 0.65f else 0.16f
+        val pulseA = if (big) 0.35f else if (strong) 0.45f else 0.25f
+        Text(icon + e.label, color = if (big) Color.White else c, fontSize = if (big) 15.sp else 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+            modifier = Modifier
+                .graphicsLayer { val p = pS.value; val sc = 1f + bounce * p; scaleX = sc; scaleY = sc; translationY = -lift * p * density }
+                .drawBehind {
+                    val p = pS.value
+                    val ring = ringS.value
+                    val r = (if (big) 10.dp else 6.dp).toPx()
+                    // 內層光暈（呼吸）
+                    for (i in 1..3) {
+                        val g = i * 2.5f * density * (0.6f + 0.4f * p)
+                        drawRoundRect(c.copy(alpha = glow * 0.22f * p / i), Offset(-g, -g), Size(size.width + 2 * g, size.height + 2 * g),
+                            androidx.compose.ui.geometry.CornerRadius(r + g))
+                    }
+                    // 外擴光環
+                    val e2 = ring * 8f * density
+                    drawRoundRect(c.copy(alpha = glow * 0.7f * (1f - ring)), Offset(-e2, -e2), Size(size.width + 2 * e2, size.height + 2 * e2),
+                        androidx.compose.ui.geometry.CornerRadius(r + e2), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5f * density))
+                    // 閃爍的底色
+                    drawRoundRect(c.copy(alpha = (baseA + pulseA * p).coerceAtMost(1f) * (if (strong && !big) 0.85f else 1f)),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(r))
                 }
-                // 外擴光環
-                val e2 = ring * 8f * density
-                drawRoundRect(c.copy(alpha = glow * 0.7f * (1f - ring)), Offset(-e2, -e2), Size(size.width + 2 * e2, size.height + 2 * e2),
-                    androidx.compose.ui.geometry.CornerRadius(r + e2), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5f * density))
-            }
-        val bgA = if (big) 0.65f + 0.35f * p else 0.16f + (if (strong) 0.45f else 0.25f) * p
-        Text(icon + e.label, color = if (big || (strong && p > 0.5f)) Color.White else c, fontSize = if (big) 15.sp else 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-            modifier = mod.clip(shape).background(c.copy(alpha = bgA))
                 .padding(horizontal = if (big) 12.dp else 7.dp, vertical = if (big) 6.dp else 2.dp))
         return
     }
@@ -96,7 +103,11 @@ fun EntryTag(e: KlineAnalysis.Entry, big: Boolean = false) {
 @Composable
 fun EntryTagFor(q: Quote, holder: Boolean = false, modifier: Modifier = Modifier) {
     if (!AppState.showCardEntry || q.price <= 0) return
-    LaunchedEffect(q.symbol, q.price) { runCatching { KlineAnalysis.load(q, false) } }
+    // 盤中逐筆跳動時去抖動：價格 1.5 秒內再變就取消上一次，避免每一筆成交都對整份 K 線重跑形態分析
+    LaunchedEffect(q.symbol, q.price) {
+        if (KlineAnalysis.latestDaily[q.symbol] != null) kotlinx.coroutines.delay(1_500)
+        runCatching { KlineAnalysis.load(q, false) }
+    }
     val r = KlineAnalysis.latestDaily[q.symbol] ?: return
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         EntryTag(r.entry)

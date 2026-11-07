@@ -88,8 +88,15 @@ object FugleStream {
     }
 
     /** 依目前狀態開始、更新訂閱或停止串流 */
+    /** 驗證失敗的金鑰：換金鑰前不再重連（否則每 5 秒一次的檢查會不停重送錯誤金鑰） */
+    @Volatile private var authFailedKey = ""
+    /** 斷線後下次允許重連的時間（指數退避），ensure() 不可提早重連 */
+    @Volatile private var nextAttemptAt = 0L
+
     fun ensure(enabled: Boolean, apiKey: String, symbols: List<String>) {
         if (!enabled || apiKey.isBlank()) { stop(); return }
+        if (apiKey == authFailedKey) { if (ws != null) stop(); return }
+        if (ws == null && key == apiKey && System.currentTimeMillis() < nextAttemptAt) { wanted = true; return }
         wanted = true
         if (ws == null || key != apiKey) {
             stop(); wanted = true
@@ -243,6 +250,7 @@ object FugleStream {
         if (wanted) {
             // 斷線重連：2、4、8…最多 60 秒
             val delayMs = minOf(60_000L, 2_000L shl minOf(retry, 5))
+            nextAttemptAt = System.currentTimeMillis() + delayMs
             retry++
             reconnects++
             main.postDelayed({ if (wanted && ws == null) connect() }, delayMs)
@@ -253,6 +261,7 @@ object FugleStream {
         when (o.optString("event")) {
             "authenticated" -> {
                 authed = true
+                authFailedKey = ""
                 retry = 0
                 connectedAt = System.currentTimeMillis()
                 val syms = AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol }
@@ -281,6 +290,7 @@ object FugleStream {
                 val msg = o.optJSONObject("data")?.optString("message") ?: "錯誤"
                 if (msg.contains("auth", true) || msg.contains("credential", true)) {
                     wanted = false
+                    authFailedKey = key
                     main.post { AppState.streamStatus = "富果金鑰驗證失敗，改用證交所即時" }
                     webSocket.close(1000, "auth failed")
                 } else if (tradesPending) {

@@ -2,6 +2,7 @@ package com.claudeetf.app.data
 
 import com.claudeetf.app.data.remote.YahooExtra
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withPermit
 import kotlin.math.abs
@@ -440,7 +441,13 @@ object KlineAnalysis {
      * maxAgeMs：K 棒資料最久可用多久（盤中即時訊號用 2 分鐘，讓當日高低點更新）。
      * 日 K 的最後一根以目前報價補上（盤中即為「形成中」的 K 棒）。
      */
-    suspend fun load(q: Quote, weekly: Boolean, maxAgeMs: Long = 10 * 60_000L): Result? {
+    /** 同一檔同一週期同時只算一次：同一列多個標籤、卡片與詳情頁同時要求時，後到的直接吃快取 */
+    private val locks = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+
+    suspend fun load(q: Quote, weekly: Boolean, maxAgeMs: Long = 10 * 60_000L): Result? =
+        locks.getOrPut(q.symbol + weekly) { kotlinx.coroutines.sync.Mutex() }.withLock { loadLocked(q, weekly, maxAgeMs) }
+
+    private suspend fun loadLocked(q: Quote, weekly: Boolean, maxAgeMs: Long): Result? {
         val cs0 = candles(q, weekly, maxAgeMs)
         val key = q.symbol + (if (weekly) "|w|" else "|d|") + cs0.size + "|" + (cs0.lastOrNull()?.t ?: 0) + "|" + q.price
         cache[key]?.let { return it }

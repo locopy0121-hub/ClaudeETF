@@ -11,20 +11,48 @@ object Http {
     /** 快取目錄（App 啟動時設定）；成功的回應會存檔，斷線時改讀最近一次的內容 */
     @Volatile var cacheDir: java.io.File? = null
 
-    /** 去掉 crumb、token 等會變動或敏感的參數後當作快取鍵 */
+    /** 去掉 crumb、token、防快取時間戳（_=）等會變動或敏感的參數後當作快取鍵 */
     private fun key(url: String): String {
-        val clean = url.replace(Regex("([?&])(crumb|token)=[^&]*"), "$1").replace("?&", "?").trimEnd('&', '?')
+        val clean = url.replace(Regex("([?&])(crumb|token|_)=[^&]*"), "$1").replace("?&", "?").replace("&&", "&").trimEnd('&', '?')
         val md = java.security.MessageDigest.getInstance("MD5").digest(clean.toByteArray())
         return md.joinToString("") { "%02x".format(it) }
     }
 
-    fun store(url: String, body: String) {
-        val dir = cacheDir ?: return
-        if (body.isEmpty() || body.length > 3_000_000) return
-        runCatching { dir.mkdirs(); java.io.File(dir, key(url)).writeText(body) }
+    /**
+     * 即時報價端點不做離線快取：斷線時回傳舊的「即時」價會被當成最新成交，
+     * 而且每 5 秒一次的輪詢會讓快取檔無限增加。
+     */
+    private fun cacheable(url: String) = !url.contains("mis.twse.com.tw") && !url.contains("/intraday/quote/") && !url.contains("finnhub.io/api/v1/quote")
+
+    /** 快取上限：檔數或總大小超過時刪掉最舊的 */
+    private const val MAX_FILES = 400
+    private const val MAX_BYTES = 40L * 1024 * 1024
+    private val writes = java.util.concurrent.atomic.AtomicInteger()
+
+    private fun prune(dir: java.io.File) {
+        val files = dir.listFiles()?.sortedByDescending { it.lastModified() } ?: return
+        var total = 0L
+        files.forEachIndexed { i, f ->
+            total += f.length()
+            if (i >= MAX_FILES || total > MAX_BYTES) f.delete()
+        }
     }
 
-    fun cached(url: String): String? = runCatching {
+    fun store(url: String, body: String) {
+        val dir = cacheDir ?: return
+        if (body.isEmpty() || body.length > 3_000_000 || !cacheable(url)) return
+        runCatching {
+            dir.mkdirs()
+            // 先寫暫存檔再改名，避免寫到一半被讀到殘缺內容
+            val f = java.io.File(dir, key(url))
+            val tmp = java.io.File(dir, f.name + ".tmp")
+            tmp.writeText(body)
+            if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+            if (writes.incrementAndGet() % 50 == 1) prune(dir)
+        }
+    }
+
+    fun cached(url: String): String? = if (!cacheable(url)) null else runCatching {
         val f = java.io.File(cacheDir ?: return null, key(url))
         if (f.exists()) f.readText() else null
     }.getOrNull()

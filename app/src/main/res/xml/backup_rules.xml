@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 以下的自動備份規則 -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="claudeetf_secret.xml" />
+    <exclude domain="sharedpref" path="claudeetf_update.xml" />
+</full-backup-content>

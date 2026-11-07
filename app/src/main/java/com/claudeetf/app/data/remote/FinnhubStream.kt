@@ -40,8 +40,16 @@ object FinnhubStream {
 
     fun tradesLive(symbol: String): Boolean = connected && (lastTrade[symbol]?.let { System.currentTimeMillis() - it < 30_000 } ?: false)
 
+    /** 驗證失敗（401/403）的金鑰：換金鑰前不再連線；否則每 250 毫秒的迴圈會不停重連 */
+    @Volatile private var authFailedKey = ""
+    /** 斷線後下次允許重連的時間（退避），ensure() 不可提早重連 */
+    @Volatile private var nextAttemptAt = 0L
+
     fun ensure(enabled: Boolean, apiKey: String, symbols: List<String>) {
         if (!enabled || apiKey.isBlank()) { stop(); return }
+        latestSymbols = symbols
+        if (apiKey == authFailedKey) { if (ws != null) stop(); return }
+        if (ws == null && key == apiKey && System.currentTimeMillis() < nextAttemptAt) { wanted = true; return }
         wanted = true
         if (ws == null || key != apiKey) {
             stop(); wanted = true
@@ -109,19 +117,27 @@ object FinnhubStream {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                // 舊連線的失敗回呼不可清掉新連線（否則會同時開出兩條連線）
+                if (webSocket !== ws) return
                 connected = false
                 ws = null
                 val code = response?.code
+                if (code == 401 || code == 403) authFailedKey = key
                 main.post { AppState.usStreamStatus = if (code == 401 || code == 403) "Finnhub 金鑰驗證失敗，改用輪詢" else "Finnhub 串流中斷，重新連線…" }
                 if (wanted && code != 401 && code != 403) {
                     retries++
-                    main.postDelayed({ if (wanted && ws == null) connect() }, (2_000L * retries).coerceAtMost(30_000L))
+                    val d = (2_000L * retries).coerceAtMost(30_000L)
+                    nextAttemptAt = System.currentTimeMillis() + d
+                    main.postDelayed({ if (wanted && ws == null) connect() }, d)
                 }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (ws !== webSocket) return
                 connected = false
-                if (ws === webSocket) ws = null
+                ws = null
+                // 伺服器主動關閉：稍後由 ensure() 重新連線
+                nextAttemptAt = System.currentTimeMillis() + 3_000L
             }
         })
     }
@@ -131,7 +147,9 @@ object FinnhubStream {
         override fun run() {
             if (!wanted) return
             if (pending.isNotEmpty()) {
-                val batch = HashMap(pending); pending.clear()
+                // 逐鍵取出再移除：複製後整批 clear 會丟掉複製與清除之間剛收到的成交
+                val batch = HashMap<String, Pair<Double, Long>>()
+                for (k in pending.keys.toList()) pending.remove(k)?.let { batch[k] = it }
                 val now = System.currentTimeMillis()
                 batch.forEach { (s, v) ->
                     val q = AppState.quote(s) ?: return@forEach
