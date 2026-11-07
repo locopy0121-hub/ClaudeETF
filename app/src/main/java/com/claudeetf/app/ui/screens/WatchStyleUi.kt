@@ -1,6 +1,7 @@
 package com.claudeetf.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -172,7 +173,7 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
  *  上層：名稱／代號／報價時間（左，占滿剩餘寬度）＋ 走勢圖（有選時）＋ 價格與漲跌（右）
  *  下層：其餘資訊（欄位、第二欄、三關、進場建議、成交量…）平均分配成表格，每列最多 3 格
  */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, sel: String? = null, onTap: ((String) -> Unit)? = null) {
     val t = Tap(sel, onTap)
@@ -197,7 +198,7 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                     if (st.listShows("source")) Box(Modifier.tap(t, "source")) { WatchExtraItem(q, "source", st, list = true) }
                 }
                 // 第三行：進場建議標籤（K 棒訊號），在 TW／US 標籤的下一行
-                if (entryHere) Row(Modifier.tap(t, "entry"), verticalAlignment = Alignment.CenterVertically) {
+                if (entryHere) Row(Modifier.tap(t, "entry").padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     EntryTagFor(q)
                     // 標籤後接 K 棒說明：最新一根的形態（沒有形態時用建議理由）＋ 多空強度
                     com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol]?.let { r ->
@@ -207,7 +208,12 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                         HGap(8.dp)
                         Text(
                             (if (pats.isNotEmpty()) pats else r.entry.reason.substringBefore("，").substringBefore("。")) + " · " + r.dir.label + " " + r.strength,
-                            color = dc, fontSize = st.sp(11), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = dc, fontSize = st.sp(11), maxLines = 1,
+                            overflow = if (AppState.marqueeDesc) TextOverflow.Clip else TextOverflow.Ellipsis,
+                            // 文字過長時以跑馬燈捲動（短的不動）
+                            modifier = Modifier.weight(1f, fill = false).then(
+                                if (AppState.marqueeDesc) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 1500, initialDelayMillis = 1200, velocity = 36.dp)
+                                else Modifier),
                         )
                     }
                 }

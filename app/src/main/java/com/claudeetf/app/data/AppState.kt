@@ -273,6 +273,11 @@ object AppState {
     /** 自選卡片、清單與持股列顯示進場建議標籤 */
     var showCardEntry by mutableStateOf(true)
     fun updateShowCardEntry(on: Boolean) { showCardEntry = on; save() }
+    /** 可進場標籤動畫：0 關閉、1 柔和、2 強烈 */
+    var entryAnim by mutableStateOf(2)
+    fun updateEntryAnim(v: Int) { entryAnim = v; save() }
+    var marqueeDesc by mutableStateOf(true)
+    fun updateMarqueeDesc(on: Boolean) { marqueeDesc = on; save() }
     fun updateShowFinalSignal(on: Boolean) { showFinalSignal = on; save() }
 
     /** 走勢圖標示我的買賣點 */
@@ -463,6 +468,8 @@ object AppState {
         priceBoxWeight = p.getInt("priceBoxWeight", 700)
         priceBoxSize = p.getInt("priceBoxSize", 13)
         showCardEntry = p.getBoolean("showCardEntry", true)
+        entryAnim = p.getInt("entryAnim", 2)
+        marqueeDesc = p.getBoolean("marqueeDesc", true)
         showFinalSignal = p.getBoolean("showFinalSignal", true)
         investBudget = p.getFloat("investBudget", 0f).toDouble()
         p.getString("newsSources", null)?.let { j ->
@@ -672,6 +679,8 @@ object AppState {
             .putInt("priceBoxWeight", priceBoxWeight)
             .putInt("priceBoxSize", priceBoxSize)
             .putBoolean("showCardEntry", showCardEntry)
+            .putInt("entryAnim", entryAnim)
+            .putBoolean("marqueeDesc", marqueeDesc)
             .putBoolean("showFinalSignal", showFinalSignal)
             .putFloat("investBudget", investBudget.toFloat())
             .putString("newsSources", JSONArray(newsSources.toList()).toString())

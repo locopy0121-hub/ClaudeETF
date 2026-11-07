@@ -1,5 +1,6 @@
 package com.claudeetf.app.ui.screens
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -12,6 +13,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -43,13 +46,46 @@ fun entryColor(level: Int): Color = when {
     else -> Trend.flat
 }
 
-/** 進場建議標籤 */
+/** 進場建議標籤；可進場（level > 0）時依設定播放閃爍、跳動與光暈動畫 */
 @Composable
 fun EntryTag(e: KlineAnalysis.Entry, big: Boolean = false) {
     val c = entryColor(e.level)
     val icon = when (e.level) { 2 -> "✔ "; 1 -> "◐ "; 0 -> "⏸ "; -1 -> "✋ "; else -> "⛔ " }
+    val anim = if (e.level > 0) AppState.entryAnim else 0
+    val strong = anim == 2 && e.level >= 2
+    val shape = RoundedCornerShape(if (big) 10.dp else 6.dp)
+    var mod: Modifier = Modifier
+    if (anim > 0) {
+        val tr = rememberInfiniteTransition(label = "entry")
+        val period = if (strong) 700 else 1100
+        // 0→1→0 循環：控制跳動、閃爍與光暈
+        val p by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(period, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "p")
+        val ring by tr.animateFloat(0f, 1f, infiniteRepeatable(tween(period * 2, easing = LinearEasing), RepeatMode.Restart), label = "ring")
+        val bounce = if (strong) 0.10f else if (anim == 2) 0.06f else 0.03f
+        val glow = if (anim == 2) 1f else 0.5f
+        mod = Modifier
+            .graphicsLayer { val sc = 1f + bounce * p; scaleX = sc; scaleY = sc; translationY = -(if (strong) 2.5f else 1.2f) * p * density }
+            .drawBehind {
+                val r = (if (big) 10.dp else 6.dp).toPx()
+                // 內層光暈（呼吸）
+                for (i in 1..3) {
+                    val g = i * 2.5f * density * (0.6f + 0.4f * p)
+                    drawRoundRect(c.copy(alpha = glow * 0.22f * p / i), Offset(-g, -g), Size(size.width + 2 * g, size.height + 2 * g),
+                        androidx.compose.ui.geometry.CornerRadius(r + g))
+                }
+                // 外擴光環
+                val e2 = ring * 8f * density
+                drawRoundRect(c.copy(alpha = glow * 0.7f * (1f - ring)), Offset(-e2, -e2), Size(size.width + 2 * e2, size.height + 2 * e2),
+                    androidx.compose.ui.geometry.CornerRadius(r + e2), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5f * density))
+            }
+        val bgA = if (big) 0.65f + 0.35f * p else 0.16f + (if (strong) 0.45f else 0.25f) * p
+        Text(icon + e.label, color = if (big || (strong && p > 0.5f)) Color.White else c, fontSize = if (big) 15.sp else 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+            modifier = mod.clip(shape).background(c.copy(alpha = bgA))
+                .padding(horizontal = if (big) 12.dp else 7.dp, vertical = if (big) 6.dp else 2.dp))
+        return
+    }
     Text(icon + e.label, color = if (big) Color.White else c, fontSize = if (big) 15.sp else 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-        modifier = Modifier.clip(RoundedCornerShape(if (big) 10.dp else 6.dp)).background(if (big) c.copy(alpha = 0.9f) else c.copy(alpha = 0.16f))
+        modifier = Modifier.clip(shape).background(if (big) c.copy(alpha = 0.9f) else c.copy(alpha = 0.16f))
             .padding(horizontal = if (big) 12.dp else 7.dp, vertical = if (big) 6.dp else 2.dp))
 }
 

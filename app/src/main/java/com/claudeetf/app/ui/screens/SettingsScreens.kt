@@ -540,6 +540,16 @@ fun SettingsScreen(nav: NavController) {
                         Text("個股頁", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                         OptToggle("標題顯示投資分析指數（0–100）", AppState.showScoreBadge) { AppState.updateShowScoreBadge(it) }
                         OptToggle("自選卡片／清單與持股顯示進場建議標籤", AppState.showCardEntry) { AppState.updateShowCardEntry(it) }
+                        OptToggle("K 棒說明過長時以跑馬燈捲動", AppState.marqueeDesc) { AppState.updateMarqueeDesc(it) }
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("可進場標籤動畫", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+                            listOf(0 to "關閉", 1 to "柔和", 2 to "強烈").forEach { (v, n) ->
+                                val on = AppState.entryAnim == v
+                                Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                    modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
+                                        .clickable { AppState.updateEntryAnim(v) }.padding(horizontal = 10.dp, vertical = 4.dp))
+                            }
+                        }
                         OptToggle("行情價下方顯示即時 K 棒訊號（盤中）", AppState.showLiveSignal) { AppState.updateShowLiveSignal(it) }
                         if (AppState.showLiveSignal) OptToggle("收盤後顯示最終進場標籤（關閉則自動隱藏）", AppState.showFinalSignal) { AppState.updateShowFinalSignal(it) }
                         OptToggle("走勢圖標示我的買賣點", AppState.showTradeMarks) { AppState.updateShowTradeMarks(it) }
