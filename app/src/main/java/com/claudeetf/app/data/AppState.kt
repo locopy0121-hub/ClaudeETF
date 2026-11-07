@@ -1133,7 +1133,7 @@ object AppState {
         val budget = plan.amount - fee0
         val shares = if (isUs) Math.floor(budget / q.price * 10000) / 10000 else Math.floor(budget / q.price)
         if (shares <= 0) return "金額不足以買進 1 股"
-        val fee = feeFor(plan.account, q.market, shares * q.price)
+        val fee = feeFor(plan.account, q.market, tradeGross(q.symbol, shares, q.price))
         val date = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei")).format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"))
         val err = addTrade(Trade(TradeType.BUY, plan.symbol, date, shares, q.price, if (isUs) usdTwd else 1.0, fee, 0.0, note = "定期定額", account = plan.account))
         if (err != null) return err
@@ -1174,7 +1174,7 @@ object AppState {
             when (t.type) {
                 TradeType.BUY -> if (t.shares > 0) lots += Lot(
                     if (t.origin == TradeOrigin.OPENING) "期初" else t.date, t.shares,
-                    (t.shares * t.price + t.fee) / t.shares, t.fx, t.origin == TradeOrigin.OPENING,
+                    (t.gross + t.fee) / t.shares, t.fx, t.origin == TradeOrigin.OPENING,
                 )
                 TradeType.SELL -> {
                     var left = t.shares

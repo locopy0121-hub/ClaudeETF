@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.claudeetf.app.data.AppState
+import com.claudeetf.app.data.gross
+import com.claudeetf.app.data.tradeGross
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.Trade
 import com.claudeetf.app.data.TradeOrigin
@@ -48,7 +50,7 @@ fun CostScreen(nav: NavController) {
     var stockSellTax = 0.0
     for (t in trades) {
         val f = fx(t)
-        val amt = t.shares * t.price * f
+        val amt = t.gross * f
         listOf(all, byYear.getOrPut(t.date.take(4)) { CostBucket() }, byAccount.getOrPut(t.account) { CostBucket() }).forEach {
             it.amount += amt; it.fees += t.fee * f; it.taxes += t.tax * f; it.count++
         }

@@ -88,7 +88,7 @@ object TradeCsv {
         sb.append(header.joinToString(",")).append("\n")
         trades.filter { it.origin != TradeOrigin.LEGACY }.sortedBy { Ledger.sortKey(it) }.forEach { t ->
             val type = if (t.origin == TradeOrigin.OPENING) "期初" else t.type.label
-            val gross = t.shares * t.price
+            val gross = t.gross
             val net = when (t.type) {
                 TradeType.BUY -> -(gross + t.fee) * t.fx
                 TradeType.SELL -> (gross - t.fee - t.tax) * t.fx

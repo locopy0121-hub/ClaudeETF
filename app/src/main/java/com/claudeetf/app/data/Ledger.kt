@@ -60,7 +60,7 @@ object Ledger {
             val existing = hs[t.symbol]
             when (t.type) {
                 TradeType.BUY -> {
-                    val addCost = t.shares * t.price + t.fee
+                    val addCost = t.gross + t.fee
                     val oldShares = existing?.shares ?: 0.0
                     val oldCost = oldShares * (existing?.avgCost ?: 0.0)
                     val newShares = oldShares + t.shares
@@ -78,7 +78,7 @@ object Ledger {
                     if (t.shares > existing.shares + 1e-9) {
                         return null to "${t.date} 賣出 ${t.symbol} ${t.shares} 股，超過當時持有的 ${existing.shares} 股"
                     }
-                    val proceeds = t.shares * t.price - t.fee - t.tax
+                    val proceeds = t.gross - t.fee - t.tax
                     val costFx = if (isUs) existing.avgFx else 1.0
                     val r = proceeds * fx - t.shares * existing.avgCost * costFx
                     realizedById[t.id] = r
@@ -88,7 +88,7 @@ object Ledger {
                     if (left <= 1e-9) hs.remove(t.symbol) else hs[t.symbol] = existing.copy(shares = left)
                 }
                 TradeType.DIVIDEND -> {
-                    val gross = t.shares * t.price
+                    val gross = t.gross
                     val netTwd = if (isUs) gross * (1 - TaxRules.US_WITHHOLD) * fx else gross - t.fee
                     dividendById[t.id] = netTwd
                     if (thisYear) { if (isUs) divUs += gross else divTw += gross - t.fee }

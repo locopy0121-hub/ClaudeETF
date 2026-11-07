@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.claudeetf.app.data.AppState
+import com.claudeetf.app.data.gross
+import com.claudeetf.app.data.tradeGross
 import com.claudeetf.app.data.Holding
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.SampleData
@@ -448,7 +450,8 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
     val isEtf = AppState.quote(sym)?.isEtf ?: sym.startsWith("00")
     val q = shares.toDoubleOrNull() ?: 0.0
     val p = price.toDoubleOrNull() ?: 0.0
-    val amount = q * p
+    // 台股成交金額元以下無條件捨去（30.57×45=1,375.65 → 1,375）
+    val amount = tradeGross(sym, q, p)
     val accOptions = AppState.accountsFor(market)
     val effAccount = if (accOptions.any { it.id == accountId }) accountId else accOptions.firstOrNull()?.id ?: 0
     val taxKind = TaxRules.kindOf(sym)
@@ -573,6 +576,7 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
                         (AppState.account(effAccount)?.let { a ->
                             if (isUs) "${a.name}：手續費 ${Fmt.num(a.usRate * 100, 3)}%，最低 $${Fmt.num(a.usMinFee, 2)}"
                             else "${a.name}：0.1425% × ${Fmt.num(a.discount * 10, 2)} 折，最低 ${Fmt.num(a.minFee)} 元" +
+                                (if (!isUs && amount > 0 && q * p - amount > 1e-6) "\n成交金額 ${Fmt.num(p, 2)} × ${Fmt.num(q)} = ${Fmt.num(q * p, 2)} → ${Fmt.num(amount)} 元（元以下無條件捨去）" else "") +
                                 (if (amount > 0) "\n手續費試算 ${Fmt.num(amount)} × 0.1425% × ${Fmt.num(a.discount, 3)} = ${Fmt.num(amount * 0.001425 * a.discount, 2)} → ${Fmt.num(AppState.feeFor(a.id, market, amount))} 元（元以下捨去、不足最低以最低計）" else "") +
                                 (if (amount > 0 && tType == TradeType.SELL) "\n證交稅試算 ${Fmt.num(amount)} × ${Fmt.num(taxRule.first * 100, 2)}% = ${Fmt.num(amount * taxRule.first, 2)} → ${Fmt.num(tax)} 元" else "")
                         } ?: "") + if (isUs) "；美股免交易稅" else if (tType == TradeType.SELL) "；" + taxRule.second + "（元以下捨去）" else "",
@@ -1071,7 +1075,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.tagSection() {
     val rows = tagged.flatMap { t -> t.tags.map { it to t } }.groupBy({ it.first }, { it.second }).map { (tag, ts) ->
         Row4(
             tag, ts.size,
-            ts.filter { it.type == com.claudeetf.app.data.TradeType.BUY }.sumOf { it.shares * it.price * it.fx + it.fee * it.fx },
+            ts.filter { it.type == com.claudeetf.app.data.TradeType.BUY }.sumOf { it.gross * it.fx + it.fee * it.fx },
             ts.sumOf { AppState.realizedById[it.id] ?: 0.0 },
             ts.sumOf { AppState.dividendById[it.id] ?: 0.0 },
         )

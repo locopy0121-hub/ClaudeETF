@@ -118,8 +118,8 @@ object Analytics {
             val isUs = AppState.marketOf(t.symbol) == Market.US
             val fx = if (isUs) t.fx else 1.0
             val amt = when (t.type) {
-                TradeType.BUY -> -(t.shares * t.price + t.fee) * fx
-                TradeType.SELL -> (t.shares * t.price - t.fee - t.tax) * fx
+                TradeType.BUY -> -(t.gross + t.fee) * fx
+                TradeType.SELL -> (t.gross - t.fee - t.tax) * fx
                 TradeType.DIVIDEND -> AppState.dividendById[t.id] ?: 0.0
                 TradeType.SPLIT -> 0.0
             }

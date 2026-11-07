@@ -229,3 +229,16 @@ data class UpcomingDividend(
     val detail: String,
     val amount: String,
 )
+
+/**
+ * 成交金額（價金）：台股依證交所與券商交割規則「元以下無條件捨去」，
+ * 例：30.57 × 45 = 1,375.65 → 1,375 元；手續費、證交稅都以這個金額計算。
+ * 美股以美元計、保留小數。加 1e-9 是為了避免浮點誤差把整數扣成少 1 元（例如 1375.9999999）。
+ */
+fun tradeGross(symbol: String, shares: Double, price: Double): Double {
+    val g = shares * price
+    return if (AppState.marketOf(symbol) == Market.TW) Math.floor(g + 1e-9) else g
+}
+
+/** 這筆交易的成交金額（台股元以下捨去） */
+val Trade.gross: Double get() = tradeGross(symbol, shares, price)

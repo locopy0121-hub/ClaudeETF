@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.claudeetf.app.data.AppState
+import com.claudeetf.app.data.gross
+import com.claudeetf.app.data.tradeGross
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.TaxKind
 import com.claudeetf.app.data.TaxRules
@@ -75,7 +77,7 @@ object ReportCalc {
                 }
                 TradeType.BUY -> fees += t.fee * fx
                 TradeType.DIVIDEND -> {
-                    val gross = t.shares * t.price * fx
+                    val gross = t.gross * fx
                     if (us) {
                         usGross += gross; usWh += gross * TaxRules.US_WITHHOLD
                     } else {

@@ -117,7 +117,7 @@ object TaxRules {
     fun taxMismatches(): List<Pair<Trade, Double>> = AppState.trades.filter { t ->
         t.type == TradeType.SELL && t.symbol.firstOrNull()?.isDigit() == true && t.origin != TradeOrigin.LEGACY
     }.mapNotNull { t ->
-        val expect = sellTax(t.symbol, t.shares * t.price, t.date, looksLikeDayTrade(t.symbol, t.date, t.id))
+        val expect = sellTax(t.symbol, t.gross, t.date, looksLikeDayTrade(t.symbol, t.date, t.id))
         if (kotlin.math.abs(expect - t.tax) >= 1.0) t to expect else null
     }
 

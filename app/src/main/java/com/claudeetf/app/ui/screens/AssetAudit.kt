@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.claudeetf.app.data.AppState
+import com.claudeetf.app.data.gross
+import com.claudeetf.app.data.tradeGross
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.QuoteSource
 import com.claudeetf.app.data.TradeOrigin
@@ -54,10 +56,10 @@ fun AssetAuditDialog(nav: NavController, onClose: () -> Unit) {
     // 現金組成
     val ts = AppState.trades.filter { it.origin != TradeOrigin.LEGACY }
     fun twd(t: com.claudeetf.app.data.Trade) = if (AppState.marketOf(t.symbol) == Market.US) t.fx else 1.0
-    val buys = ts.filter { it.type == TradeType.BUY && it.origin != TradeOrigin.OPENING }.sumOf { (it.shares * it.price + it.fee) * twd(it) }
-    val sells = ts.filter { it.type == TradeType.SELL }.sumOf { (it.shares * it.price - it.fee - it.tax) * twd(it) }
+    val buys = ts.filter { it.type == TradeType.BUY && it.origin != TradeOrigin.OPENING }.sumOf { (it.gross + it.fee) * twd(it) }
+    val sells = ts.filter { it.type == TradeType.SELL }.sumOf { (it.gross - it.fee - it.tax) * twd(it) }
     val divs = ts.filter { it.type == TradeType.DIVIDEND }.sumOf { t ->
-        val g = t.shares * t.price
+        val g = t.gross
         if (AppState.marketOf(t.symbol) == Market.US) g * 0.7 * t.fx else g - t.fee
     }
     val base = AppState.cashTwd - sells - divs + buys
@@ -70,7 +72,7 @@ fun AssetAuditDialog(nav: NavController, onClose: () -> Unit) {
             us && (t.fx < 20 || t.fx > 45) -> "匯率 ${Fmt.num(t.fx, 2)}（美股應約 28–35）"
             cur != null && cur > 0 && (t.price / cur > 10 || t.price / cur < 0.1) -> "成交價 ${Fmt.price(t.price)} 與現價 ${Fmt.price(cur)} 差距超過 10 倍"
             t.shares >= 1_000_000 -> "股數 ${Fmt.shares(t.shares)} 異常（台股 1 張 = 1,000 股）"
-            (t.shares * t.price * (if (us) t.fx else 1.0)) > 50_000_000 -> "單筆金額超過 5,000 萬"
+            (t.gross * (if (us) t.fx else 1.0)) > 50_000_000 -> "單筆金額超過 5,000 萬"
             else -> null
         }
         why?.let { t to it }

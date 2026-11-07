@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.claudeetf.app.data.Analytics
 import com.claudeetf.app.data.AppState
+import com.claudeetf.app.data.gross
+import com.claudeetf.app.data.tradeGross
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.TradeOrigin
 import com.claudeetf.app.data.TradeType
@@ -44,8 +46,8 @@ fun ReviewScreen(nav: NavController) {
     for (t in ts) {
         val fx = if (AppState.marketOf(t.symbol) == Market.US) t.fx else 1.0
         when (t.type) {
-            TradeType.BUY -> netIn += (t.shares * t.price + t.fee) * fx
-            TradeType.SELL -> netIn -= (t.shares * t.price - t.fee - t.tax) * fx
+            TradeType.BUY -> netIn += (t.gross + t.fee) * fx
+            TradeType.SELL -> netIn -= (t.gross - t.fee - t.tax) * fx
             else -> {}
         }
     }

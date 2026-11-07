@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.claudeetf.app.data.AppState
+import com.claudeetf.app.data.gross
+import com.claudeetf.app.data.tradeGross
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.Trade
 import com.claudeetf.app.data.TradeOrigin
@@ -99,8 +101,8 @@ fun TradesScreen(nav: NavController) {
             list.groupBy { if (it.origin == TradeOrigin.OPENING) "期初持股" else it.date.take(7) }.forEach { (month, ts) ->
                 item {
                     // 月小計：買進、賣出金額（台幣）、已實現與股息
-                    val buy = ts.filter { it.type == TradeType.BUY }.sumOf { it.shares * it.price * it.fx }
-                    val sell = ts.filter { it.type == TradeType.SELL }.sumOf { it.shares * it.price * it.fx }
+                    val buy = ts.filter { it.type == TradeType.BUY }.sumOf { it.gross * it.fx }
+                    val sell = ts.filter { it.type == TradeType.SELL }.sumOf { it.gross * it.fx }
                     val real = ts.sumOf { AppState.realizedById[it.id] ?: 0.0 }
                     val div = ts.sumOf { AppState.dividendById[it.id] ?: 0.0 }
                     Column(Modifier.padding(top = 6.dp)) {
@@ -146,9 +148,9 @@ private fun TradeRow(t: Trade, onClick: () -> Unit) {
     val isUs = market == Market.US
     val ccy = if (isUs) "$" else ""
     val amount = when (t.type) {
-        TradeType.BUY -> t.shares * t.price + t.fee
-        TradeType.SELL -> t.shares * t.price - t.fee - t.tax
-        TradeType.DIVIDEND -> t.shares * t.price
+        TradeType.BUY -> t.gross + t.fee
+        TradeType.SELL -> t.gross - t.fee - t.tax
+        TradeType.DIVIDEND -> t.gross
         TradeType.SPLIT -> 0.0
     }
     val typeColor = when (t.type) {

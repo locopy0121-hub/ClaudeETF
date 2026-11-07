@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.claudeetf.app.data.AppState
+import com.claudeetf.app.data.gross
+import com.claudeetf.app.data.tradeGross
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.QuoteSource
 import com.claudeetf.app.data.TradeOrigin
@@ -51,7 +53,7 @@ object HealthCheck {
                 }
             }
             if (t.type == TradeType.BUY || t.type == TradeType.SELL) {
-                val amt = t.shares * t.price
+                val amt = t.gross
                 if (!us && amt > 0 && t.fee > amt * 0.01) out += Issue(1, "手續費偏高", head + " · 手續費 " + Fmt.num(t.fee) + " 元", t.id)
                 if (!us && t.type == TradeType.BUY && t.shares >= 1 && t.shares % 1000 != 0.0 && t.shares > 1000) {
                     out += Issue(1, "股數非整張", head + " · " + Fmt.shares(t.shares) + " 股，若為零股請忽略", t.id)
