@@ -34,6 +34,7 @@ import com.claudeetf.app.ui.Sparkline
 import com.claudeetf.app.ui.theme.C
 import com.claudeetf.app.ui.theme.Trend
 import com.claudeetf.app.util.Fmt
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.toArgb
 import com.claudeetf.app.ui.LocalItemWeight
 import androidx.compose.runtime.CompositionLocalProvider
@@ -52,32 +53,64 @@ private val NO_RECOLOR = setOf("entry", "spark", "market")
  * 文字色（自訂色或漲跌色，以 SrcIn 混色把整個項目的文字統一上色）。
  */
 @Composable
-private fun Styled(st: WatchStyle, key: String, change: Double, modifier: Modifier = Modifier, content: @Composable (WatchStyle) -> Unit) {
+private fun Styled(st: WatchStyle, key: String, q: Quote, modifier: Modifier = Modifier, content: @Composable (WatchStyle) -> Unit) {
     val ist = st.style(key)
     val id = key.substringAfter(":")
     val tint: Color? = when {
         id in NO_RECOLOR -> null
-        ist.trend -> Trend.fg(change)
+        ist.trend -> Trend.fg(q.change)
         ist.color != 0L -> Color(ist.color.toInt())
         else -> null
     }
-    val m = if (tint == null) modifier else modifier
+    var m = if (tint == null) modifier else modifier
         .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)
         .drawWithContent { drawContent(); drawRect(tint, blendMode = androidx.compose.ui.graphics.BlendMode.SrcIn) }
+    if (ist.fx > 0) m = m.itemEffect(ist, q)
     CompositionLocalProvider(LocalItemWeight provides (if (ist.weight > 0) FontWeight(ist.weight) else null)) {
         Box(m) { content(st.at(key)) }
     }
 }
 
-/** 預覽可點選：點了回報目標；選中的加框 */
-private class Tap(val sel: String?, val onTap: ((String) -> Unit)?)
-
-private fun Modifier.tap(t: Tap?, id: String): Modifier =
-    if (t?.onTap == null) this
-    else this.clip(RoundedCornerShape(6.dp))
-        .border(if (t.sel == id) 2.dp else 1.dp, if (t.sel == id) C.Primary else C.Border.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-        .clickable { t.onTap.invoke(id) }
-        .padding(horizontal = 2.dp, vertical = 1.dp)
+/**
+ * 單一欄位動畫。常駐：持續循環；其餘：價格變動（可限上漲／下跌）時播放一次。
+ * 動畫值只在 graphicsLayer／drawBehind 讀取，不觸發重組。
+ */
+@Composable
+private fun Modifier.itemEffect(ist: com.claudeetf.app.data.ItemStyle, q: Quote): Modifier {
+    val dur = when (ist.speed) { 0 -> 1400; 2 -> 450; else -> 800 }
+    val pw = when (ist.power) { 0 -> 0.5f; 2 -> 1.6f; else -> 1f }
+    val p = remember { androidx.compose.animation.core.Animatable(0f) }
+    var dir by remember { mutableStateOf(0) }
+    if (ist.trig == 0) {
+        LaunchedEffect(ist.fx, dur) {
+            while (true) {
+                p.animateTo(1f, androidx.compose.animation.core.tween(dur / 2))
+                p.animateTo(0f, androidx.compose.animation.core.tween(dur / 2))
+                if (ist.fx == 1) kotlinx.coroutines.delay(dur.toLong())
+            }
+        }
+    } else {
+        var last by remember { mutableStateOf(q.price) }
+        LaunchedEffect(q.price) {
+            val d = q.price.compareTo(last)
+            last = q.price
+            if (d == 0) return@LaunchedEffect
+            if ((ist.trig == 2 && d < 0) || (ist.trig == 3 && d > 0)) return@LaunchedEffect
+            dir = d
+            p.snapTo(0f)
+            p.animateTo(1f, androidx.compose.animation.core.tween(dur / 3))
+            p.animateTo(0f, androidx.compose.animation.core.tween(dur * 2 / 3))
+        }
+    }
+    val flashColor = Trend.fg(if (dir != 0) dir.toDouble() else q.change)
+    return when (ist.fx) {
+        1 -> graphicsLayer { alpha = 1f - 0.7f * p.value.coerceIn(0f, 1f) }
+        2 -> graphicsLayer { val s = 1f + 0.08f * pw * p.value; scaleX = s; scaleY = s }
+        3 -> drawBehind { drawRoundRect(flashColor.copy(alpha = (0.35f * pw * p.value).coerceIn(0f, 0.8f)), cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx())) }
+        4 -> graphicsLayer { translationY = -4f * pw * p.value * density }
+        else -> this
+    }
+}
 
 /** 名稱與代號（依格式） */
 @Composable
@@ -197,12 +230,12 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
         .then(if (st.cardBorder != 0L) Modifier.border(1.dp, Color(st.cardBorder.toInt()), shape) else Modifier)
         .padding(pad), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(Modifier.fillMaxWidth().tap(t, "name"), verticalAlignment = Alignment.CenterVertically) {
-            Styled(st, "c:name", q.change, Modifier.weight(1f)) { s -> WatchName(q, s, if (small) 12 else 13) }
+            Styled(st, "c:name", q, Modifier.weight(1f)) { s -> WatchName(q, s, if (small) 12 else 13) }
             if (st.tagPos == 1) EntryTagFor(q)
             else if (st.nameMode == 0 && !small) NumText(q.symbol, st.sp(11), C.Muted)
         }
         Row(Modifier.align(priceAlign).tap(t, "price"), verticalAlignment = Alignment.CenterVertically) {
-            Styled(st, "c:price", q.change) { s -> NumText(if (q.price > 0) Fmt.price(q.price) else "—", s.sp(if (small) 19 else 26), Trend.price(q.change), weight = FontWeight.Bold) }
+            Styled(st, "c:price", q) { s -> NumText(if (q.price > 0) Fmt.price(q.price) else "—", s.sp(if (small) 19 else 26), Trend.price(q.change), weight = FontWeight.Bold) }
             if (st.tagPos == 2) { HGap(6.dp); EntryTagFor(q) }
         }
         val ids = st.items.filter { st.shows(it) && !(it == "entry" && st.tagPos != 0) }
@@ -212,18 +245,18 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
                 "cols" -> {
                     // 行情頁「欄位／第二欄」選的資訊；走勢與卡片走勢圖重複不再顯示
                     val cols = listOf(AppState.watchColumn, AppState.watchColumn2).filter { it.isNotEmpty() && it != "spark" }.distinct()
-                    if (cols.isNotEmpty()) Styled(st, "c:cols", q.change, Modifier.align(extraAlign).tap(t, "cols")) {
+                    if (cols.isNotEmpty()) Styled(st, "c:cols", q, Modifier.align(extraAlign).tap(t, "cols")) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { cols.forEach { WatchCell(q, it) } }
                     } else if (onTap != null) Text("欄位：未選（行情頁設定）", Modifier.tap(t, "cols"), color = C.Muted, fontSize = st.sp(10))
                 }
                 "change" -> {
                     val full = st.changeMode == 0 && st.tagAlign == 0
-                    Styled(st, "c:change", q.change, (if (full) Modifier.fillMaxWidth() else Modifier.align(extraAlign)).tap(t, "change")) { s ->
+                    Styled(st, "c:change", q, (if (full) Modifier.fillMaxWidth() else Modifier.align(extraAlign)).tap(t, "change")) { s ->
                         WatchChange(q, s, if (small) 11 else 12, if (full) Modifier.fillMaxWidth() else Modifier, spread = st.tagAlign == 0)
                     }
                 }
                 else -> Row(Modifier.align(extraAlign), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    g.forEach { id -> Styled(st, "c:$id", q.change, Modifier.tap(t, id)) { s -> WatchExtraItem(q, id, s) } }
+                    g.forEach { id -> Styled(st, "c:$id", q, Modifier.tap(t, id)) { s -> WatchExtraItem(q, id, s) } }
                 }
             }
         }
@@ -252,14 +285,14 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (st.density == 0) 2.dp else 4.dp)) {
                 Row(Modifier.tap(t, "name"), verticalAlignment = Alignment.CenterVertically) {
-                    Styled(st, "l:name", q.change, Modifier.weight(1f, fill = false)) { s -> WatchName(q, s, 15, showCode = !st.listShows("market")) }
+                    Styled(st, "l:name", q, Modifier.weight(1f, fill = false)) { s -> WatchName(q, s, 15, showCode = !st.listShows("market")) }
                     if (st.tagPos == 1) { HGap(6.dp); EntryTagFor(q) }
                 }
                 // 第二行：市場標籤、報價時間
                 val entryHere = st.listShows("entry") && st.tagPos == 0 && AppState.showCardEntry
                 if (st.listShows("market") || st.listShows("source")) Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (st.listShows("market")) { Styled(st, "l:market", q.change, Modifier.tap(t, "market")) { s -> WatchExtraItem(q, "market", s, list = true) }; HGap(8.dp) }
-                    if (st.listShows("source")) Styled(st, "l:source", q.change, Modifier.tap(t, "source")) { s -> WatchExtraItem(q, "source", s, list = true) }
+                    if (st.listShows("market")) { Styled(st, "l:market", q, Modifier.tap(t, "market")) { s -> WatchExtraItem(q, "market", s, list = true) }; HGap(8.dp) }
+                    if (st.listShows("source")) Styled(st, "l:source", q, Modifier.tap(t, "source")) { s -> WatchExtraItem(q, "source", s, list = true) }
                 }
                 // 第三行：進場建議標籤（K 棒訊號），在 TW／US 標籤的下一行
                 if (entryHere) Row(Modifier.tap(t, "entry").padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -290,9 +323,9 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
             Column(Modifier.widthIn(min = 88.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(Modifier.tap(t, "price"), verticalAlignment = Alignment.CenterVertically) {
                     if (st.tagPos == 2) { EntryTagFor(q); HGap(6.dp) }
-                    Styled(st, "l:price", q.change) { s -> NumText(if (q.price > 0) Fmt.price(q.price) else "—", s.sp(16), Trend.price(q.change), FontWeight.Bold) }
+                    Styled(st, "l:price", q) { s -> NumText(if (q.price > 0) Fmt.price(q.price) else "—", s.sp(16), Trend.price(q.change), FontWeight.Bold) }
                 }
-                Styled(st, "l:change", q.change, Modifier.tap(t, "change")) { s -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Styled(st, "l:change", q, Modifier.tap(t, "change")) { s -> Row(verticalAlignment = Alignment.CenterVertically) {
                     if (s.changeMode != 1) NumText(Fmt.signed(q.change, 2), s.sp(11), c)
                     if (s.changeMode == 0) HGap(6.dp)
                     if (s.changeMode != 2) { if (s.changeStyle == 1) ChangePill(q.changePct) else NumText(Fmt.pct(q.changePct), s.sp(11), c) }
@@ -313,7 +346,7 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                         val name = if (id == "ext") AppState.extended[q.symbol]?.label ?: "盤前盤後" else LINE_NAMES[id] ?: id
                         if (name.isNotEmpty()) Text(name, Modifier.width(52.dp), color = C.Muted, fontSize = st.sp(12), maxLines = 1)
                         // 數據太長時自動換行，不會被擠出畫面
-                        Styled(st, "l:$id", q.change, Modifier.weight(1f)) {
+                        Styled(st, "l:$id", q, Modifier.weight(1f)) {
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { line() }
                         }
                     }
@@ -585,6 +618,16 @@ private fun ItemStyleControls(key: String, st: WatchStyle, set: ((WatchStyle) ->
                 if (cur.color == 0L) Text("🎨", fontSize = 12.sp)
             }
         }
+    }
+    Text("動畫效果", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+    Chips(listOf(0 to "無", 1 to "淡入", 2 to "脈衝", 3 to "變動閃爍", 4 to "跳動"), cur.fx) { v -> upd { it.copy(fx = v) } }
+    if (cur.fx > 0) {
+        Text("觸發條件", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        Chips(listOf(0 to "常駐", 1 to "數值變動", 2 to "上漲時", 3 to "下跌時"), cur.trig) { v -> upd { it.copy(trig = v) } }
+        Text("速度", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        Chips(listOf(0 to "慢", 1 to "正常", 2 to "快"), cur.speed) { v -> upd { it.copy(speed = v) } }
+        Text("強度", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        Chips(listOf(0 to "弱", 1 to "中", 2 to "強"), cur.power) { v -> upd { it.copy(power = v) } }
     }
     if (!cur.isDefault) Text("此欄位恢復預設", color = C.Muted, fontSize = 12.sp,
         modifier = Modifier.clickable { set { s -> s.copy(itemStyles = s.itemStyles - key) } }.padding(top = 6.dp))

@@ -130,11 +130,22 @@ data class WatchStyle(
  * size：字級百分比；weight：字重 100–900（0 = 預設）；
  * color：自訂文字色 ARGB（0 = 預設）；trend：改用漲跌色。
  */
-data class ItemStyle(val size: Int = 100, val weight: Int = 0, val color: Long = 0L, val trend: Boolean = false) {
-    val isDefault get() = size == 100 && weight == 0 && color == 0L && !trend
+data class ItemStyle(
+    val size: Int = 100, val weight: Int = 0, val color: Long = 0L, val trend: Boolean = false,
+    /** 動畫效果：0 無、1 淡入、2 脈衝、3 變動閃爍、4 跳動 */
+    val fx: Int = 0,
+    /** 觸發：0 常駐、1 數值變動、2 上漲時、3 下跌時 */
+    val trig: Int = 1,
+    /** 速度：0 慢、1 正常、2 快；強度：0 弱、1 中、2 強 */
+    val speed: Int = 1,
+    val power: Int = 1,
+) {
+    val isDefault get() = size == 100 && weight == 0 && color == 0L && !trend && fx == 0
     fun toJson(): JSONObject = JSONObject().put("s", size).put("w", weight).put("c", color).put("t", trend)
+        .put("fx", fx).put("tg", trig).put("sp", speed).put("pw", power)
     companion object {
         fun fromJson(o: JSONObject?): ItemStyle = if (o == null) ItemStyle() else
-            ItemStyle(o.optInt("s", 100).coerceIn(50, 250), o.optInt("w", 0), o.optLong("c", 0L), o.optBoolean("t", false))
+            ItemStyle(o.optInt("s", 100).coerceIn(50, 250), o.optInt("w", 0), o.optLong("c", 0L), o.optBoolean("t", false),
+                o.optInt("fx", 0).coerceIn(0, 4), o.optInt("tg", 1).coerceIn(0, 3), o.optInt("sp", 1).coerceIn(0, 2), o.optInt("pw", 1).coerceIn(0, 2))
     }
 }
