@@ -663,7 +663,35 @@ object AppState {
     /** 備份還原：把備份檔中的金鑰寫入加密儲存 */
     fun restoreSecret(context: Context, name: String, value: String) = SecretStore.put(context.applicationContext, name, value)
 
+    /**
+     * 存檔合併：短時間內多次變更（逐筆行情、連續輸入）只在 400ms 後寫一次，
+     * 並固定在主執行緒序列化，避免背景執行緒讀到改到一半的狀態。
+     * App 進背景（onStop）與背景工作結束時呼叫 flush() 立即寫入，不會遺失。
+     */
+    private val saveHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+    @Volatile private var savePending = false
+    private val saveTask = Runnable { if (savePending) { savePending = false; writeNow() } }
+
     private fun save() {
+        if (prefs == null) return
+        savePending = true
+        saveHandler.removeCallbacks(saveTask)
+        saveHandler.postDelayed(saveTask, 400)
+    }
+
+    /** 立即寫入尚未存檔的變更（主執行緒以外會切到主執行緒並等待完成） */
+    fun flush() {
+        if (!savePending) return
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            saveHandler.removeCallbacks(saveTask); saveTask.run()
+        } else {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            saveHandler.post { saveHandler.removeCallbacks(saveTask); saveTask.run(); latch.countDown() }
+            runCatching { latch.await(2, java.util.concurrent.TimeUnit.SECONDS) }
+        }
+    }
+
+    private fun writeNow() {
         val p = prefs ?: return
         p.edit()
             .putString("colorMode", colorMode.name)
@@ -1271,7 +1299,7 @@ object AppState {
             maxOf(a?.usMinFee ?: 0.0, Math.round(amount * rate * 100) / 100.0)
         } else {
             val discount = a?.discount ?: 1.0
-            maxOf(a?.minFee ?: 20.0, Math.floor(amount * 0.001425 * discount))
+            com.claudeetf.app.util.TwRules.fee(amount, discount, a?.minFee ?: 20.0)
         }
     }
 
@@ -1288,6 +1316,9 @@ object AppState {
 
     /** 從備份還原後重新讀取全部資料 */
     fun reload(context: Context) {
+        // 還原備份：丟棄舊狀態尚未寫入的變更，避免蓋掉剛還原的資料
+        savePending = false
+        saveHandler.removeCallbacks(saveTask)
         prefs = null
         init(context)
     }

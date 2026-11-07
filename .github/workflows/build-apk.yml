@@ -29,10 +29,14 @@ jobs:
       - name: Version
         run: echo "PATCH=$(( ${{ github.run_number }} - 98 ))" >> "$GITHUB_ENV"
 
-      - name: Build release APK
+      # 先跑單元測試（金額捨去、升降單位、K 線分析），失敗就不發布
+      - name: Unit tests
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace
+          ./gradlew testReleaseUnitTest --stacktrace
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Rename APK
         id: apk

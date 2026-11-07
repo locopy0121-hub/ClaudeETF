@@ -189,16 +189,7 @@ private fun DcaEditor(plan: DcaPlan?, onDone: () -> Unit) {
 /** 目標比例存放鍵：全部用代號本身（相容舊資料），台股／美股分開各自 100% */
 private fun targetKey(scope: Int, symbol: String) = when (scope) { 1 -> "tw|$symbol"; 2 -> "us|$symbol"; else -> symbol }
 
-/** 四捨五入到 0.1% 並用最大餘數法補差，確保合計剛好 100.0%（避免 99.8%、100.1% 這種誤差） */
-private fun normalizeTenths(weights: List<Double>): List<Double> {
-    val sum = weights.sum()
-    if (sum <= 0) return weights.map { 0.0 }
-    val raw = weights.map { it / sum * 1000 }
-    val base = raw.map { Math.floor(it).toInt() }.toMutableList()
-    var left = 1000 - base.sum()
-    raw.indices.sortedByDescending { raw[it] - base[it] }.forEach { i -> if (left > 0) { base[i]++; left-- } }
-    return base.map { it / 10.0 }
-}
+private fun normalizeTenths(weights: List<Double>) = com.claudeetf.app.util.TwRules.normalizeTenths(weights)
 
 @Composable
 fun RebalanceScreen(nav: NavController) {

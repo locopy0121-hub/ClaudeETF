@@ -445,7 +445,10 @@ object AlertEngine {
 
 /** 背景每 15 分鐘：更新有設提醒的報價後檢查 */
 class AlertWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
-    override suspend fun doWork(): Result {
+    // 背景工作結束一定把變更寫入（存檔有 400ms 合併延遲）
+    override suspend fun doWork(): Result = try { work() } finally { AppState.flush() }
+
+    private suspend fun work(): Result {
         AppState.init(applicationContext)
         runCatching { AlertEngine.checkAppUpdate(applicationContext) }
         // 股息入帳提醒：背景也更新一次配息現金流

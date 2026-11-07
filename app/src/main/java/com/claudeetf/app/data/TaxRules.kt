@@ -111,7 +111,7 @@ object TaxRules {
 
     /** 證交稅金額：元以下不計（無條件捨去） */
     fun sellTax(symbol: String, amount: Double, date: String, dayTrade: Boolean): Double =
-        if (amount <= 0) 0.0 else Math.floor(amount * sellTaxRate(symbol, date, dayTrade).first + 1e-9)
+        com.claudeetf.app.util.TwRules.tax(amount, sellTaxRate(symbol, date, dayTrade).first)
 
     /** 台股賣出紀錄中，證交稅與規則不符者：(交易, 應為稅額) */
     fun taxMismatches(): List<Pair<Trade, Double>> = AppState.trades.filter { t ->

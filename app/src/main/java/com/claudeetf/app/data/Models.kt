@@ -236,8 +236,7 @@ data class UpcomingDividend(
  * 美股以美元計、保留小數。加 1e-9 是為了避免浮點誤差把整數扣成少 1 元（例如 1375.9999999）。
  */
 fun tradeGross(symbol: String, shares: Double, price: Double): Double {
-    val g = shares * price
-    return if (AppState.marketOf(symbol) == Market.TW) Math.floor(g + 1e-9) else g
+    return if (AppState.marketOf(symbol) == Market.TW) com.claudeetf.app.util.TwRules.gross(shares, price) else shares * price
 }
 
 /** 這筆交易的成交金額（台股元以下捨去） */

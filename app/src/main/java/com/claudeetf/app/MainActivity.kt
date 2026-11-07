@@ -109,6 +109,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         AppState.backgroundAt = System.currentTimeMillis()
+        AppState.flush()
         com.claudeetf.app.data.remote.FugleStream.stop()
     }
 

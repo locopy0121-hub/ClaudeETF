@@ -14,6 +14,7 @@ object Backup {
     private val secretKeys = setOf("fugleKey", "finnhubKey")
 
     fun export(context: Context, includeKeys: Boolean = false): String {
+        AppState.flush() // 存檔有合併延遲，匯出前先寫入最新變更
         AppState.persist()
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val data = JSONObject()

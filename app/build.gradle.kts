@@ -52,9 +52,12 @@ android {
     buildFeatures {
         compose = true
     }
+    // 單元測試遇到 android.* 呼叫回傳預設值，不丟例外
+    testOptions { unitTests.isReturnDefaultValues = true }
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
 
