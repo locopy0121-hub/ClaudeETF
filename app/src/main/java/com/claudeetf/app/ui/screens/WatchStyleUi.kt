@@ -278,8 +278,8 @@ private fun infoLine(q: Quote, id: String, st: WatchStyle): (@Composable RowScop
         "inst" -> if (!tw) null else AppState.institutional[q.symbol]?.let { i -> line {
             val lots = i.total / 1000.0
             NumText(Fmt.signed(lots) + " 張", sz, Trend.fg(lots), FontWeight.Bold)
-            Text("外資 " + Fmt.signed(i.foreign / 1000.0), color = Trend.fg(i.foreign), fontSize = sz, maxLines = 1)
-            Text("投信 " + Fmt.signed(i.trust / 1000.0), color = Trend.fg(i.trust), fontSize = sz, maxLines = 1)
+            Text("外資 " + Fmt.signed(i.foreign / 1000.0), color = Trend.fg(i.foreign.toDouble()), fontSize = sz, maxLines = 1)
+            Text("投信 " + Fmt.signed(i.trust / 1000.0), color = Trend.fg(i.trust.toDouble()), fontSize = sz, maxLines = 1)
         } }
         "dt" -> if (!tw) null else AppState.twDaily[q.symbol]?.dayTradePct?.let { pct -> line {
             NumText(Fmt.num(pct, 1) + "%", sz, C.Text, FontWeight.Bold)
