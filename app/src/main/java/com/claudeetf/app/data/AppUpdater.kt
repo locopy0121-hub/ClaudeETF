@@ -25,7 +25,9 @@ import java.util.concurrent.TimeUnit
  * - 版本自 v1.0.1 起；0.2.x 開發版也能更新到 1.0.x。
  */
 object AppUpdater {
-    private const val API = "https://api.github.com/repos/locopy0121-hub/ClaudeETF/releases?per_page=15"
+    private const val REPO = "locopy0121-hub/ClaudeETF"
+    private const val API = "https://api.github.com/repos/$REPO/releases?per_page=10"
+    private const val API_LATEST = "https://api.github.com/repos/$REPO/releases/latest"
     private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
 
     data class Release(val tag: String, val patch: Int, val name: String, val notes: String, val apkUrl: String, val size: Long, val publishedAt: String)
@@ -101,36 +103,15 @@ object AppUpdater {
         checking = true
         message = null
         try {
-            val body = withContext(Dispatchers.IO) {
-                client.newCall(
-                    Request.Builder().url(API)
-                        .header("Accept", "application/vnd.github+json")
-                        .header("User-Agent", "ClaudeETF-Android").build(),
-                ).execute().use { r ->
-                    if (!r.isSuccessful) throw IllegalStateException("GitHub 回應 ${r.code}" + if (r.code == 403) "（檢查太頻繁，請稍後再試）" else "")
-                    r.body?.string() ?: ""
-                }
-            }
-            val arr = JSONArray(body)
-            val list = ArrayList<Release>()
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                if (o.optBoolean("draft")) continue
-                val tag = o.optString("tag_name")
-                val patch = patchOf(tag).takeIf { it >= 0 } ?: continue
-                val assets = o.optJSONArray("assets") ?: continue
-                var url = ""; var size = 0L
-                for (k in 0 until assets.length()) {
-                    val a = assets.optJSONObject(k) ?: continue
-                    if (a.optString("name").endsWith(".apk")) { url = a.optString("browser_download_url"); size = a.optLong("size"); break }
-                }
-                if (url.isBlank()) continue
-                list += Release(tag, patch, o.optString("name"), o.optString("body"), url, size, o.optString("published_at"))
-            }
+            // 1) 版本清單 API（失敗重試一次）→ 2) 最新版 API → 3) GitHub 網頁轉址（不走 API、不受頻率限制）
+            val list = withContext(Dispatchers.IO) { fetchReleases() }
             // 以發布時間最新的一版為準
             val newest = list.maxByOrNull { it.publishedAt }
             latest = newest
-            releases = list.sortedByDescending { it.publishedAt }
+            // 只拿到最新一版時保留先前的版本紀錄
+            releases = if (list.size > 1 || releases.isEmpty()) list.sortedByDescending { it.publishedAt }
+                else (list + releases).distinctBy { it.tag }.sortedByDescending { it.publishedAt }
+            saveHistory(prefs)
             prefs.edit().putLong("lastCheck", now).apply()
             lastCheckAt = now
             newest?.let { save(prefs, it) }
@@ -141,9 +122,88 @@ object AppUpdater {
             }
             if (popup) prompt = hasUpdate(context) && prefs.getString("skipped", "") != newest?.tag
         } catch (e: Exception) {
-            message = "檢查失敗：" + (e.message ?: e.javaClass.simpleName)
+            message = "檢查失敗：" + (e.message ?: e.javaClass.simpleName) + "，稍後會自動重試"
+            restore(prefs)
         } finally {
             checking = false
+        }
+    }
+
+    private fun get(url: String): okhttp3.Response = client.newCall(
+        Request.Builder().url(url).header("Accept", "application/vnd.github+json").header("User-Agent", "ClaudeETF-Android").build(),
+    ).execute()
+
+    private fun parse(o: org.json.JSONObject): Release? {
+        if (o.optBoolean("draft")) return null
+        val tag = o.optString("tag_name")
+        val patch = patchOf(tag).takeIf { it >= 0 } ?: return null
+        val assets = o.optJSONArray("assets") ?: return null
+        for (k in 0 until assets.length()) {
+            val a = assets.optJSONObject(k) ?: continue
+            if (a.optString("name").endsWith(".apk"))
+                return Release(tag, patch, o.optString("name"), o.optString("body"), a.optString("browser_download_url"), a.optLong("size"), o.optString("published_at"))
+        }
+        return null
+    }
+
+    /** 依序嘗試三種來源；GitHub 偶爾回 502／504 時不會直接失敗 */
+    private fun fetchReleases(): List<Release> {
+        var lastErr: String? = null
+        // 1) 版本清單（含更新說明），重試一次
+        repeat(2) { attempt ->
+            runCatching {
+                get(API).use { r ->
+                    if (r.isSuccessful) {
+                        val arr = JSONArray(r.body?.string() ?: "[]")
+                        val l = (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.let(::parse) }
+                        if (l.isNotEmpty()) return l
+                    } else { lastErr = "GitHub 回應 ${r.code}" + if (r.code == 403) "（檢查太頻繁）" else "" }
+                    Unit
+                }
+            }.onFailure { lastErr = it.message }
+            if (attempt == 0) Thread.sleep(1_500)
+        }
+        // 2) 最新正式版
+        runCatching {
+            get(API_LATEST).use { r ->
+                if (r.isSuccessful) { parse(org.json.JSONObject(r.body?.string() ?: "{}"))?.let { return listOf(it) } }
+                else { lastErr = "GitHub 回應 ${r.code}" }
+                Unit
+            }
+        }.onFailure { lastErr = it.message }
+        // 3) 網頁轉址：github.com/…/releases/latest → …/releases/tag/v1.0.N，下載網址依命名規則組成
+        runCatching {
+            val noRedirect = client.newBuilder().followRedirects(false).build()
+            noRedirect.newCall(Request.Builder().url("https://github.com/$REPO/releases/latest").header("User-Agent", "ClaudeETF-Android").build())
+                .execute().use { r ->
+                    val loc = r.header("Location") ?: ""
+                    val tag = loc.substringAfterLast("/tag/", "").substringBefore('?')
+                    if (tag.isNotBlank() && patchOf(tag) >= 0) {
+                        val url = "https://github.com/$REPO/releases/download/$tag/ClaudeETF-$tag.apk"
+                        return listOf(Release(tag, patchOf(tag), "ClaudeETF $tag", "（GitHub 暫時無法取得更新說明）", url, 0L,
+                            java.time.Instant.now().toString()))
+                    }
+                }
+        }.onFailure { lastErr = it.message }
+        throw IllegalStateException(lastErr ?: "無法連線 GitHub")
+    }
+
+    /** 版本紀錄存檔：檢查失敗時仍能顯示 */
+    private fun saveHistory(p: android.content.SharedPreferences) {
+        val arr = JSONArray()
+        releases.take(15).forEach { r ->
+            arr.put(org.json.JSONObject().put("tag", r.tag).put("patch", r.patch).put("name", r.name).put("notes", r.notes)
+                .put("url", r.apkUrl).put("size", r.size).put("pub", r.publishedAt))
+        }
+        p.edit().putString("history", arr.toString()).apply()
+    }
+
+    private fun loadHistory(p: android.content.SharedPreferences) {
+        if (releases.isNotEmpty()) return
+        val arr = runCatching { JSONArray(p.getString("history", "[]")) }.getOrNull() ?: return
+        releases = (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { o -> Release(o.optString("tag"), o.optInt("patch"), o.optString("name"), o.optString("notes"),
+                o.optString("url"), o.optLong("size"), o.optString("pub")) }
         }
     }
 
@@ -153,6 +213,7 @@ object AppUpdater {
     }
 
     private fun restore(p: android.content.SharedPreferences) {
+        loadHistory(p)
         if (latest != null) return
         val tag = p.getString("tag", null) ?: return
         latest = Release(tag, p.getInt("patch", -1), p.getString("name", "") ?: "", p.getString("notes", "") ?: "",
