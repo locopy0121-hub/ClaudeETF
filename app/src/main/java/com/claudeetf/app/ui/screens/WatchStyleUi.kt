@@ -178,7 +178,9 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                 WatchName(q, st, 15, Modifier.weight(1f, fill = false), showCode = !st.listShows("market"))
                 if (st.tagPos == 1) { HGap(6.dp); EntryTagFor(q) }
             }
-            val ids = st.listItems.filter { st.listShows(it) && !(it == "entry" && st.tagPos != 0) }
+            // 中間欄已顯示三關時，左側不重複
+            val keysInCell = cells && (AppState.watchColumn == "keys" || AppState.watchColumn2 == "keys")
+            val ids = st.listItems.filter { st.listShows(it) && !(it == "entry" && st.tagPos != 0) && !(it == "keys" && keysInCell) }
             groups(ids, setOf("market", "source", "volume", "amp", "limit")).forEach { g ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     g.forEach { id ->

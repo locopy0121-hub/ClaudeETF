@@ -402,7 +402,8 @@ fun amplitude(q: Quote): Double? {
 /** 自選清單中間欄，依設定顯示不同資訊 */
 @Composable
 fun WatchCell(q: Quote, col: String) {
-    val m = Modifier.size(width = 72.dp, height = 30.dp)
+    // 高度依內容自動撐開（系統字體放大時不會截掉第二行），寬度 76～96dp
+    val m = Modifier.widthIn(min = 76.dp, max = 96.dp).heightIn(min = 30.dp)
     when (col) {
         "volume" -> CellText(AppState.dayStats[q.symbol]?.volume?.let { volumeText(it, q.market) } ?: "—", "量", m)
         "amp" -> CellText(amplitude(q)?.let { Fmt.num(it, 2) + "%" } ?: "—", "振幅", m)
@@ -472,8 +473,10 @@ fun WatchCell(q: Quote, col: String) {
             else {
                 val (pos, color) = KeyLevelsUi.position(q.price, k)
                 Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
-                    Text(pos, color = color, fontSize = 11.sp, maxLines = 1, fontWeight = FontWeight.Bold)
-                    Text("上" + Fmt.price(k.upper) + " 下" + Fmt.price(k.lower), color = C.Muted, fontSize = 9.sp, maxLines = 1)
+                    Text(pos, color = color, fontSize = 11.sp, maxLines = 1, fontWeight = FontWeight.Bold, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    // 上關、下關分兩行，價格較長也不會被截斷
+                    NumText("上 " + Fmt.price(k.upper), 9.sp, KeyLevelsUi.upper)
+                    NumText("下 " + Fmt.price(k.lower), 9.sp, KeyLevelsUi.lower)
                 }
             }
         }
@@ -489,7 +492,9 @@ fun WatchCell(q: Quote, col: String) {
                 }
             }
         }
-        else -> Sparkline(q.spark, Trend.fg(q.change), Modifier.size(width = 60.dp, height = 24.dp))
+        else -> Box(Modifier.size(width = 64.dp, height = 28.dp), contentAlignment = Alignment.Center) {
+            Sparkline(q.spark, Trend.fg(q.change), Modifier.size(width = 60.dp, height = 24.dp))
+        }
     }
 }
 
@@ -497,7 +502,7 @@ fun WatchCell(q: Quote, col: String) {
 private fun CellText(value: String, caption: String, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
         NumText(value, 12.sp)
-        Text(caption, color = C.Muted, fontSize = 10.sp, maxLines = 1)
+        Text(caption, color = C.Muted, fontSize = 10.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
