@@ -224,24 +224,9 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { PriceHeader(q, session) }
-            item { LiveSignalStrip(q) { tabIdx = 0; ovSub = 2 } }
-            item { Segmented(ranges.map { it.label }, range, { range = it }) }
-            item {
-                ChartControls(
-                    chartType, { chartType = it },
-                    mas, { m -> mas = if (m in mas) mas - m else mas + m },
-                    sub, { sub = it },
-                    ranges[range].intraday,
-                )
-            }
-            if (ranges[range].fetch == "1d") item { KeyLevelsBar(q, AppState.keyPrices[q.symbol]) }
-            item {
-                ChartBlock(
-                    liveMerge(history, range, q), range, q, chartType, mas, sub,
-                    levels = if (ranges[range].fetch == "1d" && AppState.showKeyLevels) AppState.keyPrices[q.symbol]?.let { KeyLevelsUi.lines(it) } ?: emptyList() else emptyList(),
-                    onKline = { tabIdx = 0; ovSub = 2 },
-                )
-            }
+            item { LiveSignalStrip(q) { tabIdx = 0; ovSub = 3 } }
+            // 關閉即時訊號時，K 棒摘要仍放在導覽列上方
+            if (!AppState.showLiveSignal) item { KlineSummaryStrip(q) { tabIdx = 0; ovSub = 3 } }
             item { Segmented(tabs.map { it.label }, tabIdx, { tabIdx = it }) }
             when (tab) {
                 Tab.OVERVIEW -> {
@@ -261,11 +246,31 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                                 item { VolumeProfileCard(q, h, start, opt.label) }
                             }
                         }
-                        1 -> { item { AnalysisCard(q) }; peersSection(nav, peers, peerExtras) }
-                        2 -> item { KlineAnalysisCard(q) }
-                        3 -> item { PriceBandCard(q) }
-                        4 -> { item { YearlyReturnsCard(q) }; item { DrawdownCard(q) }; item { NextDividendCard(q, compact = true) } }
-                        5 -> overviewMine(q)
+                        1 -> {
+                            // 圖表：區間、走勢／K 線、均線、副圖、三關價與漲跌停、走勢圖
+                            item { Segmented(ranges.map { it.label }, range, { range = it }) }
+                            item {
+                                ChartControls(
+                                    chartType, { chartType = it },
+                                    mas, { m -> mas = if (m in mas) mas - m else mas + m },
+                                    sub, { sub = it },
+                                    ranges[range].intraday,
+                                )
+                            }
+                            if (ranges[range].fetch == "1d") item { KeyLevelsBar(q, AppState.keyPrices[q.symbol]) }
+                            item {
+                                ChartBlock(
+                                    liveMerge(history, range, q), range, q, chartType, mas, sub,
+                                    levels = if (ranges[range].fetch == "1d" && AppState.showKeyLevels) AppState.keyPrices[q.symbol]?.let { KeyLevelsUi.lines(it) } ?: emptyList() else emptyList(),
+                                    onKline = { tabIdx = 0; ovSub = 3 },
+                                )
+                            }
+                        }
+                        2 -> { item { AnalysisCard(q) }; peersSection(nav, peers, peerExtras) }
+                        3 -> item { KlineAnalysisCard(q) }
+                        4 -> item { PriceBandCard(q) }
+                        5 -> { item { YearlyReturnsCard(q) }; item { DrawdownCard(q) }; item { NextDividendCard(q, compact = true) } }
+                        6 -> overviewMine(q)
                         else -> overviewBasic(q, fund)
                     }
                 }
@@ -587,7 +592,6 @@ private fun ChartBlock(
     levels: List<KeyLevel> = emptyList(),
     onKline: () -> Unit = {},
 ) {
-    if (!AppState.showLiveSignal) KlineSummaryStrip(q, onKline)
     when (history) {
         is Load.Loading -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("載入走勢中…") }
         is Load.Err -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("走勢載入失敗：" + history.message) }
@@ -724,7 +728,7 @@ private fun LazyListScope.infoList(items: List<InfoItem>) {
 }
 
 /** 概覽子分頁 */
-private val OVERVIEW_SUBS = listOf("行情", "分析", "K線", "光譜", "報酬", "我的", "基本")
+private val OVERVIEW_SUBS = listOf("行情", "圖表", "分析", "K線", "光譜", "報酬", "我的", "基本")
 
 @Composable
 private fun OverviewSubTabs(sel: Int, onSelect: (Int) -> Unit) {
