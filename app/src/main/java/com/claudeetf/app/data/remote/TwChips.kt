@@ -138,11 +138,11 @@ object MoneyDjHoldings {
     private fun clean(s: String) = tagRe.replace(s, "").replace("&nbsp;", " ").replace("&amp;", "&").trim()
 
     fun fetch(code: String): YahooExtra.EtfHoldings? {
-        val html = Http.get(
-            "https://www.moneydj.com/ETF/X/Basic/Basic0007.xdjhtm?etfid=${code.uppercase()}.TW",
-            mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 14) Mobile"),
-            timeoutMs = 20_000,
-        )
+        // 先抓「全部持股」頁（Basic0007B），失敗再用前幾大持股頁
+        val ua = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 14) Mobile")
+        val html = runCatching { Http.get("https://www.moneydj.com/ETF/X/Basic/Basic0007B.xdjhtm?etfid=${code.uppercase()}.TW", ua, timeoutMs = 20_000) }
+            .getOrNull()?.takeIf { it.contains("投資比例") }
+            ?: Http.get("https://www.moneydj.com/ETF/X/Basic/Basic0007.xdjhtm?etfid=${code.uppercase()}.TW", ua, timeoutMs = 20_000)
         val list = ArrayList<YahooExtra.Holding>()
         for (m in rowRe.findAll(html)) {
             val cells = cellRe.findAll(m.groupValues[1]).map { clean(it.groupValues[1]) }.toList()
@@ -153,7 +153,9 @@ object MoneyDjHoldings {
             if (name.contains("名稱") || name.contains("合計")) continue
             // 「台積電(2330.TW)」→ 代號 2330
             val sym = Regex("\\(([0-9A-Z.]+)\\)").find(name)?.groupValues?.get(1)?.substringBefore(".") ?: ""
-            list += YahooExtra.Holding(sym, name.substringBefore("(").trim(), pct)
+            // 第三欄：持有股數（表頭「持有股數」）
+            val shares = cells.getOrNull(2)?.replace(",", "")?.trim()?.toDoubleOrNull()?.takeIf { it > 0 }
+            list += YahooExtra.Holding(sym, name.substringBefore("(").trim(), pct, shares)
         }
         if (list.isEmpty()) return null
         val asOf = dateRe.find(html)?.groupValues?.get(1)

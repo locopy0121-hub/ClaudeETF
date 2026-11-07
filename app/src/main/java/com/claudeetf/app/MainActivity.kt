@@ -130,6 +130,7 @@ class MainActivity : ComponentActivity() {
         runCatching { com.claudeetf.app.data.AppUpdater.detectUpdated(applicationContext) }
         com.claudeetf.app.data.remote.TdccOpenData.cacheDir = filesDir
         com.claudeetf.app.data.StockDirectory.cacheDir = filesDir
+        com.claudeetf.app.data.EtfComposition.dir = filesDir
         watchNetwork()
         AppState.systemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES

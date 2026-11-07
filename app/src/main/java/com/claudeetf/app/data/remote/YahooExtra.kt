@@ -271,7 +271,8 @@ object YahooExtra {
 
     // ---------------- ETF 持股、機構持股 ----------------
 
-    data class Holding(val symbol: String, val name: String, val weightPct: Double)
+    /** shares：持有股數（MoneyDJ 有提供時） */
+    data class Holding(val symbol: String, val name: String, val weightPct: Double, val shares: Double? = null)
     data class EtfHoldings(val holdings: List<Holding>, val sectors: List<Pair<String, Double>>, val asOf: String?)
 
     private val sectorNames = mapOf(

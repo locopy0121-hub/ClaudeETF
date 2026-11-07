@@ -139,7 +139,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     var news by remember { mutableStateOf<Load<List<YahooExtra.News>>>(Load.Loading) }
     var trading by remember { mutableStateOf<Load<StockInfoRepo.Trading>>(Load.Loading) }
     var chips by remember { mutableStateOf<Load<StockInfoRepo.Chips>>(Load.Loading) }
-    var holdings by remember { mutableStateOf<Load<YahooExtra.EtfHoldings>>(Load.Loading) }
+    var holdings by remember { mutableStateOf<Load<com.claudeetf.app.data.EtfComposition.Result>>(Load.Loading) }
     var peers by remember { mutableStateOf<Load<List<StockInfoRepo.Peer>>>(Load.Loading) }
     var peerExtras by remember { mutableStateOf<Map<String, PeerExtra>>(emptyMap()) }
     LaunchedEffect(q.symbol) {
@@ -177,7 +177,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             }
             Tab.HOLD -> if (holdings !is Load.Ok) {
                 holdings = Load.Loading
-                holdings = runCatching { StockInfoRepo.holdings(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+                holdings = runCatching { com.claudeetf.app.data.EtfComposition.load(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
             }
             Tab.DIV -> if (divs !is Load.Ok) {
                 divs = Load.Loading
@@ -1248,56 +1248,207 @@ private fun ChipBar(name: String, shares: Long, maxAbs: Long) {
 
 // ---------------- ETF 成分股 ----------------
 
-private fun LazyListScope.holdingsTab(q: Quote, holdings: Load<YahooExtra.EtfHoldings>) {
+private fun LazyListScope.holdingsTab(q: Quote, holdings: Load<com.claudeetf.app.data.EtfComposition.Result>) {
     when (holdings) {
         is Load.Loading -> loading("載入成分股中…")
         is Load.Err -> showError(holdings.message)
-        is Load.Ok -> {
-            val h = holdings.value
-            val top10 = h.holdings.take(10).sumOf { it.weightPct }
-            item {
-                Card(padding = 14.dp) {
-                    KeyValue("成分股數（已揭露）", h.holdings.size.toString())
-                    KeyValue("前十大合計", Fmt.num(top10, 2) + "%")
-                    h.asOf?.let { KeyValue("資料日期", it) }
-                }
-            }
-            if (h.holdings.isNotEmpty()) {
-                item { SectionTitle("持股明細", "權重") }
-                val maxW = h.holdings.maxOf { it.weightPct }.takeIf { it > 0 } ?: 1.0
-                items(h.holdings) { s ->
-                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(s.name, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (s.symbol.isNotBlank()) { NumText(s.symbol, 11.sp, C.Muted); HGap(8.dp) }
-                            NumText(Fmt.num(s.weightPct, 2) + "%", 13.sp)
-                        }
-                        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.Line)) {
-                            Box(Modifier.fillMaxWidth((s.weightPct / maxW).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(C.Primary))
-                        }
-                    }
-                }
-            }
-            if (h.sectors.isNotEmpty()) {
-                item { SectionTitle("產業權重") }
-                items(h.sectors) { (name, pct) ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(name, Modifier.width(96.dp), color = C.Text, fontSize = 12.sp)
-                        Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Line)) {
-                            Box(Modifier.fillMaxWidth((pct / 100).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(C.Us))
-                        }
-                        NumText(Fmt.num(pct, 1) + "%", 12.sp, modifier = Modifier.width(52.dp).wrapContentWidth(Alignment.End))
-                    }
-                }
-            }
-            item {
-                Label(
-                    "資料來源：" + (if (q.market == Market.TW) "MoneyDJ 持股明細、" else "") + "Yahoo Finance。" +
-                        (if (q.market == Market.TW) "主動式 ETF 持股每日可能變動，請以投信公告為準。" else ""),
-                    Modifier.padding(top = 6.dp),
-                )
+        is Load.Ok -> EtfCompositionSection(this, q, holdings.value)
+    }
+}
+
+/** 成分頁的子分頁與排序（跨重組保留） */
+private val compSub = mutableStateMapOf<String, Int>()
+private val compSort = mutableStateMapOf<String, Int>()
+
+private val donutColors = listOf(
+    androidx.compose.ui.graphics.Color(0xFFF5A33A), androidx.compose.ui.graphics.Color(0xFF29B6F6),
+    androidx.compose.ui.graphics.Color(0xFF3F7BD9), androidx.compose.ui.graphics.Color(0xFFC77DEB),
+    androidx.compose.ui.graphics.Color(0xFF9E9E9E),
+)
+
+/** 前 4 大＋其他 的甜甜圈圖與圖例 */
+@Composable
+private fun DonutWithLegend(parts: List<Pair<String, Double>>) {
+    val top = parts.take(4)
+    val rest = (100 - top.sumOf { it.second }).coerceAtLeast(0.0)
+    val slices = top + if (rest > 0.05) listOf("其他" to rest) else emptyList()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.foundation.Canvas(Modifier.size(120.dp)) {
+            val stroke = size.minDimension * 0.22f
+            var start = -90f
+            val total = slices.sumOf { it.second }.takeIf { it > 0 } ?: 1.0
+            slices.forEachIndexed { i, (_, v) ->
+                val sweep = (v / total * 360).toFloat()
+                drawArc(donutColors[i.coerceAtMost(4)], start, sweep, useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(stroke / 2, stroke / 2),
+                    size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+                start += sweep
             }
         }
+        HGap(16.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            slices.forEachIndexed { i, (n, v) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(donutColors[i.coerceAtMost(4)]))
+                    HGap(6.dp)
+                    Text(n, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    NumText(Fmt.num(v, 2) + "%", 13.sp, C.Text, FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudeetf.app.data.EtfComposition.Result) = with(scope) {
+    val sub = compSub[q.symbol] ?: 0
+    item {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Segmented(listOf("成分股", "產業分佈", "操作日報"), sub, { compSub[q.symbol] = it }, Modifier.weight(1f))
+        }
+    }
+    item {
+        Row {
+            Label("共 ${r.rows.count { it.symbol.isNotBlank() }} 檔個股" + (r.rows.count { it.symbol.isBlank() }.takeIf { it > 0 }?.let { "＋$it 項其他部位" } ?: ""), Modifier.weight(1f))
+            r.asOf?.let { Label("資料日期 $it") }
+        }
+    }
+    when (sub) {
+        0 -> {
+            item { Card(padding = 14.dp) { DonutWithLegend(r.rows.sortedByDescending { it.weight }.map { it.name to it.weight }) } }
+            val sort = compSort[q.symbol] ?: 0
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Label("排序")
+                    listOf(0 to "權重", 1 to "市值", 2 to "漲幅", 3 to "跌幅").forEach { (v, n) ->
+                        val on = v == sort
+                        Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Card)
+                                .clickable { compSort[q.symbol] = v }.padding(horizontal = 10.dp, vertical = 4.dp))
+                    }
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                    Label("標的", Modifier.weight(1.3f))
+                    if (r.tw) Column(Modifier.weight(1.1f), horizontalAlignment = Alignment.End) { Label("持股市值"); Label("持股張數") }
+                    Label("權重", Modifier.weight(0.8f).wrapContentWidth(Alignment.End))
+                    if (r.tw) Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) { Label("股價"); Label("漲跌") }
+                }
+                Box(Modifier.fillMaxWidth().padding(top = 4.dp).height(1.dp).background(C.Border))
+            }
+            val list = when (sort) {
+                1 -> r.rows.sortedByDescending { it.mv ?: -1.0 }
+                2 -> r.rows.sortedByDescending { it.chgPct ?: -999.0 }
+                3 -> r.rows.sortedBy { it.chgPct ?: 999.0 }
+                else -> r.rows.sortedByDescending { it.weight }
+            }
+            items(list, key = { "c" + it.key }) { row ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1.3f)) {
+                        Text(row.name, color = C.Text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (row.symbol.isNotBlank()) NumText(row.symbol, 11.sp, C.Muted)
+                    }
+                    if (r.tw) Column(Modifier.weight(1.1f), horizontalAlignment = Alignment.End) {
+                        NumText(row.mv?.let { Fmt.num(it / 1e8, 2) + "億" } ?: "—", 13.sp)
+                        NumText(row.shares?.let { Fmt.num(Math.floor(it / 1000)) + "張" } ?: "", 11.sp, C.Muted)
+                    }
+                    NumText(Fmt.num(row.weight, 2) + "%", 13.sp, modifier = Modifier.weight(0.8f).wrapContentWidth(Alignment.End))
+                    if (r.tw) Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                        val c = row.chgPct
+                        val limit = c != null && kotlin.math.abs(c) >= 9.4
+                        // 漲跌停：以色塊標示
+                        NumText(row.price?.let { Fmt.price(it) } ?: "—", 13.sp, if (limit) androidx.compose.ui.graphics.Color.White else c?.let { Trend.fg(it) } ?: C.Text,
+                            modifier = if (limit) Modifier.clip(RoundedCornerShape(4.dp)).background(Trend.fg(c!!)).padding(horizontal = 4.dp) else Modifier)
+                        c?.let { NumText(Fmt.signedPct(it), 11.sp, Trend.fg(it)) }
+                    }
+                }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
+            }
+        }
+        1 -> {
+            if (r.industries.isEmpty()) item { Label("暫無產業分佈資料") } else {
+                item { Card(padding = 14.dp) { DonutWithLegend(r.industries) } }
+                item {
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp)) { Label("產業", Modifier.weight(1f)); Label("權重") }
+                }
+                val maxW = r.industries.maxOf { it.second }.takeIf { it > 0 } ?: 1.0
+                items(r.industries, key = { "i" + it.first }) { (name, pct) ->
+                    val n = r.rows.count { it.industry == name }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.width(110.dp)) {
+                            Text(name, color = C.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (n > 0) Label("$n 檔")
+                        }
+                        NumText(Fmt.num(pct, 2) + "%", 13.sp, modifier = Modifier.width(64.dp))
+                        Box(Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(3.dp)).background(C.Line)) {
+                            Box(Modifier.fillMaxWidth((pct / maxW).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(androidx.compose.ui.graphics.Color(0xFF3F7BD9)))
+                        }
+                    }
+                }
+            }
+        }
+        else -> {
+            val ch = r.changes
+            if (!r.tw) item { Label("操作日報目前只支援台股 ETF") }
+            else if (ch == null) item {
+                Card(padding = 14.dp) {
+                    Text("已記錄 ${r.asOf ?: "今天"} 的持股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Label("操作日報需要比較前後兩個資料日的持股；下一個交易日的持股公布後再打開，就會顯示新增、刪除、加碼、減碼。")
+                }
+            } else {
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(Triple("新增", 0, androidx.compose.ui.graphics.Color(0xFFC9A227)), Triple("刪除", 1, C.Muted),
+                            Triple("加碼", 2, Trend.fg(1.0)), Triple("減碼", 3, Trend.fg(-1.0))).forEach { (n, k, c) ->
+                            Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(c.copy(alpha = 0.12f))
+                                .border(1.dp, c.copy(alpha = 0.5f), RoundedCornerShape(10.dp)).padding(10.dp)) {
+                                Text(n, color = c, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.Bottom) {
+                                    NumText(ch.count { it.kind == k }.toString(), 22.sp, C.Text, FontWeight.Bold); Text(" 檔", color = C.Muted, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+                item { Label("共 ${ch.size} 檔異動 · ${r.prevAsOf} → ${r.asOf}") }
+                if (ch.isNotEmpty()) item {
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                        Label("標的", Modifier.weight(1.3f)); Label("狀態", Modifier.weight(0.8f))
+                        Label("變動張數", Modifier.weight(0.9f).wrapContentWidth(Alignment.End)); Label("變動幅度", Modifier.weight(0.9f).wrapContentWidth(Alignment.End))
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) { Label("目前權重"); Label("變動%") }
+                    }
+                    Box(Modifier.fillMaxWidth().padding(top = 4.dp).height(1.dp).background(C.Border))
+                }
+                items(ch, key = { "d" + it.symbol + it.name }) { c ->
+                    val color = when (c.kind) { 0 -> androidx.compose.ui.graphics.Color(0xFFC9A227); 1 -> C.Muted; 2 -> Trend.fg(1.0); else -> Trend.fg(-1.0) }
+                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1.3f)) {
+                            Text(c.name, color = C.Text, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (c.symbol.isNotBlank()) NumText(c.symbol, 11.sp, C.Muted)
+                        }
+                        Box(Modifier.weight(0.8f)) {
+                            Text(listOf("新增", "刪除", "加碼", "減碼")[c.kind], color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.15f)).padding(horizontal = 10.dp, vertical = 4.dp))
+                        }
+                        NumText((if (c.deltaShares > 0) "+" else "") + Fmt.num(c.deltaShares / 1000, 0), 13.sp, color, modifier = Modifier.weight(0.9f).wrapContentWidth(Alignment.End))
+                        NumText(c.deltaPct?.let { Fmt.num(it, 2) + "%" } ?: "新進", 13.sp, modifier = Modifier.weight(0.9f).wrapContentWidth(Alignment.End))
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                            NumText(Fmt.num(c.weight, 2) + "%", 13.sp)
+                            NumText(Fmt.signed(c.weightDelta, 2) + "%", 11.sp, C.Muted)
+                        }
+                    }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(C.Line))
+                }
+            }
+        }
+    }
+    item {
+        Label(
+            "資料來源：" + (if (r.tw) "MoneyDJ 持股明細、證交所／櫃買收盤與產業別、" else "") + "Yahoo Finance。" +
+                (if (r.tw) "持股市值＝持有股數 × 最近收盤價；操作日報依 App 記錄的每日持股比較，主動式 ETF 請以投信公告為準。" else ""),
+            Modifier.padding(top = 6.dp),
+        )
     }
 }
 
