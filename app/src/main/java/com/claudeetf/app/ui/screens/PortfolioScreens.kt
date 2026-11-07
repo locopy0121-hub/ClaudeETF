@@ -174,7 +174,7 @@ fun PortfolioScreen(nav: NavController) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Shortcut("複利試算", Icons.Filled.Add, Modifier.weight(1f)) { nav.navigate(Routes.DRIP) }
-                    Shortcut("交易紀錄", Icons.Filled.List, Modifier.weight(1f)) { nav.navigate(Routes.TRADES) }
+                    Shortcut("交易紀錄（${AppState.trades.count { it.origin != com.claudeetf.app.data.TradeOrigin.LEGACY }}）", Icons.Filled.List, Modifier.weight(1f)) { nav.navigate(Routes.TRADES) }
                     Shortcut("資料健檢", Icons.Filled.CheckCircle, Modifier.weight(1f)) { nav.navigate(Routes.HEALTH) }
                 }
             }
@@ -273,16 +273,6 @@ fun PortfolioScreen(nav: NavController) {
                 items(tw, key = { "tw-" + it.symbol }) { h -> HoldingRow(h, true) { nav.navigate(Routes.stock(h.symbol)) } }
                 item { GroupHeader(Market.US, us.size, "US$" + mask(Fmt.num(usUsd, 2))) }
                 items(us, key = { "us-" + it.symbol }) { h -> HoldingRow(h, inTwd) { nav.navigate(Routes.stock(h.symbol)) } }
-            }
-            item {
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card)
-                        .clickable { nav.navigate(Routes.TRADES) }.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("交易紀錄", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
-                    Label("${AppState.trades.count { it.origin != com.claudeetf.app.data.TradeOrigin.LEGACY }} 筆 ›")
-                }
             }
         }
     }
