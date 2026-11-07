@@ -227,6 +227,25 @@ object MarketData {
             }
         }
 
+        // 2c) 休市時成交量補抓：手機上還沒有當日成交量的台股（例如重開 App 後），向 MIS 取最後交易日的量。
+        //     MIS 休市時保留最後交易日資料；只在價格與目前報價一致時採用，不改動價格。
+        if (!intraday && !live) {
+            val needVol = symbols.filter { AppState.dayStats[it]?.volume == null }
+            if (needVol.isNotEmpty()) {
+                withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.TwseMisApi.quotes(needVol) } }.getOrNull()
+                    ?.forEach { (code, t) ->
+                        val q0 = AppState.quote(code) ?: return@forEach
+                        val rq = t.quote
+                        if (code in needVol && rq.volume != null && rq.volume > 0 && kotlin.math.abs(rq.price - q0.price) < 1e-6) {
+                            val ds = AppState.dayStats[code]
+                            AppState.dayStats[code] = AppState.DayStat(ds?.high ?: rq.high, ds?.low ?: rq.low, rq.volume, now)
+                        }
+                    }
+                // 存檔，下次開 App 直接有量
+                AppState.persist()
+            }
+        }
+
         // 3) 盤後或即時來源都失敗：收盤資料
         //    13:30 收盤到證交所發布日資料（約 14:30）之間，OpenAPI 還是前一個交易日的資料，
         //    直接套用會把今天的最後成交價換成昨天的收盤價（總市值、漲跌都會跳掉），
