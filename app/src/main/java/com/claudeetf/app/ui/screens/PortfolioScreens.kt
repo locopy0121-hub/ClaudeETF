@@ -477,6 +477,8 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
     fun plain(v: Double) = java.math.BigDecimal(v).setScale(6, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()
     var type by remember { mutableIntStateOf(editing?.type?.ordinal ?: 0) }
     var symbol by remember { mutableStateOf(editing?.symbol ?: initialSymbol) }
+    // 已從搜尋建議選好代號：收起建議清單
+    var picked by remember { mutableStateOf(initialSymbol.isNotBlank()) }
     var date by remember { mutableStateOf(editing?.date ?: LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))) }
     var shares by remember { mutableStateOf(editing?.let { plain(it.shares) } ?: "") }
     var price by remember {
@@ -553,10 +555,18 @@ fun AddTradeScreen(nav: NavController, initialSymbol: String, editId: Long = -1L
             item { Segmented(TradeType.entries.map { it.label }, type, { type = it; error = null }) }
             item {
                 Column {
-                    Field("股票代號", symbol, { symbol = it }, keyboard = KeyboardType.Text)
+                    Field("股票代號", symbol, { symbol = it; picked = false }, keyboard = KeyboardType.Text)
                     Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         MarketTag(market); HGap(6.dp)
-                        Label((AppState.quote(sym)?.name ?: "新股票") + " · 幣別 " + market.currency + (if (isEtf) " · ETF" else ""))
+                        Label((AppState.quote(sym)?.name ?: com.claudeetf.app.data.StockDirectory.cachedName(sym) ?: "新股票") + " · 幣別 " + market.currency + (if (isEtf) " · ETF" else ""))
+                    }
+                    // 輸入代號或名稱時列出相關個股，點選即帶入（編輯既有交易時不顯示）
+                    if (!picked && editing == null && sym.isNotEmpty() && AppState.quote(sym)?.let { it.name != it.symbol } != true) {
+                        Spacer(Modifier.height(6.dp))
+                        StockSuggestions(symbol, maxHeight = 280.dp, allowRaw = false, onPick = { it ->
+                            symbol = it.symbol; picked = true
+                            if (price.isBlank()) AppState.quote(it.symbol)?.price?.takeIf { p -> p > 0 }?.let { p -> price = Fmt.price(p).replace(",", "") }
+                        })
                     }
                 }
             }

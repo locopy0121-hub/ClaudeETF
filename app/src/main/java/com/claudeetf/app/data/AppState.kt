@@ -1076,7 +1076,8 @@ object AppState {
     private fun ensureQuote(symbol: String, price: Double) {
         if (quote(symbol) != null) return
         val market = if (symbol.firstOrNull()?.isDigit() == true) Market.TW else Market.US
-        quotes.add(Quote(symbol.uppercase(), symbol.uppercase(), market, price, price))
+        // 名稱優先用搜尋目錄的中文／英文名稱，不再只顯示代號
+        quotes.add(Quote(symbol.uppercase(), StockDirectory.cachedName(symbol) ?: symbol.uppercase(), market, price, price))
     }
 
     // ---------- 帳本 ----------
