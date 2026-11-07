@@ -475,8 +475,8 @@ fun WatchCell(q: Quote, col: String) {
                 Column(m, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
                     Text(pos, color = color, fontSize = 11.sp, maxLines = 1, fontWeight = FontWeight.Bold, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     // 上關、下關分兩行，價格較長也不會被截斷
-                    NumText("上 " + Fmt.price(k.upper), 9.sp, KeyLevelsUi.upper)
-                    NumText("下 " + Fmt.price(k.lower), 9.sp, KeyLevelsUi.lower)
+                    NumText("上 " + Fmt.price(k.upper), 9.sp, KeyLevelColors.upper)
+                    NumText("下 " + Fmt.price(k.lower), 9.sp, KeyLevelColors.lower)
                 }
             }
         }
