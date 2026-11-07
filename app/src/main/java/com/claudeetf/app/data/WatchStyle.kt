@@ -60,6 +60,7 @@ data class WatchStyle(
             "volume" to "成交量",
             "amp" to "振幅",
             "ext" to "盤前／盤後價（美股）",
+            "hold" to "我的持股（股數、均價、損益）",
         )
         /** 清單可用項目（價格與漲跌固定在右側） */
         val LIST_NAMES = linkedMapOf(
@@ -72,6 +73,7 @@ data class WatchStyle(
             "limit" to "漲停／跌停",
             "ext" to "盤前／盤後價（美股）",
             "spark" to "迷你走勢圖",
+            "hold" to "我的持股（股數、均價、損益）",
         )
         val CARD_DEFAULT = CARD_NAMES.keys.toList()
         val CARD_HIDDEN = setOf("market", "volume", "amp")

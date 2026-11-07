@@ -29,6 +29,7 @@ import com.claudeetf.app.ui.HGap
 import com.claudeetf.app.ui.Label
 import com.claudeetf.app.ui.MarketTag
 import com.claudeetf.app.ui.NumText
+import com.claudeetf.app.ui.mask
 import com.claudeetf.app.ui.Sparkline
 import com.claudeetf.app.ui.theme.C
 import com.claudeetf.app.ui.theme.Trend
@@ -107,7 +108,30 @@ fun WatchExtraItem(q: Quote, id: String, st: WatchStyle, list: Boolean = false) 
         "ext" -> AppState.extended[q.symbol]?.let { e ->
             Text(e.label + " " + Fmt.price(e.price) + " " + Fmt.signedPct(e.changePct), color = Trend.fg(e.changePct), fontSize = small, maxLines = 1)
         }
+        // 有持股才顯示：股數、損益與報酬率（沒有持股的個股自動隱藏）
+        "hold" -> holdInfo(q)?.let { h ->
+            Text("持 " + Fmt.shares(h.shares) + " · " + mask(h.plText) + " " + Fmt.signedPct(h.pct), color = Trend.fg(h.pl), fontSize = small,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
+}
+
+/** 自選個股的持股摘要（多帳戶合計） */
+internal data class HoldInfo(val shares: Double, val avg: Double, val mv: Double, val pl: Double, val pct: Double, val day: Double?, val plText: String, val mvText: String)
+
+internal fun holdInfo(q: Quote): HoldInfo? {
+    val h = AppState.holdings.filter { it.symbol == q.symbol }.takeIf { it.isNotEmpty() } ?: return null
+    val sh = h.sumOf { it.shares }
+    if (sh <= 0) return null
+    val avg = h.sumOf { it.shares * it.avgCost } / sh
+    val px = if (q.price > 0) q.price else avg
+    val pl = (px - avg) * sh
+    val us = q.market == Market.US
+    val cur = if (us) "$" else ""
+    val dec = if (us) 2 else 0
+    return HoldInfo(sh, avg, px * sh, pl, if (avg > 0) (px / avg - 1) * 100 else 0.0,
+        if (q.prevClose > 0 && q.price > 0) (q.price - q.prevClose) * sh else null,
+        Fmt.signed(pl, dec, cur), cur + Fmt.num(px * sh, dec))
 }
 
 /** 連續的「可並排」項目合成一列 */
@@ -259,7 +283,7 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
 
 private val LINE_NAMES = mapOf(
     "entry" to "", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "limit" to "漲跌停", "ext" to "盤前盤後",
-    "div" to "除權息", "inst" to "法人", "dt" to "當沖", "credit" to "信用", "rev" to "月營收", "pe" to "本益比", "pnl" to "損益",
+    "hold" to "持股", "div" to "除權息", "inst" to "法人", "dt" to "當沖", "credit" to "信用", "rev" to "月營收", "pe" to "本益比", "pnl" to "損益",
 )
 
 private fun line(c: @Composable RowScope.() -> Unit): @Composable RowScope.() -> Unit = c
@@ -292,6 +316,14 @@ private fun infoLine(q: Quote, id: String, st: WatchStyle): (@Composable RowScop
             if (!com.claudeetf.app.data.MarketData.anyMarketLive()) Text("最後交易日", color = C.Muted, fontSize = st.sp(10))
         } }
         "amp" -> amplitude(q)?.let { a -> line { NumText(Fmt.num(a, 2) + "%", sz, C.Text) } }
+        "hold" -> holdInfo(q)?.let { h -> line {
+            NumText(Fmt.shares(h.shares) + " 股", sz, C.Text)
+            NumText("均 " + Fmt.price(h.avg), sz, C.Muted)
+            NumText("市值 " + mask(h.mvText), sz, C.Text)
+            NumText(mask(h.plText), sz, Trend.fg(h.pl))
+            NumText(Fmt.signedPct(h.pct), sz, Trend.fg(h.pl))
+            h.day?.let { NumText("今日 " + mask(Fmt.signed(it, if (q.market == Market.US) 2 else 0)), sz, Trend.fg(it)) }
+        } }
         "limit" -> if (!tw) null else com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00"))?.let { s ->
             line { Text(s, color = Trend.fg(if (s == "漲停") 1.0 else -1.0), fontSize = sz, fontWeight = FontWeight.Bold) }
         }
