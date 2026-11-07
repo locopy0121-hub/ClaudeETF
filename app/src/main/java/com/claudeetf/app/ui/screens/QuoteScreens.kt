@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -117,21 +118,54 @@ fun WatchlistScreen(nav: NavController) {
                     placeholder = { Text("輸入代號或名稱，例如 2330、AAPL") },
                     colors = fieldColors(),
                 )
-                val q = query.trim().uppercase()
-                if (q.isNotEmpty() && !AppState.isWatched(q) && q.all { it.isLetterOrDigit() || it == '.' }) {
-                    Text(
-                        "＋ 加入自選：$q",
-                        color = C.Primary, fontSize = 14.sp,
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Card)
-                            .clickable {
-                                scope.launch {
-                                    addMsg = MarketData.addAndFetch(q) ?: "已加入 $q"
-                                    group?.let { g -> AppState.toggleInGroup(g.id, q) }
-                                    query = ""
-                                }
-                            }
-                            .padding(14.dp),
-                    )
+                // 輸入時自動列出相關個股（停 0.3 秒後查詢），名稱後的 ＋ 直接加入自選
+                val q = query.trim()
+                var hits by remember { mutableStateOf<List<com.claudeetf.app.data.StockDirectory.Item>>(emptyList()) }
+                var looking by remember { mutableStateOf(false) }
+                LaunchedEffect(q) {
+                    if (q.isEmpty()) { hits = emptyList(); return@LaunchedEffect }
+                    kotlinx.coroutines.delay(300)
+                    looking = true
+                    hits = runCatching { com.claudeetf.app.data.StockDirectory.search(q) }.getOrDefault(emptyList())
+                    looking = false
+                }
+                if (q.isNotEmpty()) Column(
+                    Modifier.fillMaxWidth().heightIn(max = 360.dp).clip(RoundedCornerShape(10.dp)).background(C.Card)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    val up = q.uppercase()
+                    // 目錄找不到、但看起來是代號：仍可直接加入
+                    val rows = if (hits.none { it.symbol == up } && up.all { it.isLetterOrDigit() || it == '.' } && !looking && hits.isEmpty())
+                        listOf(com.claudeetf.app.data.StockDirectory.Item(up, "（目錄查無名稱，仍可加入）", if (up.first().isDigit()) Market.TW else Market.US, ""))
+                    else hits
+                    if (looking && hits.isEmpty()) Label("搜尋中…", Modifier.padding(14.dp))
+                    rows.forEach { it ->
+                        val watched = AppState.isWatched(it.symbol)
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                if (watched) nav.navigate(Routes.stock(it.symbol))
+                            }.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            MarketTag(it.market); HGap(8.dp)
+                            NumText(it.symbol, 14.sp, C.Text, FontWeight.Bold); HGap(8.dp)
+                            Text(it.name, Modifier.weight(1f), color = C.Text2, fontSize = 13.sp, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            if (it.tag.isNotEmpty()) { Label(it.tag); HGap(8.dp) }
+                            if (watched) Text("✓", color = C.Muted, fontSize = 18.sp, modifier = Modifier.padding(horizontal = 8.dp))
+                            else Text("＋", color = C.Primary, fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable {
+                                    scope.launch {
+                                        val sym = it.symbol
+                                        addMsg = MarketData.addAndFetch(sym) ?: "已加入 $sym"
+                                        // 以目錄的中文名稱為準
+                                        if (it.tag.isNotEmpty()) AppState.quote(sym)?.let { qq -> if (qq.name == qq.symbol) AppState.renameQuote(sym, it.name) }
+                                        group?.let { g -> AppState.toggleInGroup(g.id, sym) }
+                                    }
+                                }.padding(horizontal = 10.dp, vertical = 2.dp))
+                        }
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp).height(1.dp).background(C.Card2))
+                    }
                 }
                 addMsg?.let { Label(it) }
             }

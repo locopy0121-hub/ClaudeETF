@@ -333,6 +333,27 @@ object YahooExtra {
         return (0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("symbol")?.ifBlank { null } }.take(count)
     }
 
+    // ---------------- 代號搜尋（美股） ----------------
+
+    data class Hit(val symbol: String, val name: String, val type: String, val exchange: String)
+
+    /** Yahoo 代號搜尋：只回傳美股股票與 ETF */
+    fun symbolSearch(query: String, count: Int = 8): List<Hit> {
+        val body = Http.get(
+            "$Q2/v1/finance/search?q=${enc(query)}&quotesCount=$count&newsCount=0&enableFuzzyQuery=false",
+            mapOf("User-Agent" to UA),
+        )
+        val arr = JSONObject(body).optJSONArray("quotes") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val sym = o.optString("symbol")
+            val type = o.optString("quoteType")
+            // 美股：代號不含交易所後綴（.TW、.HK…）
+            if (sym.isBlank() || sym.contains('.') || sym.contains('^') || type !in setOf("EQUITY", "ETF")) null
+            else Hit(sym, o.optString("longname").ifBlank { o.optString("shortname") }.ifBlank { sym }, type, o.optString("exchDisp"))
+        }
+    }
+
     // ---------------- 新聞 ----------------
 
     data class News(val title: String, val publisher: String, val link: String, val time: Long, val summary: String = "")

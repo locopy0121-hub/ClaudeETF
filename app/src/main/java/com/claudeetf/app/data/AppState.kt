@@ -890,6 +890,12 @@ object AppState {
         return true
     }
 
+    /** 更新自選名稱（搜尋目錄的中文名稱） */
+    fun renameQuote(symbol: String, name: String) {
+        val i = quotes.indexOfFirst { it.symbol == symbol }
+        if (i >= 0 && name.isNotBlank()) { quotes[i] = quotes[i].copy(name = name); save() }
+    }
+
     /** 復原剛移除的自選（放回原位置） */
     fun restoreWatch(q: Quote, index: Int) {
         if (quote(q.symbol) != null) return
