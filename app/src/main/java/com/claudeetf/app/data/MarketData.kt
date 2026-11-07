@@ -66,7 +66,8 @@ object MarketData {
         val q = AppState.quote(symbol) ?: return null
         if (q.price <= 0 || q.updatedAt <= 0) return null
         val live = q.source == QuoteSource.FUGLE || q.source == QuoteSource.FUGLE_STREAM || q.source == QuoteSource.TWSE_LIVE
-        return if (live) java.time.Instant.ofEpochMilli(q.updatedAt).atZone(TPE).toLocalDate() else closeDay[symbol]
+        // 週末或盤前抓到的即時報價，時間是「現在」但資料屬於最後交易日：換算回當時的最後交易日
+        return if (live) lastTradingDay(java.time.Instant.ofEpochMilli(q.updatedAt).atZone(TPE)) else closeDay[symbol]
     }
 
     /** 這檔今天已經有即時來源（富果、證交所即時）的價格 */
@@ -246,7 +247,10 @@ object MarketData {
                     // 有日期：比目前報價舊就略過；沒日期：目前報價已是最近交易日的就不可能更新，也略過
                     if (cur != null && (if (rq.date != null) rq.date < cur else cur >= lastDay)) {
                         // 價格不覆蓋，但當日成交量／高低若還沒有（例如重開 App 後），且是同一交易日的資料就補上
-                        val same = rq.date != null && rq.date == cur
+                        // 同一交易日：日期相同，或沒有日期但收盤價與昨收都和目前報價一致
+                        val q0 = AppState.quote(s)
+                        val same = (rq.date != null && rq.date == cur) ||
+                            (rq.date == null && q0 != null && kotlin.math.abs(rq.price - q0.price) < 1e-6 && kotlin.math.abs(rq.prevClose - q0.prevClose) < 1e-6)
                         val ds = AppState.dayStats[s]
                         if (same && (ds?.volume == null || ds.high == null)) AppState.dayStats[s] =
                             AppState.DayStat(ds?.high ?: rq.high, ds?.low ?: rq.low, ds?.volume ?: rq.volume, now)

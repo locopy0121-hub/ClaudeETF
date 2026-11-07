@@ -190,13 +190,14 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                     WatchName(q, st, 15, Modifier.weight(1f, fill = false), showCode = !st.listShows("market"))
                     if (st.tagPos == 1) { HGap(6.dp); EntryTagFor(q) }
                 }
-                // 第二行：市場標籤、報價時間、進場建議標籤（K 棒訊號），不放進下方資訊框
+                // 第二行：市場標籤、報價時間
                 val entryHere = st.listShows("entry") && st.tagPos == 0 && AppState.showCardEntry
-                if (st.listShows("market") || st.listShows("source") || entryHere) Row(verticalAlignment = Alignment.CenterVertically) {
+                if (st.listShows("market") || st.listShows("source")) Row(verticalAlignment = Alignment.CenterVertically) {
                     if (st.listShows("market")) { Box(Modifier.tap(t, "market")) { WatchExtraItem(q, "market", st, list = true) }; HGap(8.dp) }
-                    if (st.listShows("source")) { Box(Modifier.weight(1f, fill = false).tap(t, "source")) { WatchExtraItem(q, "source", st, list = true) }; HGap(8.dp) }
-                    if (entryHere) Box(Modifier.tap(t, "entry")) { EntryTagFor(q) }
+                    if (st.listShows("source")) Box(Modifier.tap(t, "source")) { WatchExtraItem(q, "source", st, list = true) }
                 }
+                // 第三行：進場建議標籤（K 棒訊號），在 TW／US 標籤的下一行
+                if (entryHere) Box(Modifier.tap(t, "entry")) { EntryTagFor(q) }
             }
             if (sparkInline && q.spark.size >= 2) {
                 HGap(8.dp)

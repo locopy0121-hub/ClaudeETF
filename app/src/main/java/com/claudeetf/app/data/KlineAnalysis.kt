@@ -488,7 +488,9 @@ object KlineAnalysis {
         val zone = java.time.ZoneId.of(if (q.market == Market.TW) "Asia/Taipei" else "America/New_York")
         val day = (if (q.market == Market.TW) MarketData.quoteDay(q.symbol) else null)
             ?: q.updatedAt.takeIf { it > 0 }?.let { java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate() } ?: return null
+        // 最後一根不晚於報價日、且就是那個交易日的 K 棒
         return cs.lastOrNull { java.time.Instant.ofEpochMilli(it.t).atZone(zone).toLocalDate() == day }?.v?.takeIf { it > 0 }
+            ?: cs.lastOrNull()?.takeIf { java.time.Instant.ofEpochMilli(it.t).atZone(zone).toLocalDate() == MarketData.lastTradingDay() && q.market == Market.TW }?.v?.takeIf { it > 0 }
     }
 
     /** 長線（投資指數建議投入比例）× 短線（K 線進場建議）→ 現在先投入多少 */
