@@ -48,10 +48,10 @@ fun entryColor(level: Int): Color = when {
 
 /** 進場建議標籤；可進場（level > 0）時依設定播放閃爍、跳動與光暈動畫 */
 @Composable
-fun EntryTag(e: KlineAnalysis.Entry, big: Boolean = false) {
+fun EntryTag(e: KlineAnalysis.Entry, big: Boolean = false, animLevel: Int = AppState.entryAnim) {
     val c = entryColor(e.level)
     val icon = when (e.level) { 2 -> "✔ "; 1 -> "◐ "; 0 -> "⏸ "; -1 -> "✋ "; else -> "⛔ " }
-    val anim = if (e.level > 0) AppState.entryAnim else 0
+    val anim = if (e.level > 0) animLevel else 0
     val strong = anim == 2 && e.level >= 2
     val shape = RoundedCornerShape(if (big) 10.dp else 6.dp)
     var mod: Modifier = Modifier
@@ -102,18 +102,26 @@ fun EntryTag(e: KlineAnalysis.Entry, big: Boolean = false) {
  */
 @Composable
 fun EntryTagFor(q: Quote, holder: Boolean = false, modifier: Modifier = Modifier) {
-    if (!AppState.showCardEntry || q.price <= 0) return
+    // 自選行情用自己的開關；持股卡片由 HoldStyle 控制（呼叫端決定是否顯示）
+    if (!holder && !AppState.showCardEntry) return
+    val r = entryResultFor(q) ?: return
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        EntryTag(r.entry, animLevel = if (holder) AppState.holdStyle.entryAnim else AppState.entryAnim)
+        if (holder) Text(" " + r.entry.holderTip, color = C.Muted, fontSize = 10.sp, maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+    }
+}
+
+/** 取得（並在背景更新）此檔的日 K 分析結果 */
+@Composable
+fun entryResultFor(q: Quote): KlineAnalysis.Result? {
+    if (q.price <= 0) return null
     // 盤中逐筆跳動時去抖動：價格 1.5 秒內再變就取消上一次，避免每一筆成交都對整份 K 線重跑形態分析
     LaunchedEffect(q.symbol, q.price) {
         if (KlineAnalysis.latestDaily[q.symbol] != null) kotlinx.coroutines.delay(1_500)
         runCatching { KlineAnalysis.load(q, false) }
     }
-    val r = KlineAnalysis.latestDaily[q.symbol] ?: return
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        EntryTag(r.entry)
-        if (holder) Text(" " + r.entry.holderTip, color = C.Muted, fontSize = 10.sp, maxLines = 1,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-    }
+    return KlineAnalysis.latestDaily[q.symbol]
 }
 
 private fun dirColor(d: KlineAnalysis.Dir): Color = when {

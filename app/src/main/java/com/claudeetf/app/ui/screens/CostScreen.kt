@@ -123,7 +123,7 @@ fun CostScreen(nav: NavController) {
             }
             item {
                 Text("調整帳戶手續費設定 ›", color = C.Primary, fontSize = 13.sp,
-                    modifier = Modifier.clickable { nav.navigate(Routes.SETTINGS) }.padding(vertical = 8.dp))
+                    modifier = Modifier.clickable { nav.navigate(Routes.settings("accounts")) }.padding(vertical = 8.dp))
             }
             item { Label("美股以每筆交易當時的匯率換算台幣。", Modifier.padding(top = 4.dp)) }
         }

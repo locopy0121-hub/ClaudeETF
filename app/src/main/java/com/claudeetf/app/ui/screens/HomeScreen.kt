@@ -187,7 +187,7 @@ fun HomeScreen(nav: NavController) {
                     item {
                         Column(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Card)
-                                .clickable { nav.navigate(Routes.SETTINGS) }.padding(12.dp),
+                                .clickable { nav.navigate(Routes.settings("source")) }.padding(12.dp),
                         ) {
                             if (MarketData.anyMarketLive()) Label(if (com.claudeetf.app.data.remote.FugleStream.connected) "● 盤中即時：台股富果串流同步、" + AppState.usRefreshLabel() else "● 盤中即時更新（台股每 5 秒、" + AppState.usRefreshLabel() + "）", color = C.Green)
                     Label("台股：" + MarketData.twSourcePlan())
@@ -226,7 +226,7 @@ fun HomeScreen(nav: NavController) {
             item {
                 Text(
                     "新增／自訂首頁卡片（指數、個股、自選、持股、除息…）›", color = C.Primary, fontSize = 12.sp,
-                    modifier = Modifier.clickable { nav.navigate(Routes.SETTINGS) }.padding(vertical = 4.dp),
+                    modifier = Modifier.clickable { nav.navigate(Routes.settings("pages")) }.padding(vertical = 4.dp),
                 )
             }
         }

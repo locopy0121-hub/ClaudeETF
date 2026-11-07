@@ -42,6 +42,8 @@ object Routes {
     const val ANALYSIS = "analysis"
     const val ALERTS = "alerts"
     const val SETTINGS = "settings"
+    const val SETTINGS_SECTION = "settings/{section}"
+    fun settings(section: String) = "settings/$section"
     const val CHAT = "chat"
     const val TRADES = "trades"
     const val DCA = "dca"

@@ -420,6 +420,7 @@ fun AppRoot() {
             ) { com.claudeetf.app.ui.screens.IndexScreen(nav, java.net.URLDecoder.decode(it.arguments?.getString("sym") ?: "", "UTF-8")) }
             composable(Routes.FX) { com.claudeetf.app.ui.screens.FxScreen(nav) }
             composable(Routes.SETTINGS) { SettingsScreen(nav) }
+            composable(Routes.SETTINGS_SECTION) { e -> SettingsScreen(nav, e.arguments?.getString("section")) }
             composable(Routes.CHAT) { com.claudeetf.app.ui.screens.ChatScreen(nav) }
         }
         // 群聊新訊息彈幕（不在聊天畫面時從右往左飄過，點一下開啟群聊）

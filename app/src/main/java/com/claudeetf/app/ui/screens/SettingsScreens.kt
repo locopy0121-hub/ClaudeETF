@@ -247,44 +247,24 @@ private fun AddAlertCard(initialSymbol: String = "", onDone: () -> Unit) {
 // ============================== 我的・設定 ==============================
 
 @Composable
-fun SettingsScreen(nav: NavController) {
+fun SettingsScreen(nav: NavController, section: String? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var fxText by remember { mutableStateOf(AppState.usdTwd.toString()) }
     val version = remember { BuildConfigInfo.versionName(context) }
-    // 各區塊預設收合，點標題展開；同一次開啟 App 內記住展開狀態
-    val openGroups = androidx.compose.runtime.saveable.rememberSaveable(
-        saver = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<String>, String>(
-            save = { it.toList() }, restore = { it.toMutableStateList() },
-        ),
-    ) { mutableStateListOf<String>() }
-    val allGroups = listOf("群聊", "行情資料來源", "新聞來源", "帳本", "備份與匯入", "安全", "顯示", "帳戶與手續費", "提醒", "關於")
+    if (section == null) { SettingsMenu(nav, version); return }
+    val title = SETTINGS_SECTIONS.flatMap { it.second }.firstOrNull { it.key == section }?.title ?: "我的"
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
-        TopBar("我的")
+        TopBar(title, onBack = { nav.popBackStack() })
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item {
-                Card(padding = 14.dp) {
-                    Text("資料存在本機", color = C.Text, fontSize = 15.sp)
-                    Label("持股 ${AppState.holdings.size} 檔 · 自選 ${AppState.quotes.size} 檔 · 交易紀錄 ${AppState.trades.size} 筆")
-                    Row {
-                        Text("全部展開", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable {
-                            openGroups.clear(); openGroups.addAll(allGroups)
-                        }.padding(end = 16.dp, top = 6.dp, bottom = 2.dp))
-                        Text("全部收合", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { openGroups.clear() }.padding(top = 6.dp, bottom = 2.dp))
-                    }
-                }
-            }
-
-            item { FoldHeader("群聊", if (!com.claudeetf.app.chat.ChatPrefs.enabled) "未開啟" else com.claudeetf.app.chat.ChatPrefs.userName + " · 群聊 " + com.claudeetf.app.chat.ChatPrefs.groupId.ifBlank { "未設定" }, "群聊" in openGroups) { if ("群聊" in openGroups) openGroups.remove("群聊") else openGroups.add("群聊") } }
-            if ("群聊" in openGroups) {
+            if (section == "chat") {
                 item { ChatSettingsCard(nav) }
             }
-            item { FoldHeader("行情資料來源", "台股盤中 " + (if (AppState.twUseFugle) "富果" else "證交所") + " · 期貨 " + mapOf("auto" to "自動", "fugle" to "富果", "taifex" to "期交所", "off" to "關閉")[AppState.futSource], "行情資料來源" in openGroups) { if ("行情資料來源" in openGroups) openGroups.remove("行情資料來源") else openGroups.add("行情資料來源") } }
-            if ("行情資料來源" in openGroups) {
+            if (section == "source") {
                 item {
                     Card(padding = 14.dp) {
                         Text("台股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
@@ -402,12 +382,10 @@ fun SettingsScreen(nav: NavController) {
                 }
             }
 
-            item { FoldHeader("新聞來源", com.claudeetf.app.data.remote.RssNews.enabled().joinToString("、") { it.name }.ifBlank { "未選擇（使用 Yahoo股市、Google 新聞）" }, "新聞來源" in openGroups) { if ("新聞來源" in openGroups) openGroups.remove("新聞來源") else openGroups.add("新聞來源") } }
-            if ("新聞來源" in openGroups) {
+            if (section == "news") {
                 item { NewsSourcesCard() }
             }
-            item { FoldHeader("帳本", "交易紀錄 ${AppState.trades.size} 筆 · 資料健檢", "帳本" in openGroups) { if ("帳本" in openGroups) openGroups.remove("帳本") else openGroups.add("帳本") } }
-            if ("帳本" in openGroups) {
+            if (section == "ledger") {
                 item {
                     val n = remember(AppState.trades.size) { com.claudeetf.app.ui.screens.HealthCheck.run() }
                     SettingRow("資料健檢", if (n.isEmpty()) "正常 ›" else "${n.size} 個項目 ›") { nav.navigate(Routes.HEALTH) }
@@ -415,13 +393,11 @@ fun SettingsScreen(nav: NavController) {
                 item { LedgerCard() }
             }
 
-            item { FoldHeader("備份與匯入", "匯出、匯入與備份", "備份與匯入" in openGroups) { if ("備份與匯入" in openGroups) openGroups.remove("備份與匯入") else openGroups.add("備份與匯入") } }
-            if ("備份與匯入" in openGroups) {
+            if (section == "backup") {
                 item { DataCard() }
             }
 
-            item { FoldHeader("安全", if (AppState.appLock) "安全鎖已開啟" else "安全鎖未開啟", "安全" in openGroups) { if ("安全" in openGroups) openGroups.remove("安全") else openGroups.add("安全") } }
-            if ("安全" in openGroups) {
+            if (section == "security") {
                 item {
                     var msg by remember { mutableStateOf<String?>(null) }
                     val act = context as? com.claudeetf.app.MainActivity
@@ -454,10 +430,23 @@ fun SettingsScreen(nav: NavController) {
                 }
             }
 
-            item { FoldHeader("顯示", "主題、字級、配色、首頁卡片", "顯示" in openGroups) { if ("顯示" in openGroups) openGroups.remove("顯示") else openGroups.add("顯示") } }
-            if ("顯示" in openGroups) {
+            if (section == "watch") {
                 item { WatchStyleSettings() }
+                item {
+                    Card(padding = 14.dp) {
+                        Text("行情卡片的進場標籤", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Label("只影響自選行情的卡片與清單；持股卡片在「持股卡片樣式」另外設定")
+                        OptToggle("顯示進場建議標籤", AppState.showCardEntry) { AppState.updateShowCardEntry(it) }
+                        OptToggle("K 棒說明過長時以跑馬燈捲動", AppState.marqueeDesc) { AppState.updateMarqueeDesc(it) }
+                        AnimChooser(AppState.entryAnim) { AppState.updateEntryAnim(it) }
+                    }
+                }
+            }
+            if (section == "hold") {
+                item { HoldStyleSettings() }
                 item { PriceBoxSettings() }
+            }
+            if (section == "look") {
                 item {
                     Card(padding = 14.dp) {
                         Text("主題", color = C.Text, fontSize = 14.sp)
@@ -512,6 +501,9 @@ fun SettingsScreen(nav: NavController) {
                         }
                     }
                 }
+                item { SettingRow("美股時間", "台灣時間・自動夏冬令") }
+            }
+            if (section == "pages") {
                 item {
                     Card(padding = 14.dp) {
                         var picking by remember { mutableStateOf(false) }
@@ -539,17 +531,6 @@ fun SettingsScreen(nav: NavController) {
                         }
                         Text("個股頁", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                         OptToggle("標題顯示投資分析指數（0–100）", AppState.showScoreBadge) { AppState.updateShowScoreBadge(it) }
-                        OptToggle("自選卡片／清單與持股顯示進場建議標籤", AppState.showCardEntry) { AppState.updateShowCardEntry(it) }
-                        OptToggle("K 棒說明過長時以跑馬燈捲動", AppState.marqueeDesc) { AppState.updateMarqueeDesc(it) }
-                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("可進場標籤動畫", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
-                            listOf(0 to "關閉", 1 to "柔和", 2 to "強烈").forEach { (v, n) ->
-                                val on = AppState.entryAnim == v
-                                Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                                    modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
-                                        .clickable { AppState.updateEntryAnim(v) }.padding(horizontal = 10.dp, vertical = 4.dp))
-                            }
-                        }
                         OptToggle("行情價下方顯示即時 K 棒訊號（盤中）", AppState.showLiveSignal) { AppState.updateShowLiveSignal(it) }
                         if (AppState.showLiveSignal) OptToggle("收盤後顯示最終進場標籤（關閉則自動隱藏）", AppState.showFinalSignal) { AppState.updateShowFinalSignal(it) }
                         OptToggle("走勢圖標示我的買賣點", AppState.showTradeMarks) { AppState.updateShowTradeMarks(it) }
@@ -557,26 +538,22 @@ fun SettingsScreen(nav: NavController) {
                         IndexCardOptions(null)
                     }
                 }
-                item { SettingRow("美股時間", "台灣時間・自動夏冬令") }
             }
-            item { FoldHeader("帳戶與手續費", "${AppState.accounts.size} 個帳戶", "帳戶與手續費" in openGroups) { if ("帳戶與手續費" in openGroups) openGroups.remove("帳戶與手續費") else openGroups.add("帳戶與手續費") } }
-            if ("帳戶與手續費" in openGroups) {
+            if (section == "accounts") {
                 items(AppState.accounts.toList(), key = { "acc-" + it.id }) { a -> AccountCard(a) }
                 item { AddAccountRow() }
             }
-            item { FoldHeader("提醒", "${AppState.alerts.count { it.enabled }} 項開啟", "提醒" in openGroups) { if ("提醒" in openGroups) openGroups.remove("提醒") else openGroups.add("提醒") } }
-            if ("提醒" in openGroups) {
+            if (section == "alerts") {
                 item { SettingRow("提醒中心", "${AppState.alerts.count { it.enabled }} 項開啟 ›") { nav.navigate(Routes.ALERTS) } }
             }
-            item { FoldHeader("關於", version, "關於" in openGroups) { if ("關於" in openGroups) openGroups.remove("關於") else openGroups.add("關於") } }
-            if ("關於" in openGroups) {
+            if (section == "about") {
                 item { SettingRow("版本", version) }
                 item { UpdateCard() }
                 item { ReleaseHistoryCard() }
                 item { SettingRow("錯誤紀錄", if (com.claudeetf.app.util.CrashLog.read(context) != null) "有紀錄 ›" else "無 ›") { nav.navigate(Routes.ERRORS) } }
                 item { SettingRow("重新看使用引導", "›") { nav.navigate(Routes.WELCOME) } }
             }
-            item { Label("金鑰只存在這支手機，不會上傳到其他地方。", Modifier.padding(4.dp)) }
+            if (section == "source") item { Label("金鑰以手機安全晶片加密保存，不會上傳到其他地方。", Modifier.padding(4.dp)) }
         }
     }
 }
@@ -1080,5 +1057,165 @@ private fun AddAccountRow() {
         SmallButton("＋ 美股帳戶", Modifier.weight(1f)) {
             AppState.saveAccount(Account(0, "美股帳戶 ${AppState.accountsFor(Market.US).size + 1}", Market.US))
         }
+    }
+}
+
+// ============================== 我的：分類選單 ==============================
+
+internal data class SettingsEntry(val key: String, val icon: String, val title: String)
+
+/** 「我的」頁分組：每一項點進去是獨立子頁，不再整頁展開拉長 */
+internal val SETTINGS_SECTIONS = listOf(
+    "外觀與顯示" to listOf(
+        SettingsEntry("look", "🎨", "主題與配色"),
+        SettingsEntry("watch", "📈", "行情卡片樣式"),
+        SettingsEntry("hold", "💼", "持股卡片樣式"),
+        SettingsEntry("pages", "🏠", "首頁與個股頁"),
+    ),
+    "資料與帳務" to listOf(
+        SettingsEntry("source", "📡", "行情資料來源"),
+        SettingsEntry("news", "📰", "新聞來源"),
+        SettingsEntry("accounts", "🏦", "帳戶與手續費"),
+        SettingsEntry("ledger", "📒", "帳本"),
+        SettingsEntry("backup", "💾", "備份與匯入"),
+    ),
+    "其他" to listOf(
+        SettingsEntry("alerts", "🔔", "提醒"),
+        SettingsEntry("security", "🔒", "安全"),
+        SettingsEntry("chat", "💬", "群聊"),
+        SettingsEntry("about", "ℹ️", "關於與更新"),
+    ),
+)
+
+@Composable
+private fun SettingsMenu(nav: NavController, version: String) {
+    val ctx = LocalContext.current
+    val hasUpdate = com.claudeetf.app.data.AppUpdater.hasUpdate(ctx)
+    fun summary(key: String): String = when (key) {
+        "look" -> listOf("跟隨系統", "深色", "淺色")[AppState.themeMode.coerceIn(0, 2)] + " · " +
+            (if (AppState.colorMode == ColorMode.TW) "紅漲綠跌" else "綠漲紅跌")
+        "watch" -> listOf("精簡", "標準", "大字")[AppState.watchStyle.density.coerceIn(0, 2)] + " · 每列 ${AppState.watchStyle.cardCols} 張" +
+            (if (AppState.showCardEntry) " · 進場標籤" else "")
+        "hold" -> listOf("精簡", "標準", "寬鬆")[AppState.holdStyle.density.coerceIn(0, 2)] +
+            (if (AppState.priceBoxShow) " · 現價方格" else "") + (if (AppState.holdStyle.shows("entry")) " · 進場標籤" else "")
+        "pages" -> "首頁 ${AppState.homeOrder.count { it !in AppState.homeHidden }} 張卡片"
+        "source" -> "台股 " + (if (AppState.twUseFugle) "富果" else "證交所") + " · 美股 " + (if (AppState.finnhubKey.isNotBlank()) "Finnhub" else "Yahoo")
+        "news" -> com.claudeetf.app.data.remote.RssNews.enabled().size.let { if (it == 0) "預設來源" else "$it 個來源" }
+        "accounts" -> "${AppState.accounts.size} 個帳戶"
+        "ledger" -> "交易紀錄 ${AppState.trades.size} 筆"
+        "backup" -> "匯出、匯入與備份"
+        "alerts" -> "${AppState.alerts.count { it.enabled }} 項開啟"
+        "security" -> if (AppState.appLock) "安全鎖已開啟" else "安全鎖未開啟"
+        "chat" -> if (!com.claudeetf.app.chat.ChatPrefs.enabled) "未開啟" else com.claudeetf.app.chat.ChatPrefs.userName
+        "about" -> "版本 $version" + (if (hasUpdate) " · 有新版 " + (com.claudeetf.app.data.AppUpdater.latest?.tag ?: "") else "")
+        else -> ""
+    }
+    Column(Modifier.fillMaxSize().background(C.Bg)) {
+        TopBar("我的")
+        LazyColumn(
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                Card(padding = 14.dp) {
+                    Text("資料存在本機", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        listOf("持股" to AppState.holdings.size, "自選" to AppState.quotes.size, "交易" to AppState.trades.size, "提醒" to AppState.alerts.count { it.enabled })
+                            .forEach { (n, v) ->
+                                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    NumText(v.toString(), 18.sp, C.Primary, FontWeight.Bold)
+                                    Label(n)
+                                }
+                            }
+                    }
+                }
+            }
+            SETTINGS_SECTIONS.forEach { (group, list) ->
+                item { Label(group, Modifier.padding(start = 4.dp, top = 6.dp)) }
+                item {
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Card)) {
+                        list.forEachIndexed { i, e ->
+                            if (i > 0) Box(Modifier.fillMaxWidth().padding(start = 52.dp).height(1.dp).background(C.Line))
+                            Row(
+                                Modifier.fillMaxWidth().clickable { nav.navigate(Routes.settings(e.key)) }.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(e.icon, fontSize = 20.sp, modifier = Modifier.width(38.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(e.title, color = C.Text, fontSize = 15.sp)
+                                    Text(summary(e.key), color = if (e.key == "about" && hasUpdate) C.Primary else C.Muted, fontSize = 12.sp,
+                                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                }
+                                Text("›", color = C.Muted, fontSize = 20.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 可進場標籤動畫：關閉／柔和／強烈 */
+@Composable
+internal fun AnimChooser(sel: Int, set: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("可進場標籤動畫", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+        listOf(0 to "關閉", 1 to "柔和", 2 to "強烈").forEach { (v, n) ->
+            val on = sel == v
+            Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
+                    .clickable { set(v) }.padding(horizontal = 10.dp, vertical = 4.dp))
+        }
+    }
+}
+
+// ============================== 持股卡片樣式 ==============================
+
+@Composable
+private fun HoldStyleSettings() {
+    val st = AppState.holdStyle
+    fun set(f: (com.claudeetf.app.data.HoldStyle) -> com.claudeetf.app.data.HoldStyle) = AppState.updateHoldStyle(f(AppState.holdStyle))
+    Card(padding = 14.dp) {
+        Text("持股卡片顯示格式", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Label("只影響「持股」頁；自選行情的卡片在「行情卡片樣式」另外設定，兩者互不影響")
+        // 即時預覽：用前兩檔持股（沒有持股時以示意資料）
+        val samples = AppState.holdings.take(2).ifEmpty { listOf(com.claudeetf.app.data.Holding("0050", 1000.0, 85.0)) }
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg).padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Label("預覽", Modifier.padding(top = 4.dp))
+            samples.forEach { h -> HoldingRow(h, true, st) {} }
+        }
+        Text("列高", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        ChipRow(listOf(0 to "精簡", 1 to "標準", 2 to "寬鬆"), st.density) { v -> set { it.copy(density = v) } }
+        Text("名稱與代號", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        ChipRow(listOf(0 to "名稱在前", 1 to "代號在前", 2 to "只顯示名稱", 3 to "只顯示代號"), st.nameMode) { v -> set { it.copy(nameMode = v) } }
+        Text("名稱字級", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        ChipRow(listOf(0 to "小", 1 to "標準", 2 to "大"), st.nameSize) { v -> set { it.copy(nameSize = v) } }
+
+        Text("左側項目與順序", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        st.items.forEachIndexed { i, id ->
+            val on = st.shows(id)
+            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(com.claudeetf.app.data.HoldStyle.NAMES[id] ?: id, Modifier.weight(1f), color = if (on) C.Text else C.Muted, fontSize = 14.sp)
+                Text("↑", color = if (i > 0) C.Primary else C.Line, fontSize = 18.sp, modifier = Modifier.clickable(enabled = i > 0) {
+                    set { s -> s.copy(items = s.items.toMutableList().also { l -> l.add(i - 1, l.removeAt(i)) }) }
+                }.padding(horizontal = 10.dp, vertical = 4.dp))
+                Text("↓", color = if (i < st.items.lastIndex) C.Primary else C.Line, fontSize = 18.sp, modifier = Modifier.clickable(enabled = i < st.items.lastIndex) {
+                    set { s -> s.copy(items = s.items.toMutableList().also { l -> l.add(i + 1, l.removeAt(i)) }) }
+                }.padding(horizontal = 10.dp, vertical = 4.dp))
+                androidx.compose.material3.Switch(on, { v -> set { s -> s.copy(hidden = if (v) s.hidden - id else s.hidden + id) } },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary, uncheckedTrackColor = C.Border))
+            }
+        }
+        Text("右側項目", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        OptToggle("市值", st.showMv) { v -> set { it.copy(showMv = v) } }
+        OptToggle("損益金額", st.showPl) { v -> set { it.copy(showPl = v) } }
+        OptToggle("報酬率", st.showPct) { v -> set { it.copy(showPct = v) } }
+
+        Text("其他", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        AnimChooser(st.entryAnim) { v -> set { it.copy(entryAnim = v) } }
+        OptToggle("持有建議文字過長時以跑馬燈捲動", st.marquee) { v -> set { it.copy(marquee = v) } }
+        OptToggle("各列之間顯示分隔線", st.divider) { v -> set { it.copy(divider = v) } }
+        Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.updateHoldStyle(com.claudeetf.app.data.HoldStyle()) }.padding(vertical = 6.dp))
     }
 }

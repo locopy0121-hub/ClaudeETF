@@ -247,6 +247,9 @@ object AppState {
     /** 自選個股（卡片／清單）顯示格式 */
     var watchStyle by mutableStateOf(WatchStyle())
     fun updateWatchStyle(ws: WatchStyle) { watchStyle = ws; save() }
+    /** 持股卡片格式（與自選行情分開） */
+    var holdStyle by mutableStateOf(HoldStyle())
+    fun updateHoldStyle(hs: HoldStyle) { holdStyle = hs; save() }
 
     /** 持股現價方格樣式 */
     var priceBoxShow by mutableStateOf(true)
@@ -453,6 +456,13 @@ object AppState {
         usRefreshMs = p.getLong("usRefreshMs", 5_000L)
         autoUpdateCheck = p.getBoolean("autoUpdateCheck", true)
         watchStyle = WatchStyle.fromJson(p.getString("watchStyle", null))
+        holdStyle = HoldStyle.fromJson(p.getString("holdStyle", null)).let { hs ->
+            // 首次升級：沿用原本共用的「進場標籤」開關與動畫設定
+            if (p.contains("holdStyle")) hs else hs.copy(
+                entryAnim = p.getInt("entryAnim", 2), marquee = p.getBoolean("marqueeDesc", true),
+                hidden = if (p.getBoolean("showCardEntry", true)) hs.hidden else hs.hidden + "entry" + "tip",
+            )
+        }
         // 當日高低與成交量：重開 App 後保留（休市時仍顯示最後交易日的量）
         runCatching {
             val o = org.json.JSONObject(p.getString("dayStats", "{}") ?: "{}")
@@ -731,6 +741,7 @@ object AppState {
             .putLong("usRefreshMs", usRefreshMs)
             .putBoolean("autoUpdateCheck", autoUpdateCheck)
             .putString("watchStyle", watchStyle.toJson())
+            .putString("holdStyle", holdStyle.toJson())
             .putString("dayStats", org.json.JSONObject().also { o ->
                 dayStats.forEach { (k, d) -> o.put(k, org.json.JSONArray().put(d.high ?: -1.0).put(d.low ?: -1.0).put(d.volume ?: -1.0).put(d.at)) }
             }.toString())

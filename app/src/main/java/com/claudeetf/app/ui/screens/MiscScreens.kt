@@ -82,7 +82,7 @@ fun WelcomeScreen(nav: NavController) {
                 }
                 Choice("匯入券商對帳單 CSV", "到「我的 › 備份與匯入」選擇檔案", false) {
                     if (fresh == true) AppState.clearSampleData()
-                    finish(Routes.SETTINGS)
+                    finish(Routes.settings("backup"))
                 }
                 Choice("直接進入 App", if (fresh == true) "清除示意資料後進入" else "保留示意資料", false) {
                     if (fresh == true) AppState.clearSampleData()
@@ -130,7 +130,15 @@ private val features = listOf(
     Feature("財經行事曆", "財報 除息 FOMC 休市", Routes.CALENDAR),
     Feature("提醒中心", "通知 價格提醒 推播", Routes.ALERTS),
     Feature("市場", "熱力圖 類股 排行 指數", Routes.MARKET),
-    Feature("設定（金鑰、帳戶、備份、主題）", "富果 金鑰 帳戶 手續費 備份 還原 CSV 主題 字級", Routes.SETTINGS),
+    Feature("主題與配色", "主題 深色 淺色 字級 漲跌 配色 顏色", Routes.settings("look")),
+    Feature("行情卡片樣式", "自選 行情 卡片 清單 格式 顯示 欄位", Routes.settings("watch")),
+    Feature("持股卡片樣式", "持股 卡片 格式 顯示 現價方格", Routes.settings("hold")),
+    Feature("首頁與個股頁", "首頁 卡片 指數 個股頁", Routes.settings("pages")),
+    Feature("行情資料來源", "富果 Finnhub 金鑰 證交所 資料來源 更新秒數", Routes.settings("source")),
+    Feature("帳戶與手續費", "帳戶 券商 手續費 折扣", Routes.settings("accounts")),
+    Feature("備份與匯入", "備份 還原 匯入 匯出 CSV 對帳單", Routes.settings("backup")),
+    Feature("安全", "安全鎖 指紋 密碼", Routes.settings("security")),
+    Feature("關於與更新", "版本 更新 關於 錯誤紀錄", Routes.settings("about")),
 )
 
 @Composable

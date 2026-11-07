@@ -1,6 +1,7 @@
 package com.claudeetf.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -370,8 +371,10 @@ fun LivePriceBox(q: com.claudeetf.app.data.Quote, isUs: Boolean) {
     }
 }
 
+/** 持股卡片：依「我的 › 持股卡片樣式」（HoldStyle）排列，與自選行情的格式互不影響 */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun HoldingRow(h: Holding, inTwd: Boolean, onClick: () -> Unit) {
+internal fun HoldingRow(h: Holding, inTwd: Boolean, st: com.claudeetf.app.data.HoldStyle = AppState.holdStyle, onClick: () -> Unit) {
     val q = AppState.quote(h.symbol)
     val market = AppState.marketOf(h.symbol)
     val isUs = market == Market.US
@@ -383,36 +386,65 @@ private fun HoldingRow(h: Holding, inTwd: Boolean, onClick: () -> Unit) {
     val mvText = if (isUs && !inTwd) "$" + Fmt.num(AppState.marketValue(h), 2)
     else (if (isUs) "NT$" else "") + Fmt.num(AppState.marketValue(h) * fx)
     val plText = if (showTwd) Fmt.signed(plOrig * fx) else Fmt.signed(plOrig, 2, "$")
+    val name = q?.name ?: h.symbol
+    val title = when (st.nameMode) { 1 -> h.symbol + "  " + name; 2 -> name; 3 -> h.symbol; else -> "$name  ${h.symbol}" }
+    val nameSp = when (st.nameSize) { 0 -> 13.sp; 2 -> 16.sp; else -> 14.sp }
+    val vPad = when (st.density) { 0 -> 4.dp; 2 -> 12.dp; else -> 8.dp }
+    val entry = if (q != null && (st.shows("entry") || st.shows("tip"))) entryResultFor(q)?.entry else null
 
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp, horizontal = 4.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = vPad, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                (q?.name ?: h.symbol) + "  " + h.symbol, color = C.Text, fontSize = 14.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
-            Label(Fmt.shares(h.shares) + " 股 · 均價 " + (if (isUs) "$" else "") + Fmt.price(h.avgCost))
-            if (q != null && q.price > 0 && q.prevClose > 0) {
-                val day = (q.price - q.prevClose) * h.shares
-                Text(
-                    "今日 " + mask(if (showTwd) Fmt.signed(day * fx) else Fmt.signed(day, 2, "$")) + "（" + Fmt.signedPct(q.changePct) + "）",
-                    color = Trend.fg(day), fontSize = 11.sp, maxLines = 1,
-                )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (st.density == 0) 1.dp else 2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (st.shows("market")) { MarketTag(market); HGap(6.dp) }
+                Text(title, color = C.Text, fontSize = nameSp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            q?.let { EntryTagFor(it, holder = true, modifier = Modifier.padding(top = 2.dp)) }
+            // 「進場標籤」與「持有建議文字」同一行；其餘項目各自一行，依設定順序
+            var entryDone = false
+            st.items.filter { st.shows(it) }.forEach { id ->
+                when (id) {
+                    "shares" -> Label(Fmt.shares(h.shares) + " 股 · 均價 " + (if (isUs) "$" else "") + Fmt.price(h.avgCost))
+                    "today" -> if (q != null && q.price > 0 && q.prevClose > 0) {
+                        val day = (q.price - q.prevClose) * h.shares
+                        Text(
+                            "今日 " + mask(if (showTwd) Fmt.signed(day * fx) else Fmt.signed(day, 2, "$")) + "（" + Fmt.signedPct(q.changePct) + "）",
+                            color = Trend.fg(day), fontSize = 11.sp, maxLines = 1,
+                        )
+                    }
+                    "cost" -> {
+                        val c = h.shares * h.avgCost
+                        Label("總成本 " + mask(if (isUs && !inTwd) "$" + Fmt.num(c, 2) else (if (isUs) "NT$" else "") + Fmt.num(AppState.costTwd(h).takeIf { isUs } ?: c)))
+                    }
+                    "weight" -> {
+                        val total = AppState.holdings.sumOf { AppState.marketValueTwd(it) }
+                        if (total > 0) Label("占持股 " + Fmt.num(AppState.marketValueTwd(h) / total * 100, 1) + "%")
+                    }
+                    "entry", "tip" -> if (!entryDone && entry != null) {
+                        entryDone = true
+                        Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (st.shows("entry")) EntryTag(entry, animLevel = st.entryAnim)
+                            if (st.shows("tip")) Text(
+                                " " + entry.holderTip, color = C.Muted, fontSize = 10.sp, maxLines = 1,
+                                overflow = if (st.marquee) TextOverflow.Clip else TextOverflow.Ellipsis,
+                                modifier = if (st.marquee) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 1500, initialDelayMillis = 1200, velocity = 36.dp) else Modifier,
+                            )
+                        }
+                    }
+                }
+            }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
             if (q != null && q.price > 0 && AppState.priceBoxShow) LivePriceBox(q, isUs)
-            NumText(mask(mvText), 14.sp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                NumText(mask(plText), 12.sp, Trend.fg(plOrig)); HGap(6.dp)
-                ChangePill(pct)
+            if (st.showMv) NumText(mask(mvText), 14.sp)
+            if (st.showPl || st.showPct) Row(verticalAlignment = Alignment.CenterVertically) {
+                if (st.showPl) { NumText(mask(plText), 12.sp, Trend.fg(plOrig)); HGap(6.dp) }
+                if (st.showPct) ChangePill(pct)
             }
         }
     }
-    Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
+    if (st.divider) Box(Modifier.fillMaxWidth().height(1.dp).background(C.Card2))
 }
 
 // ============================== 新增交易 ==============================
