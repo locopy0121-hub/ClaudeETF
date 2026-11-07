@@ -118,6 +118,7 @@ fun WatchlistScreen(nav: NavController) {
                 Icon(if (searching) Icons.Filled.Close else Icons.Filled.Search, contentDescription = "搜尋", tint = C.Text)
             }
         }
+        IndexTicker(nav)
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (searching) {
                 OutlinedTextField(

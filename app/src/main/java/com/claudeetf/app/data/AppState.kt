@@ -247,6 +247,10 @@ object AppState {
     /** 自選個股（卡片／清單）顯示格式 */
     var watchStyle by mutableStateOf(WatchStyle())
     fun updateWatchStyle(ws: WatchStyle) { watchStyle = ws; save() }
+    /** 持股、自選行情頁頂部的指數跑馬燈 */
+    var tickerShow by mutableStateOf(true)
+    var tickerSymbols by mutableStateOf(listOf("^TWII", "^DJI", "^IXIC", "^GSPC", "^SOX"))
+    fun updateTicker(show: Boolean = tickerShow, symbols: List<String> = tickerSymbols) { tickerShow = show; tickerSymbols = symbols; save() }
     /** 持股卡片格式（與自選行情分開） */
     var holdStyle by mutableStateOf(HoldStyle())
     fun updateHoldStyle(hs: HoldStyle) { holdStyle = hs; save() }
@@ -475,6 +479,8 @@ object AppState {
         divPayAlert = p.getBoolean("divPayAlert", true)
         divPayMuted.clear(); divPayMuted.addAll((p.getString("divPayMuted", "") ?: "").split(",").filter { it.isNotBlank() })
         priceBoxShow = p.getBoolean("priceBoxShow", true)
+        tickerShow = p.getBoolean("tickerShow", true)
+        p.getString("tickerSymbols", null)?.let { v -> tickerSymbols = v.split(",").filter { it.isNotBlank() } }
         // 現價方格的顯示改由持股卡片項目開關控制：舊的「不顯示」轉成隱藏該項目
         if (!priceBoxShow) { holdStyle = holdStyle.copy(hidden = holdStyle.hidden + "price"); priceBoxShow = true }
         priceBoxLabel = p.getBoolean("priceBoxLabel", true)
@@ -744,6 +750,7 @@ object AppState {
             .putBoolean("autoUpdateCheck", autoUpdateCheck)
             .putString("watchStyle", watchStyle.toJson())
             .putString("holdStyle", holdStyle.toJson())
+            .putBoolean("tickerShow", tickerShow).putString("tickerSymbols", tickerSymbols.joinToString(","))
             .putString("dayStats", org.json.JSONObject().also { o ->
                 dayStats.forEach { (k, d) -> o.put(k, org.json.JSONArray().put(d.high ?: -1.0).put(d.low ?: -1.0).put(d.volume ?: -1.0).put(d.at)) }
             }.toString())

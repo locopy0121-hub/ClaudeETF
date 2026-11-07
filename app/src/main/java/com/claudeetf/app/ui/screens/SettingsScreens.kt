@@ -505,6 +505,25 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
             if (section == "pages") {
                 item {
                     Card(padding = 14.dp) {
+                        Text("指數跑馬燈", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Label("顯示在「持股」與「自選行情」頁頂部；盤中標示即時、其餘時段標示盤後，內容超過一行會自動捲動")
+                        OptToggle("顯示指數跑馬燈", AppState.tickerShow) { AppState.updateTicker(show = it) }
+                        if (AppState.tickerShow) {
+                            Label("選擇要顯示的指數（依點選順序排列）", Modifier.padding(top = 4.dp))
+                            Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TICKER_CHOICES.forEach { (sym, n) ->
+                                    val on = sym in AppState.tickerSymbols
+                                    Text((if (on) "✓ " else "") + n, color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp,
+                                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Primary else C.Bg)
+                                            .clickable { AppState.updateTicker(symbols = if (on) AppState.tickerSymbols - sym else AppState.tickerSymbols + sym) }
+                                            .padding(horizontal = 12.dp, vertical = 7.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+                item {
+                    Card(padding = 14.dp) {
                         var picking by remember { mutableStateOf(false) }
                         if (picking) AddHomeCardPicker { picking = false }
                         Row(verticalAlignment = Alignment.CenterVertically) {

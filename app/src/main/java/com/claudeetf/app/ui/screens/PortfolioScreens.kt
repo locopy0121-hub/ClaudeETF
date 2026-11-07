@@ -133,6 +133,7 @@ fun PortfolioScreen(nav: NavController) {
                 Icon(Icons.Filled.Add, contentDescription = "新增交易", tint = C.Text)
             }
         }
+        IndexTicker(nav)
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
