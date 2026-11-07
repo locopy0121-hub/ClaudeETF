@@ -43,7 +43,9 @@ object YahooExtra {
             "1mo", "3mo", "6mo", "1y", "2y" -> "1d"
             else -> "1wk"
         }
-        val body = Http.get("$Q1/v8/finance/chart/${enc(symbol)}?range=$range&interval=$interval" + (if (prePost) "&includePrePost=true" else ""), mapOf("User-Agent" to UA))
+        // range=max 時 Yahoo 會自動把日 K 降成月 K；全期間日 K 改用起訖時間指定
+        val span = if (range == "max" && interval == "1d") "period1=0&period2=${System.currentTimeMillis() / 1000}" else "range=$range"
+        val body = Http.get("$Q1/v8/finance/chart/${enc(symbol)}?$span&interval=$interval" + (if (prePost) "&includePrePost=true" else ""), mapOf("User-Agent" to UA))
         val r = JSONObject(body).getJSONObject("chart").optJSONArray("result")?.optJSONObject(0)
             ?: throw HttpException(404, "查無 $symbol")
         val ts = r.optJSONArray("timestamp")

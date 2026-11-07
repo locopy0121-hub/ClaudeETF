@@ -37,9 +37,9 @@ import java.time.ZoneId
 private object DrawdownData {
     private val cache = HashMap<String, Pair<Long, YahooExtra.History>>()
     suspend fun load(q: Quote): YahooExtra.History = withContext(Dispatchers.IO) {
-        val sym = StockInfoRepo.yahooSymbol(q)
+        val sym = StockInfoRepo.yahooSymbol(q) + "|d"
         synchronized(cache) { cache[sym]?.takeIf { System.currentTimeMillis() - it.first < 6 * 3600_000L }?.let { return@withContext it.second } }
-        val h = YahooExtra.history(sym, "max", intervalOverride = "1d")
+        val h = YahooExtra.history(sym.removeSuffix("|d"), "max", intervalOverride = "1d")
         synchronized(cache) { cache[sym] = System.currentTimeMillis() to h }
         h
     }
@@ -72,6 +72,7 @@ private fun EventChip(w: Drawdown.Wave) {
 }
 
 /** 波段最深跌幅統計：前波高點 → 其後低點，回到前高為一波 */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun DrawdownCard(q0: Quote) {
     val q = AppState.quote(q0.symbol) ?: q0
@@ -106,7 +107,9 @@ fun DrawdownCard(q0: Quote) {
             s == null -> { Label("歷史資料不足"); return@Card }
         }
         s!!
-        Label("收盤價計算「前波高點 → 其後低點」｜${ymd(s.firstT)} 至 ${ymd(s.lastT)}，約 ${Fmt.num(s.years, 1)} 年")
+        Label("收盤價計算「前波高點 → 其後低點」｜${ymd(s.firstT)} 至 ${ymd(s.lastT)}，約 ${Fmt.num(s.years, 1)} 年 · ${hist!!.times.size} 個交易日")
+        // 平均每年少於 200 根代表不是日 K（週／月線會把波段算淺、次數變少）
+        if (hist!!.times.size < s.years * 200) Label("⚠ 取得的不是完整日 K（約每年 ${Fmt.num(hist!!.times.size / s.years.coerceAtLeast(0.1), 0)} 根），跌幅與次數可能偏少，請稍後下拉重新整理", color = C.Red)
 
         // 目前狀態
         Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(10.dp),
@@ -124,23 +127,23 @@ fun DrawdownCard(q0: Quote) {
 
         // 門檻表
         Row(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-            Label("波段跌幅", Modifier.width(64.dp)); Label("次數", Modifier.width(44.dp)); Label("平均頻率", Modifier.width(96.dp)); Label("對應事件")
+            Label("波段跌幅", Modifier.width(64.dp)); Label("次數", Modifier.width(44.dp)); Label("平均頻率", Modifier.width(88.dp)); Label("對應事件")
         }
         Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(C.Border))
         s.buckets.filter { showAll || it.waves.isNotEmpty() || it.threshold <= 30 }.forEach { b ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
                 Text("≥ ${b.threshold}%", Modifier.width(64.dp), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Row(Modifier.width(44.dp), verticalAlignment = Alignment.Bottom) {
                     NumText(b.waves.size.toString(), 16.sp, if (b.waves.isEmpty()) C.Muted else C.Primary, FontWeight.Bold)
                     Text(" 波", color = C.Muted, fontSize = 10.sp)
                 }
-                Text(freqText(b.everyYears, s.years), Modifier.width(96.dp), color = C.Text, fontSize = 12.sp, maxLines = 1)
+                Text(freqText(b.everyYears, s.years), Modifier.width(88.dp), color = C.Text, fontSize = 12.sp, maxLines = 2)
                 // ≥ 30% 列出各波；較淺的門檻只列最深的 3 波，並標示進行中的
                 val show = if (b.threshold >= 30) b.waves else b.waves.take(3)
-                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (b.waves.isEmpty()) Label("—")
                     show.forEach { EventChip(it) }
-                    if (show.size < b.waves.size) Label("＋${b.waves.size - show.size} 波")
+                    if (show.size < b.waves.size) Label("＋${b.waves.size - show.size} 波", Modifier.padding(top = 3.dp))
                 }
             }
         }
