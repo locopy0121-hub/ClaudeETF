@@ -408,8 +408,13 @@ internal fun HoldingRow(
         "today" -> q != null && q.price > 0 && q.prevClose > 0
         "entry", "tip" -> entry != null
         "price" -> q != null && q.price > 0 && AppState.priceBoxShow
+        "change" -> q != null && q.price > 0 && q.prevClose > 0
         "weight" -> AppState.holdings.sumOf { AppState.marketValueTwd(it) } > 0
         else -> true
+    }
+    /** 數值前的文字標籤（依設定開關） */
+    @Composable fun Lbl(id: String) {
+        if (id in st.labels) Text((com.claudeetf.app.data.HoldStyle.LABEL_TEXT[id] ?: "") + " ", color = C.Muted, fontSize = sz(id, 11), maxLines = 1)
     }
     @Composable fun Item(id: String, mod: Modifier) {
         StyledItem(st.style(id), id !in com.claudeetf.app.data.HoldStyle.NO_RECOLOR, q, mod.pick(id)) {
@@ -440,9 +445,17 @@ internal fun HoldingRow(
                         modifier = if (st.marquee) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 1500, initialDelayMillis = 1200, velocity = 36.dp) else Modifier)
                 }
                 "price" -> q?.let { LivePriceBox(it, isUs) }
-                "mv" -> NumText(mask(mvText), sz(id, 14))
-                "pl" -> NumText(mask(plText), sz(id, 12), Trend.fg(plOrig))
-                "pct" -> ChangePill(pct)
+                "mv" -> Row(verticalAlignment = Alignment.CenterVertically) { Lbl(id); NumText(mask(mvText), sz(id, 14)) }
+                "pl" -> Row(verticalAlignment = Alignment.CenterVertically) { Lbl(id); NumText(mask(plText), sz(id, 12), Trend.fg(plOrig)) }
+                "pct" -> Row(verticalAlignment = Alignment.CenterVertically) { Lbl(id); ChangePill(pct) }
+                // 今日個股漲跌：股價漲跌與漲跌幅
+                "change" -> q?.let {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Lbl(id)
+                        NumText(Fmt.signed(it.change, 2), sz(id, 12), Trend.fg(it.change)); HGap(6.dp)
+                        NumText(Fmt.signedPct(it.changePct), sz(id, 12), Trend.fg(it.change))
+                    }
+                }
             }
         }
     }

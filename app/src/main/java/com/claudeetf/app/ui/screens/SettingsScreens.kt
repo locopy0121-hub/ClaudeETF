@@ -1203,6 +1203,9 @@ private fun HoldStyleSettings() {
                 Text("對齊", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
                 ChipRow(listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), st.alignOf(id)) { v -> set { it.copy(align = it.align + (id to v)) } }
                 OptToggle("與上一個項目排在同一行", id in st.inline) { v -> set { it.copy(inline = if (v) it.inline + id else it.inline - id) } }
+                HS.LABEL_TEXT[id]?.let { t ->
+                    OptToggle("數值前顯示「$t」文字", id in st.labels) { v -> set { it.copy(labels = if (v) it.labels + id else it.labels - id) } }
+                }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("順序", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
                     Text("↑ 往前", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { move(id, -1) }.padding(8.dp))

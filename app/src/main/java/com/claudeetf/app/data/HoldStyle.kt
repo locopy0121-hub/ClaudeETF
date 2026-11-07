@@ -35,6 +35,8 @@ data class HoldStyle(
     val rowBorder: Long = 0L,
     val radius: Int = 0,
     val gapDp: Int = 0,
+    /** 數值前顯示文字標籤的項目（例如「市值 18,500」） */
+    val labels: Set<String> = emptySet(),
 ) {
     fun shows(id: String) = id !in hidden
     fun style(id: String): ItemStyle = itemStyles[id] ?: ItemStyle()
@@ -49,6 +51,7 @@ data class HoldStyle(
         .put("zone", JSONObject(zone as Map<*, *>)).put("align", JSONObject(align as Map<*, *>))
         .put("inline", JSONArray(inline.toList())).put("colW", JSONArray(colW))
         .put("entryAnim", entryAnim).put("marquee", marquee).put("divider", divider)
+        .put("labels", JSONArray(labels.toList()))
         .put("rowBg", rowBg).put("rowBorder", rowBorder).put("radius", radius).put("gapDp", gapDp)
         .put("itemStyles", JSONObject().apply { itemStyles.filterValues { !it.isDefault }.forEach { (k, v) -> put(k, v.toJson()) } })
         .toString()
@@ -65,13 +68,16 @@ data class HoldStyle(
             "cost" to "總成本",
             "weight" to "占持股比例",
             "price" to "現價方格",
+            "change" to "今日個股漲跌",
             "mv" to "市值",
             "pl" to "損益金額",
             "pct" to "報酬率",
         )
         val DEFAULT = NAMES.keys.toList()
         val HIDDEN = setOf("cost", "weight")
-        val DEFAULT_ZONE = mapOf("price" to 2, "mv" to 2, "pl" to 2, "pct" to 2)
+        val DEFAULT_ZONE = mapOf("price" to 2, "change" to 2, "mv" to 2, "pl" to 2, "pct" to 2)
+        /** 可在數值前加文字標籤的項目與文字 */
+        val LABEL_TEXT = mapOf("mv" to "市值", "pl" to "損益", "change" to "漲跌", "pct" to "報酬率")
         val DEFAULT_INLINE = setOf("code", "name", "tip", "pct")
         val ZONE_NAMES = listOf("左欄", "中欄", "右欄")
         /** 不能整塊改色的項目（本身有底色） */
@@ -92,6 +98,7 @@ data class HoldStyle(
                         list("colW")?.map { it.toIntOrNull() ?: 0 }?.let { (it + listOf(0, 0, 0)).take(3) } ?: listOf(0, 0, 0),
                         o.optInt("entryAnim", 2), o.optBoolean("marquee", true), o.optBoolean("divider", true), styles,
                         o.optLong("rowBg", 0L), o.optLong("rowBorder", 0L), o.optInt("radius", 0), o.optInt("gapDp", 0),
+                        list("labels")?.toSet() ?: emptySet(),
                     )
                 } else {
                     // v1 → v2：名稱模式拆成代號／名稱兩個項目，右側開關轉成隱藏
