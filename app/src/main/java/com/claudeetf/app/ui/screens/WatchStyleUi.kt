@@ -183,14 +183,19 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
     val color = Trend.fg(q.change)
     val bg = when {
         flash != 0 -> Trend.fg(flash.toDouble()).copy(alpha = 0.18f)
-        st.tintBg && q.change != 0.0 -> color.copy(alpha = 0.10f)
+        st.tintBg && q.change != 0.0 -> (if (st.cardBg != 0L) Color(st.cardBg.toInt()) else C.Card).let { base ->
+            androidx.compose.ui.graphics.lerp(base, color, 0.10f) }
+        st.cardBg != 0L -> Color(st.cardBg.toInt())
         else -> C.Card
     }
-    val pad = when (st.density) { 0 -> 7.dp; 2 -> 12.dp; else -> 10.dp }
+    val pad = if (st.padDp >= 0) st.padDp.coerceIn(0, 24).dp else when (st.density) { 0 -> 7.dp; 2 -> 12.dp; else -> 10.dp }
+    val shape = RoundedCornerShape(st.radius.coerceIn(0, 28).dp)
     val priceAlign = when (st.priceAlign) { 0 -> Alignment.Start; 2 -> Alignment.End; else -> Alignment.CenterHorizontally }
     val extraAlign = when (st.tagAlign) { 1 -> Alignment.CenterHorizontally; 2 -> Alignment.End; else -> Alignment.Start }
     val small = st.cardCols == 3
-    Column(modifier.clip(RoundedCornerShape(12.dp)).background(bg).padding(pad), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Column(modifier.clip(shape).background(bg)
+        .then(if (st.cardBorder != 0L) Modifier.border(1.dp, Color(st.cardBorder.toInt()), shape) else Modifier)
+        .padding(pad), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(Modifier.fillMaxWidth().tap(t, "name"), verticalAlignment = Alignment.CenterVertically) {
             Styled(st, "c:name", q.change, Modifier.weight(1f)) { s -> WatchName(q, s, if (small) 12 else 13) }
             if (st.tagPos == 1) EntryTagFor(q)
@@ -455,6 +460,11 @@ fun WatchStyleSettings() {
         Opt("價格位置") { Chips(listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), st.priceAlign) { v -> set { it.copy(priceAlign = v) } } }
         Opt("標籤與附加項目對齊") { Chips(listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), st.tagAlign) { v -> set { it.copy(tagAlign = v) } } }
         OptToggle("底色依漲跌上色", st.tintBg) { v -> set { it.copy(tintBg = v) } }
+        CardColorRow("卡片背景", st.cardBg) { v -> set { it.copy(cardBg = v) } }
+        CardColorRow("卡片邊框", st.cardBorder) { v -> set { it.copy(cardBorder = v) } }
+        Stepper("圓角", st.radius, 0, 28, 2, "dp") { v -> set { it.copy(radius = v) } }
+        Stepper("內距", if (st.padDp >= 0) st.padDp else -1, -1, 24, 1, "dp", autoLabel = "依版型") { v -> set { it.copy(padDp = v) } }
+        Stepper("卡片間距", st.gapDp, 0, 24, 2, "dp") { v -> set { it.copy(gapDp = v) } }
         ItemList("卡片顯示項目與順序", st.items, WatchStyle.CARD_NAMES, st.hidden,
             onMove = { i, j -> set { s -> s.copy(items = s.items.toMutableList().also { java.util.Collections.swap(it, i, j) }) } },
             onToggle = { id, on -> set { s -> s.copy(hidden = if (on) s.hidden - id else s.hidden + id) } })
@@ -505,6 +515,36 @@ private fun Editor(target: String, st: WatchStyle, set: ((WatchStyle) -> WatchSt
             }
         }
         ItemStyleControls(target, st, set)
+    }
+}
+
+/** 卡片顏色：點色塊開調色盤；0 = 預設（跟主題） */
+@Composable
+private fun CardColorRow(title: String, value: Long, set: (Long) -> Unit) {
+    var picking by remember { mutableStateOf(false) }
+    if (picking) ColorPickerDialog(
+        title = title, initial = if (value != 0L) Color(value.toInt()) else C.Card,
+        onPick = { c -> set(c.toArgb().toLong() and 0xFFFFFFFFL); picking = false },
+        onReset = { set(0L); picking = false }, onDismiss = { picking = false },
+    )
+    Row(Modifier.fillMaxWidth().clickable { picking = true }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+        if (value == 0L) Label("預設", Modifier.padding(end = 8.dp))
+        else Text("恢復預設", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clickable { set(0L) }.padding(end = 8.dp))
+        Box(Modifier.size(width = 44.dp, height = 26.dp).clip(RoundedCornerShape(8.dp)).background(if (value != 0L) Color(value.toInt()) else C.Card)
+            .border(1.dp, C.Border, RoundedCornerShape(8.dp)))
+    }
+}
+
+/** 數值調整（－／＋）；min 為 -1 時代表「自動」 */
+@Composable
+private fun Stepper(title: String, value: Int, min: Int, max: Int, step: Int, unit: String, autoLabel: String? = null, set: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+        SmallBtn("－", value > min) { set(if (autoLabel != null && value <= 0) -1 else (value - step).coerceAtLeast(min)) }
+        Text(if (value < 0 && autoLabel != null) autoLabel else "$value $unit", Modifier.width(64.dp), color = C.Text, fontSize = 13.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        SmallBtn("＋", value < max) { set(if (value < 0) 0 else (value + step).coerceAtMost(max)) }
     }
 }
 

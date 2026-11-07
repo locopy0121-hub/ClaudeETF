@@ -288,7 +288,8 @@ fun WatchlistScreen(nav: NavController) {
             }
             if (!heat && !editing && AppState.watchLayout == "card") {
                 items(list.chunked(AppState.watchStyle.cardCols), key = { row -> row.joinToString(",") { it.symbol } }) { row ->
-                    Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val gap = AppState.watchStyle.gapDp.coerceIn(0, 24).dp
+                    Row(Modifier.padding(vertical = gap / 2), horizontalArrangement = Arrangement.spacedBy(gap)) {
                         row.forEach { q -> QuoteCard(q, Modifier.weight(1f), onLongClick = { quick = q }) { nav.navigate(Routes.stock(q.symbol)) } }
                         repeat(AppState.watchStyle.cardCols - row.size) { Spacer(Modifier.weight(1f)) }
                     }
@@ -735,7 +736,7 @@ private fun QuoteCard(q: Quote, modifier: Modifier, onLongClick: () -> Unit, onC
             flash = 0
         } else last = q.price
     }
-    WatchCardBody(q, AppState.watchStyle, flash, modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick))
+    WatchCardBody(q, AppState.watchStyle, flash, modifier.clip(RoundedCornerShape(AppState.watchStyle.radius.coerceIn(0, 28).dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick))
 }
 
 
