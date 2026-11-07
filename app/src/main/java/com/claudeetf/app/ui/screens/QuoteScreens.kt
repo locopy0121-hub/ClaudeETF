@@ -184,12 +184,18 @@ fun WatchlistScreen(nav: NavController) {
                     StatusChip(Market.US, session.phase.label.take(4) + " · 收 " + session.closeTw, Modifier.weight(1f))
                 }
                 LiveBanner()
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Label("排序", Modifier.padding(end = 6.dp))
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChipText("熱度圖", heat) { heat = !heat }
-                        sortNames.forEachIndexed { i, n -> FilterChipText(n, sort == i && !heat) { sort = i; heat = false } }
-                    }
+                // 版面、排序、欄位、第二欄：整合成一行下拉選單
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val card = AppState.watchLayout == "card"
+                    DropPick("版面", if (card) "卡片" else "清單", listOf("card" to "卡片", "list" to "清單"), AppState.watchLayout,
+                        Modifier.weight(0.9f)) { AppState.updateWatchLayout(it) }
+                    DropPick("排序", if (heat) "熱度圖" else sortNames[sort], listOf("heat" to "熱度圖") + sortNames.mapIndexed { i, n -> i.toString() to n },
+                        if (heat) "heat" else sort.toString(), Modifier.weight(1f)) { v -> if (v == "heat") heat = true else { sort = v.toInt(); heat = false } }
+                    DropPick("欄位", watchColumns.firstOrNull { it.first == AppState.watchColumn }?.second ?: "—", watchColumns, AppState.watchColumn,
+                        Modifier.weight(1f)) { AppState.updateWatchColumn(it) }
+                    DropPick("第二欄", watchColumns.firstOrNull { it.first == AppState.watchColumn2 }?.second ?: "不顯示",
+                        listOf("" to "不顯示") + watchColumns.filter { it.first != AppState.watchColumn }, AppState.watchColumn2,
+                        Modifier.weight(1f)) { AppState.updateWatchColumn2(it) }
                 }
                 if (sort != 0 && !heat && list.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -200,22 +206,6 @@ fun WatchlistScreen(nav: NavController) {
                             val id = AppState.groupFrom(sortNames[sort] + " " + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("M/d")), list.map { it.symbol })
                             filter = "g$id"
                         }.padding(vertical = 4.dp))
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Label("欄位", Modifier.padding(end = 6.dp))
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChipText("卡片", AppState.watchLayout == "card") { AppState.updateWatchLayout(if (AppState.watchLayout == "card") "list" else "card") }
-                        watchColumns.forEach { (id, n) -> FilterChipText(n, AppState.watchColumn == id) { AppState.updateWatchColumn(id) } }
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Label("第二欄", Modifier.padding(end = 6.dp))
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChipText("不顯示", AppState.watchColumn2.isEmpty()) { AppState.updateWatchColumn2("") }
-                        watchColumns.filter { it.first != AppState.watchColumn }.forEach { (id, n) ->
-                            FilterChipText(n, AppState.watchColumn2 == id) { AppState.updateWatchColumn2(id) }
-                        }
                     }
                 }
             }
@@ -338,6 +328,33 @@ fun QuoteRow(q: Quote, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
 
 
 val watchColumns = listOf("spark" to "走勢", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "div" to "除權息", "inst" to "法人", "dt" to "當沖", "credit" to "信用", "rev" to "月營收", "pe" to "本益比", "pnl" to "持股損益")
+
+/** 行情頁工具列的下拉選單：上方小字標題、下方目前值 ▾ */
+@Composable
+private fun DropPick(title: String, value: String, opts: List<Pair<String, String>>, sel: String, modifier: Modifier, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Card).clickable { open = true }
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+        ) {
+            Text(title, color = C.Muted, fontSize = 10.sp, maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(value, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text("▾", color = C.Primary, fontSize = 12.sp)
+            }
+        }
+        androidx.compose.material3.DropdownMenu(open, { open = false }, containerColor = C.Card) {
+            opts.forEach { (v, n) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text((if (v == sel) "✓ " else "　") + n, color = if (v == sel) C.Primary else C.Text, fontSize = 14.sp) },
+                    onClick = { onPick(v); open = false },
+                )
+            }
+        }
+    }
+}
 
 /** 當日振幅 %：(最高 − 最低) ÷ 昨收 */
 fun amplitude(q: Quote): Double? {

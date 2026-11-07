@@ -779,6 +779,8 @@ object AppState {
     }
 
     /** 把遠端報價合併進清單（保留 ETF 標記與基本面） */
+    private fun hasCjk(s: String) = s.any { Character.UnicodeScript.of(it.code) == Character.UnicodeScript.HAN }
+
     /** 異常報價計數：symbol → (價格, 連續次數) */
     private val oddTicks = HashMap<String, Pair<Double, Int>>()
 
@@ -827,7 +829,13 @@ object AppState {
             dayStats[old.symbol] = DayStat(rq.high ?: prevStat?.high, rq.low ?: prevStat?.low, rq.volume ?: prevStat?.volume, now)
         }
         quotes[i] = old.copy(
-            name = if (old.name == old.symbol && rq.name != null) rq.name else old.name,
+            // 台股：名稱沒有中文（如從 Yahoo 搜尋加入的英文名稱）時，改用證交所／櫃買／MIS 的完整中文名稱；美股不變
+            name = when {
+                rq.name.isNullOrBlank() -> old.name
+                old.name == old.symbol -> rq.name
+                old.market == Market.TW && !hasCjk(old.name) && hasCjk(rq.name) -> rq.name
+                else -> old.name
+            },
             price = rq.price,
             prevClose = rq.prevClose,
             spark = spark,
