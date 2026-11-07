@@ -112,6 +112,16 @@ private fun Modifier.itemEffect(ist: com.claudeetf.app.data.ItemStyle, q: Quote)
     }
 }
 
+/** 預覽可點選：點了回報目標；選中的加框 */
+private class Tap(val sel: String?, val onTap: ((String) -> Unit)?)
+
+private fun Modifier.tap(t: Tap?, id: String): Modifier =
+    if (t?.onTap == null) this
+    else this.clip(RoundedCornerShape(6.dp))
+        .border(if (t.sel == id) 2.dp else 1.dp, if (t.sel == id) C.Primary else C.Border.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+        .clickable { t.onTap.invoke(id) }
+        .padding(horizontal = 2.dp, vertical = 1.dp)
+
 /** 名稱與代號（依格式） */
 @Composable
 fun WatchName(q: Quote, st: WatchStyle, base: Int, modifier: Modifier = Modifier, showCode: Boolean = false) {
