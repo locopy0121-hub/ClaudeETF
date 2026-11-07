@@ -444,7 +444,6 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
             }
             if (section == "hold") {
                 item { HoldStyleSettings() }
-                item { PriceBoxSettings() }
             }
             if (section == "look") {
                 item {
@@ -1097,7 +1096,7 @@ private fun SettingsMenu(nav: NavController, version: String) {
         "watch" -> listOf("精簡", "標準", "大字")[AppState.watchStyle.density.coerceIn(0, 2)] + " · 每列 ${AppState.watchStyle.cardCols} 張" +
             (if (AppState.showCardEntry) " · 進場標籤" else "")
         "hold" -> listOf("精簡", "標準", "寬鬆")[AppState.holdStyle.density.coerceIn(0, 2)] +
-            (if (AppState.priceBoxShow) " · 現價方格" else "") + (if (AppState.holdStyle.shows("entry")) " · 進場標籤" else "")
+            (if (AppState.holdStyle.shows("price")) " · 現價方格" else "") + (if (AppState.holdStyle.shows("entry")) " · 進場標籤" else "")
         "pages" -> "首頁 ${AppState.homeOrder.count { it !in AppState.homeHidden }} 張卡片"
         "source" -> "台股 " + (if (AppState.twUseFugle) "富果" else "證交所") + " · 美股 " + (if (AppState.finnhubKey.isNotBlank()) "Finnhub" else "Yahoo")
         "news" -> com.claudeetf.app.data.remote.RssNews.enabled().size.let { if (it == 0) "預設來源" else "$it 個來源" }
@@ -1212,6 +1211,12 @@ private fun HoldStyleSettings() {
                     Text("↓ 往後", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { move(id, 1) }.padding(8.dp))
                     Text("隱藏", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { set { it.copy(hidden = it.hidden + id) }; target = null }.padding(8.dp))
                 }
+                // 現價方格專屬：即時／收盤文字、字型（原「持股現價方格」設定併入此處）
+                if (id == "price") {
+                    OptToggle("顯示「即時／收盤」文字", AppState.priceBoxLabel) { AppState.updatePriceBox(label = it) }
+                    Text("字型", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                    ChipRow(listOf("mono" to "等寬", "sans" to "一般", "serif" to "襯線", "cond" to "窄體"), AppState.priceBoxFont) { AppState.updatePriceBox(font = it) }
+                }
                 ItemStyleEditor(st.style(id), id !in HS.NO_RECOLOR) { f -> set { it.withStyle(id, f(it.style(id))) } }
             }
         }
@@ -1246,7 +1251,6 @@ private fun HoldStyleSettings() {
                 Text("↓", color = if (i < st.items.lastIndex) C.Primary else C.Line, fontSize = 18.sp, modifier = Modifier.clickable(enabled = i < st.items.lastIndex) { move(id, 1) }.padding(horizontal = 10.dp, vertical = 4.dp))
                 androidx.compose.material3.Switch(on, { v ->
                     set { s -> s.copy(hidden = if (v) s.hidden - id else s.hidden + id) }
-                    if (v && id == "price" && !AppState.priceBoxShow) AppState.updatePriceBox(show = true)
                 }, colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary, uncheckedTrackColor = C.Border))
             }
         }

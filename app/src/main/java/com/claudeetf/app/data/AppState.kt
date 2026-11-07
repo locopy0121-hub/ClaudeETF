@@ -475,6 +475,8 @@ object AppState {
         divPayAlert = p.getBoolean("divPayAlert", true)
         divPayMuted.clear(); divPayMuted.addAll((p.getString("divPayMuted", "") ?: "").split(",").filter { it.isNotBlank() })
         priceBoxShow = p.getBoolean("priceBoxShow", true)
+        // 現價方格的顯示改由持股卡片項目開關控制：舊的「不顯示」轉成隱藏該項目
+        if (!priceBoxShow) { holdStyle = holdStyle.copy(hidden = holdStyle.hidden + "price"); priceBoxShow = true }
         priceBoxLabel = p.getBoolean("priceBoxLabel", true)
         priceBoxFont = p.getString("priceBoxFont", "mono") ?: "mono"
         priceBoxWeight = p.getInt("priceBoxWeight", 700)

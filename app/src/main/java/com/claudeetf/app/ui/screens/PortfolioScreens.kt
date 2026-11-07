@@ -343,7 +343,7 @@ fun priceBoxFamily(key: String): androidx.compose.ui.text.font.FontFamily = when
 
 /** 持股列的即時現價小方格：依漲跌上色，價格跳動時閃爍，盤中顯示即時燈號 */
 @Composable
-fun LivePriceBox(q: com.claudeetf.app.data.Quote, isUs: Boolean) {
+fun LivePriceBox(q: com.claudeetf.app.data.Quote, isUs: Boolean, scale: Float = 1f) {
     var last by remember(q.symbol) { mutableStateOf(q.price) }
     var flash by remember(q.symbol) { mutableIntStateOf(0) }
     LaunchedEffect(q.price) {
@@ -364,10 +364,12 @@ fun LivePriceBox(q: com.claudeetf.app.data.Quote, isUs: Boolean) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (live) { Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(C.Red)); HGap(4.dp) }
-        if (AppState.priceBoxLabel) Text(if (live) "即時 " else "收盤 ", color = C.Muted, fontSize = 10.sp)
+        if (AppState.priceBoxLabel) Text(if (live) "即時 " else "收盤 ", color = C.Muted, fontSize = (10 * scale).sp)
+        // 字級＝方格字級 × 單一欄位字級；粗細可被單一欄位粗細覆蓋
         Text(
             (if (isUs) "$" else "") + Fmt.price(q.price), color = c, maxLines = 1,
-            fontSize = AppState.priceBoxSize.sp, fontWeight = FontWeight(AppState.priceBoxWeight), fontFamily = priceBoxFamily(AppState.priceBoxFont),
+            fontSize = (AppState.priceBoxSize * scale).sp, fontWeight = LocalItemWeight.current ?: FontWeight(AppState.priceBoxWeight),
+            fontFamily = priceBoxFamily(AppState.priceBoxFont),
         )
     }
 }
@@ -407,7 +409,7 @@ internal fun HoldingRow(
     @Composable fun has(id: String): Boolean = when (id) {
         "today" -> q != null && q.price > 0 && q.prevClose > 0
         "entry", "tip" -> entry != null
-        "price" -> q != null && q.price > 0 && AppState.priceBoxShow
+        "price" -> q != null && q.price > 0
         "change" -> q != null && q.price > 0 && q.prevClose > 0
         "weight" -> AppState.holdings.sumOf { AppState.marketValueTwd(it) } > 0
         else -> true
@@ -444,7 +446,7 @@ internal fun HoldingRow(
                         overflow = if (st.marquee) TextOverflow.Clip else TextOverflow.Ellipsis,
                         modifier = if (st.marquee) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 1500, initialDelayMillis = 1200, velocity = 36.dp) else Modifier)
                 }
-                "price" -> q?.let { LivePriceBox(it, isUs) }
+                "price" -> q?.let { LivePriceBox(it, isUs, st.style(id).size / 100f) }
                 "mv" -> Row(verticalAlignment = Alignment.CenterVertically) { Lbl(id); NumText(mask(mvText), sz(id, 14)) }
                 "pl" -> Row(verticalAlignment = Alignment.CenterVertically) { Lbl(id); NumText(mask(plText), sz(id, 12), Trend.fg(plOrig)) }
                 "pct" -> Row(verticalAlignment = Alignment.CenterVertically) { Lbl(id); ChangePill(pct) }
