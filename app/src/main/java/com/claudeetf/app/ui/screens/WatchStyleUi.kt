@@ -34,9 +34,40 @@ import com.claudeetf.app.ui.Sparkline
 import com.claudeetf.app.ui.theme.C
 import com.claudeetf.app.ui.theme.Trend
 import com.claudeetf.app.util.Fmt
+import androidx.compose.ui.graphics.toArgb
+import com.claudeetf.app.ui.LocalItemWeight
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
 
 /** 依版型縮放字級 */
-fun WatchStyle.sp(base: Int): TextUnit = (base * when (density) { 0 -> 0.85f; 2 -> 1.2f; else -> 1f }).sp
+fun WatchStyle.sp(base: Int): TextUnit = (base * scale * when (density) { 0 -> 0.85f; 2 -> 1.2f; else -> 1f }).sp
+
+/** 不可整塊改色的項目（標籤、走勢圖本身有底色） */
+private val NO_RECOLOR = setOf("entry", "spark", "market")
+
+/**
+ * 套用單一欄位樣式：字級（st.at）、字重（LocalItemWeight）、
+ * 文字色（自訂色或漲跌色，以 SrcIn 混色把整個項目的文字統一上色）。
+ */
+@Composable
+private fun Styled(st: WatchStyle, key: String, change: Double, modifier: Modifier = Modifier, content: @Composable (WatchStyle) -> Unit) {
+    val ist = st.style(key)
+    val id = key.substringAfter(":")
+    val tint: Color? = when {
+        id in NO_RECOLOR -> null
+        ist.trend -> Trend.fg(change)
+        ist.color != 0L -> Color(ist.color.toInt())
+        else -> null
+    }
+    val m = if (tint == null) modifier else modifier
+        .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)
+        .drawWithContent { drawContent(); drawRect(tint, blendMode = androidx.compose.ui.graphics.BlendMode.SrcIn) }
+    CompositionLocalProvider(LocalItemWeight provides (if (ist.weight > 0) FontWeight(ist.weight) else null)) {
+        Box(m) { content(st.at(key)) }
+    }
+}
 
 /** 預覽可點選：點了回報目標；選中的加框 */
 private class Tap(val sel: String?, val onTap: ((String) -> Unit)?)
@@ -55,11 +86,11 @@ fun WatchName(q: Quote, st: WatchStyle, base: Int, modifier: Modifier = Modifier
     when (st.nameMode) {
         1 -> Row(modifier, verticalAlignment = Alignment.CenterVertically) {
             NumText(q.symbol, st.sp(base), C.Text, FontWeight.Bold); HGap(6.dp)
-            Text(name, color = C.Text2, fontSize = st.sp(base - 2), maxLines = st.nameLines, overflow = TextOverflow.Ellipsis)
+            Text(name, color = C.Text2, fontSize = st.sp(base - 2), fontWeight = LocalItemWeight.current, maxLines = st.nameLines, overflow = TextOverflow.Ellipsis)
         }
         3 -> NumText(q.symbol, st.sp(base), C.Text, FontWeight.Bold, modifier)
         else -> Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-            Text(name, Modifier.weight(1f, fill = false), color = C.Text, fontSize = st.sp(base), maxLines = st.nameLines, overflow = TextOverflow.Ellipsis)
+            Text(name, Modifier.weight(1f, fill = false), color = C.Text, fontSize = st.sp(base), fontWeight = LocalItemWeight.current, maxLines = st.nameLines, overflow = TextOverflow.Ellipsis)
             if (showCode && st.nameMode == 0) { HGap(6.dp); NumText(q.symbol, st.sp(base - 2), C.Muted) }
         }
     }
@@ -161,12 +192,12 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
     val small = st.cardCols == 3
     Column(modifier.clip(RoundedCornerShape(12.dp)).background(bg).padding(pad), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(Modifier.fillMaxWidth().tap(t, "name"), verticalAlignment = Alignment.CenterVertically) {
-            WatchName(q, st, if (small) 12 else 13, Modifier.weight(1f))
+            Styled(st, "c:name", q.change, Modifier.weight(1f)) { s -> WatchName(q, s, if (small) 12 else 13) }
             if (st.tagPos == 1) EntryTagFor(q)
             else if (st.nameMode == 0 && !small) NumText(q.symbol, st.sp(11), C.Muted)
         }
         Row(Modifier.align(priceAlign).tap(t, "price"), verticalAlignment = Alignment.CenterVertically) {
-            NumText(if (q.price > 0) Fmt.price(q.price) else "—", st.sp(if (small) 19 else 26), Trend.price(q.change), weight = FontWeight.Bold)
+            Styled(st, "c:price", q.change) { s -> NumText(if (q.price > 0) Fmt.price(q.price) else "—", s.sp(if (small) 19 else 26), Trend.price(q.change), weight = FontWeight.Bold) }
             if (st.tagPos == 2) { HGap(6.dp); EntryTagFor(q) }
         }
         val ids = st.items.filter { st.shows(it) && !(it == "entry" && st.tagPos != 0) }
@@ -176,14 +207,18 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
                 "cols" -> {
                     // 行情頁「欄位／第二欄」選的資訊；走勢與卡片走勢圖重複不再顯示
                     val cols = listOf(AppState.watchColumn, AppState.watchColumn2).filter { it.isNotEmpty() && it != "spark" }.distinct()
-                    if (cols.isNotEmpty()) Row(Modifier.align(extraAlign).tap(t, "cols"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        cols.forEach { WatchCell(q, it) }
+                    if (cols.isNotEmpty()) Styled(st, "c:cols", q.change, Modifier.align(extraAlign).tap(t, "cols")) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { cols.forEach { WatchCell(q, it) } }
                     } else if (onTap != null) Text("欄位：未選（行情頁設定）", Modifier.tap(t, "cols"), color = C.Muted, fontSize = st.sp(10))
                 }
-                "change" -> WatchChange(q, st, if (small) 11 else 12,
-                    (if (st.changeMode == 0 && st.tagAlign == 0) Modifier.fillMaxWidth() else Modifier.align(extraAlign)).tap(t, "change"), spread = st.tagAlign == 0)
+                "change" -> {
+                    val full = st.changeMode == 0 && st.tagAlign == 0
+                    Styled(st, "c:change", q.change, (if (full) Modifier.fillMaxWidth() else Modifier.align(extraAlign)).tap(t, "change")) { s ->
+                        WatchChange(q, s, if (small) 11 else 12, if (full) Modifier.fillMaxWidth() else Modifier, spread = st.tagAlign == 0)
+                    }
+                }
                 else -> Row(Modifier.align(extraAlign), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    g.forEach { id -> Box(Modifier.tap(t, id)) { WatchExtraItem(q, id, st) } }
+                    g.forEach { id -> Styled(st, "c:$id", q.change, Modifier.tap(t, id)) { s -> WatchExtraItem(q, id, s) } }
                 }
             }
         }
@@ -212,14 +247,14 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (st.density == 0) 2.dp else 4.dp)) {
                 Row(Modifier.tap(t, "name"), verticalAlignment = Alignment.CenterVertically) {
-                    WatchName(q, st, 15, Modifier.weight(1f, fill = false), showCode = !st.listShows("market"))
+                    Styled(st, "l:name", q.change, Modifier.weight(1f, fill = false)) { s -> WatchName(q, s, 15, showCode = !st.listShows("market")) }
                     if (st.tagPos == 1) { HGap(6.dp); EntryTagFor(q) }
                 }
                 // 第二行：市場標籤、報價時間
                 val entryHere = st.listShows("entry") && st.tagPos == 0 && AppState.showCardEntry
                 if (st.listShows("market") || st.listShows("source")) Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (st.listShows("market")) { Box(Modifier.tap(t, "market")) { WatchExtraItem(q, "market", st, list = true) }; HGap(8.dp) }
-                    if (st.listShows("source")) Box(Modifier.tap(t, "source")) { WatchExtraItem(q, "source", st, list = true) }
+                    if (st.listShows("market")) { Styled(st, "l:market", q.change, Modifier.tap(t, "market")) { s -> WatchExtraItem(q, "market", s, list = true) }; HGap(8.dp) }
+                    if (st.listShows("source")) Styled(st, "l:source", q.change, Modifier.tap(t, "source")) { s -> WatchExtraItem(q, "source", s, list = true) }
                 }
                 // 第三行：進場建議標籤（K 棒訊號），在 TW／US 標籤的下一行
                 if (entryHere) Row(Modifier.tap(t, "entry").padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -250,19 +285,19 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
             Column(Modifier.widthIn(min = 88.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(Modifier.tap(t, "price"), verticalAlignment = Alignment.CenterVertically) {
                     if (st.tagPos == 2) { EntryTagFor(q); HGap(6.dp) }
-                    NumText(if (q.price > 0) Fmt.price(q.price) else "—", st.sp(16), Trend.price(q.change), FontWeight.Bold)
+                    Styled(st, "l:price", q.change) { s -> NumText(if (q.price > 0) Fmt.price(q.price) else "—", s.sp(16), Trend.price(q.change), FontWeight.Bold) }
                 }
-                Row(Modifier.tap(t, "change"), verticalAlignment = Alignment.CenterVertically) {
-                    if (st.changeMode != 1) NumText(Fmt.signed(q.change, 2), st.sp(11), c)
-                    if (st.changeMode == 0) HGap(6.dp)
-                    if (st.changeMode != 2) { if (st.changeStyle == 1) ChangePill(q.changePct) else NumText(Fmt.pct(q.changePct), st.sp(11), c) }
-                }
+                Styled(st, "l:change", q.change, Modifier.tap(t, "change")) { s -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (s.changeMode != 1) NumText(Fmt.signed(q.change, 2), s.sp(11), c)
+                    if (s.changeMode == 0) HGap(6.dp)
+                    if (s.changeMode != 2) { if (s.changeStyle == 1) ChangePill(q.changePct) else NumText(Fmt.pct(q.changePct), s.sp(11), c) }
+                } }
             }
         }
         // 下層：一項一行（左側名稱、右側數據橫向排開）；隱藏或沒有資料的項目整行不顯示
         val rowIds = st.listItems.filter { id -> id !in setOf("market", "source", "spark", "entry") && (st.listShows(id) || id in tableCols) } +
             tableCols.filter { it !in st.listItems }
-        val lines = rowIds.mapNotNull { id -> infoLine(q, id, st)?.let { id to it } }
+        val lines = rowIds.mapNotNull { id -> infoLine(q, id, st.at("l:$id"))?.let { id to it } }
         if (lines.isNotEmpty()) {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(C.Card2.copy(alpha = 0.5f)).padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -273,7 +308,9 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
                         val name = if (id == "ext") AppState.extended[q.symbol]?.label ?: "盤前盤後" else LINE_NAMES[id] ?: id
                         if (name.isNotEmpty()) Text(name, Modifier.width(52.dp), color = C.Muted, fontSize = st.sp(12), maxLines = 1)
                         // 數據太長時自動換行，不會被擠出畫面
-                        FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { line() }
+                        Styled(st, "l:$id", q.change, Modifier.weight(1f)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { line() }
+                        }
                     }
                 }
             }
@@ -386,7 +423,7 @@ fun WatchStyleSettings() {
 
     Card(padding = 14.dp) {
         Text("自選個股顯示格式", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Label("點預覽中的名稱、價格、漲跌或任一項目，下方會出現該項設定")
+        Label("點預覽中的名稱、價格、漲跌或任一項目，下方會出現該項設定（含字級、粗細、文字顏色）")
 
         Text("卡片預覽", color = C.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -467,7 +504,50 @@ private fun Editor(target: String, st: WatchStyle, set: ((WatchStyle) -> WatchSt
                 MoveHide(card, id, st, set)
             }
         }
+        ItemStyleControls(target, st, set)
     }
+}
+
+/** 單一欄位：字級、字重、文字顏色（自訂色／漲跌色） */
+@Composable
+private fun ItemStyleControls(key: String, st: WatchStyle, set: ((WatchStyle) -> WatchStyle) -> Unit) {
+    val id = key.substringAfter(":")
+    if (id == "spark") return
+    val cur = st.style(key)
+    fun upd(f: (com.claudeetf.app.data.ItemStyle) -> com.claudeetf.app.data.ItemStyle) = set { s ->
+        val n = f(s.style(key))
+        s.copy(itemStyles = if (n.isDefault) s.itemStyles - key else s.itemStyles + (key to n))
+    }
+    Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(1.dp).background(C.Border))
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("字級", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+        SmallBtn("－", cur.size > 50) { upd { it.copy(size = (it.size - 10).coerceAtLeast(50)) } }
+        Text("${cur.size}%", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        SmallBtn("＋", cur.size < 250) { upd { it.copy(size = (it.size + 10).coerceAtMost(250)) } }
+    }
+    Text("粗細", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+    Chips(listOf(0 to "預設", 300 to "300", 400 to "400", 500 to "500", 600 to "600", 700 to "700", 800 to "800", 900 to "900"), cur.weight) { v -> upd { it.copy(weight = v) } }
+    if (id !in setOf("entry", "market")) {
+        var picking by remember { mutableStateOf(false) }
+        if (picking) ColorPickerDialog(
+            title = "文字顏色", initial = if (cur.color != 0L) Color(cur.color.toInt()) else C.Text,
+            onPick = { c -> upd { it.copy(color = c.toArgb().toLong() and 0xFFFFFFFFL, trend = false) }; picking = false },
+            onReset = { upd { it.copy(color = 0L, trend = false) }; picking = false },
+            onDismiss = { picking = false },
+        )
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("文字顏色", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+            SmallBtn(if (cur.color == 0L && !cur.trend) "✓ 預設" else "預設", true) { upd { it.copy(color = 0L, trend = false) } }
+            SmallBtn(if (cur.trend) "✓ 漲跌色" else "漲跌色", true) { upd { it.copy(trend = !it.trend, color = 0L) } }
+            Box(Modifier.size(width = 40.dp, height = 26.dp).clip(RoundedCornerShape(8.dp))
+                .background(if (cur.color != 0L) Color(cur.color.toInt()) else C.Bg)
+                .border(1.dp, C.Border, RoundedCornerShape(8.dp)).clickable { picking = true }, contentAlignment = Alignment.Center) {
+                if (cur.color == 0L) Text("🎨", fontSize = 12.sp)
+            }
+        }
+    }
+    if (!cur.isDefault) Text("此欄位恢復預設", color = C.Muted, fontSize = 12.sp,
+        modifier = Modifier.clickable { set { s -> s.copy(itemStyles = s.itemStyles - key) } }.padding(top = 6.dp))
 }
 
 @Composable

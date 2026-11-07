@@ -73,8 +73,11 @@ fun NumText(
     weight: FontWeight = FontWeight.Normal,
     modifier: Modifier = Modifier,
 ) {
-    Text(text, modifier = modifier, fontFamily = Mono, fontSize = size, color = color, fontWeight = weight, maxLines = 1)
+    Text(text, modifier = modifier, fontFamily = Mono, fontSize = size, color = color, fontWeight = LocalItemWeight.current ?: weight, maxLines = 1)
 }
+
+/** 單一欄位樣式指定的字重（null = 依元件預設） */
+val LocalItemWeight = androidx.compose.runtime.compositionLocalOf<FontWeight?> { null }
 
 @Composable
 fun MarketTag(market: Market) {

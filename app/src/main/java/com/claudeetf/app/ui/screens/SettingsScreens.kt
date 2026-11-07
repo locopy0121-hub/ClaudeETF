@@ -628,7 +628,7 @@ private fun Group(text: String) {
 
 /** 調色盤：常用色塊一點即選，或用色相、亮度滑桿微調；不需輸入色碼 */
 @Composable
-private fun ColorPickerDialog(title: String, initial: androidx.compose.ui.graphics.Color, onPick: (androidx.compose.ui.graphics.Color) -> Unit, onReset: () -> Unit, onDismiss: () -> Unit) {
+internal fun ColorPickerDialog(title: String, initial: androidx.compose.ui.graphics.Color, onPick: (androidx.compose.ui.graphics.Color) -> Unit, onReset: () -> Unit, onDismiss: () -> Unit) {
     val hsv = remember { FloatArray(3).also { android.graphics.Color.colorToHSV(initial.toArgb(), it) } }
     var hue by remember { mutableStateOf(hsv[0]) }
     var sat by remember { mutableStateOf(hsv[1]) }

@@ -33,7 +33,20 @@ data class WatchStyle(
     /** 清單項目順序與隱藏 */
     val listItems: List<String> = LIST_DEFAULT,
     val listHidden: Set<String> = LIST_HIDDEN,
+    /** 單一欄位樣式：鍵為 "c:項目"（卡片）或 "l:項目"（清單） */
+    val itemStyles: Map<String, ItemStyle> = emptyMap(),
+    /** 繪製時套用的縮放（不存檔，由單一欄位樣式帶入） */
+    val scale: Float = 1f,
+    /** 卡片外觀：背景、邊框色（0 = 預設）、圓角、內距與卡片間距（dp，-1 = 依版型） */
+    val cardBg: Long = 0L,
+    val cardBorder: Long = 0L,
+    val radius: Int = 12,
+    val padDp: Int = -1,
+    val gapDp: Int = 8,
 ) {
+    fun style(key: String): ItemStyle = itemStyles[key] ?: ItemStyle()
+    /** 套用某欄位的字級縮放 */
+    fun at(key: String): WatchStyle = itemStyles[key]?.let { copy(scale = it.size / 100f) } ?: if (scale != 1f) copy(scale = 1f) else this
     fun shows(id: String) = id !in hidden
     fun listShows(id: String) = id !in listHidden
 
@@ -44,6 +57,8 @@ data class WatchStyle(
         .put("tagPos", tagPos).put("tagAlign", tagAlign)
         .put("items", JSONArray(items)).put("hidden", JSONArray(hidden.toList()))
         .put("listItems", JSONArray(listItems)).put("listHidden", JSONArray(listHidden.toList()))
+        .put("itemStyles", JSONObject().apply { itemStyles.filterValues { !it.isDefault }.forEach { (k, v) -> put(k, v.toJson()) } })
+        .put("cardBg", cardBg).put("cardBorder", cardBorder).put("radius", radius).put("padDp", padDp).put("gapDp", gapDp)
         .toString()
 
     companion object {
@@ -101,8 +116,25 @@ data class WatchStyle(
                     order("listItems", LIST_NAMES, LIST_DEFAULT),
                     // v3 起清單預設精簡：舊版的清單隱藏設定重設為新預設
                     if (o.optInt("v", 1) >= 3) list("listHidden")?.toSet() ?: LIST_HIDDEN else LIST_HIDDEN,
+                    o.optJSONObject("itemStyles")?.let { m -> m.keys().asSequence().associateWith { ItemStyle.fromJson(m.optJSONObject(it)) } } ?: emptyMap(),
+                    1f,
+                    o.optLong("cardBg", 0L), o.optLong("cardBorder", 0L), o.optInt("radius", 12), o.optInt("padDp", -1), o.optInt("gapDp", 8),
                 )
             }.getOrDefault(WatchStyle())
         }
+    }
+}
+
+/**
+ * 單一欄位樣式。
+ * size：字級百分比；weight：字重 100–900（0 = 預設）；
+ * color：自訂文字色 ARGB（0 = 預設）；trend：改用漲跌色。
+ */
+data class ItemStyle(val size: Int = 100, val weight: Int = 0, val color: Long = 0L, val trend: Boolean = false) {
+    val isDefault get() = size == 100 && weight == 0 && color == 0L && !trend
+    fun toJson(): JSONObject = JSONObject().put("s", size).put("w", weight).put("c", color).put("t", trend)
+    companion object {
+        fun fromJson(o: JSONObject?): ItemStyle = if (o == null) ItemStyle() else
+            ItemStyle(o.optInt("s", 100).coerceIn(50, 250), o.optInt("w", 0), o.optLong("c", 0L), o.optBoolean("t", false))
     }
 }
