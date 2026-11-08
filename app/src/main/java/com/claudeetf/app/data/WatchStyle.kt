@@ -143,14 +143,22 @@ data class ItemStyle(
     val gap: Int = 0,
     /** 內距：項目四周留白（dp） */
     val pad: Int = 0,
+    /** 背景色 ARGB（0 = 無） */
+    val bg: Long = 0L,
+    /** 欄寬（dp，0 = 依內容自動） */
+    val width: Int = 0,
+    /** 對齊（有設欄寬時）：0 靠左、1 置中、2 靠右 */
+    val align: Int = 0,
 ) {
-    val isDefault get() = size == 100 && weight == 0 && color == 0L && !trend && fx == 0 && gap == 0 && pad == 0
+    val isDefault get() = size == 100 && weight == 0 && color == 0L && !trend && fx == 0 && gap == 0 && pad == 0 && bg == 0L && width == 0 && align == 0
     fun toJson(): JSONObject = JSONObject().put("s", size).put("w", weight).put("c", color).put("t", trend)
         .put("fx", fx).put("tg", trig).put("sp", speed).put("pw", power).put("g", gap).put("pd", pad)
+        .put("bg", bg).put("wd", width).put("al", align)
     companion object {
         fun fromJson(o: JSONObject?): ItemStyle = if (o == null) ItemStyle() else
             ItemStyle(o.optInt("s", 100).coerceIn(50, 250), o.optInt("w", 0), o.optLong("c", 0L), o.optBoolean("t", false),
                 o.optInt("fx", 0).coerceIn(0, 4), o.optInt("tg", 1).coerceIn(0, 3), o.optInt("sp", 1).coerceIn(0, 2), o.optInt("pw", 1).coerceIn(0, 2),
-                o.optInt("g", 0).coerceIn(0, 24), o.optInt("pd", 0).coerceIn(0, 24))
+                o.optInt("g", 0).coerceIn(0, 24), o.optInt("pd", 0).coerceIn(0, 24),
+                o.optLong("bg", 0L), o.optInt("wd", 0).coerceIn(0, 240), o.optInt("al", 0).coerceIn(0, 2))
     }
 }

@@ -230,26 +230,57 @@ object WidgetUpdater {
         }
     }
 
-    /**
-     * 組出某一區（左／右）的文字：依項目順序，同一行以兩個空白分隔，標記「換行」的項目從新的一行開始；
-     * 每個項目各自套用字級、粗細、顏色、等寬字（Span，RemoteViews 支援）。
-     */
-    fun zoneText(st: WidgetStyle, r: WRow, zoneSel: Int?, c: WidgetColors, k: Float): CharSequence {
-        val sb = android.text.SpannableStringBuilder()
-        st.items.filter { st.shows(it) && (zoneSel == null || st.zoneOf(it) == zoneSel) }.forEach { id ->
-            val t = itemText(id, r) ?: return@forEach
-            if (sb.isNotEmpty()) sb.append(if (id in st.newline) "\n" else "  ")
-            val start = sb.length
-            sb.append(t)
-            val ist = st.style("r:$id")
-            val sz = (baseSize(id, st.layout) * k * ist.size / 100f).toInt().coerceAtLeast(6)
-            sb.setSpan(android.text.style.AbsoluteSizeSpan(sz, true), start, sb.length, 0)
-            sb.setSpan(android.text.style.ForegroundColorSpan(itemColor(st, "r:$id", id, r, c)), start, sb.length, 0)
-            val bold = if (ist.weight > 0) ist.weight >= 600 else id == "code"
-            if (bold) sb.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, sb.length, 0)
-            if (id in WidgetStyle.MONO) sb.setSpan(android.text.style.TypefaceSpan("monospace"), start, sb.length, 0)
-        }
+    /** 單一項目的樣式文字（字級、粗細、顏色、等寬字） */
+    fun itemSpan(st: WidgetStyle, id: String, r: WRow, c: WidgetColors, k: Float): CharSequence? {
+        val t = itemText(id, r) ?: return null
+        val sb = android.text.SpannableString(t)
+        val ist = st.style("r:$id")
+        val sz = (baseSize(id, st.layout) * k * ist.size / 100f).toInt().coerceAtLeast(6)
+        sb.setSpan(android.text.style.AbsoluteSizeSpan(sz, true), 0, sb.length, 0)
+        sb.setSpan(android.text.style.ForegroundColorSpan(itemColor(st, "r:$id", id, r, c)), 0, sb.length, 0)
+        val bold = if (ist.weight > 0) ist.weight >= 600 else id == "code"
+        if (bold) sb.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, sb.length, 0)
+        if (id in WidgetStyle.MONO) sb.setSpan(android.text.style.TypefaceSpan("monospace"), 0, sb.length, 0)
         return sb
+    }
+
+    /** 依項目順序與「換行」分成多行（每行一串項目） */
+    fun zoneLines(st: WidgetStyle, r: WRow, zoneSel: Int?): List<List<String>> {
+        val lines = ArrayList<MutableList<String>>()
+        st.items.filter { st.shows(it) && (zoneSel == null || st.zoneOf(it) == zoneSel) && itemText(it, r) != null }.forEach { id ->
+            if (lines.isEmpty() || id in st.newline) lines += mutableListOf(id) else lines.last() += id
+        }
+        return lines
+    }
+
+    /**
+     * 把某一區（左／右／方格整格）的項目逐一加到容器：每個項目一個 TextView，
+     * 可各自設定行距（上方間距）、內距、背景色、欄寬與對齊。
+     */
+    private fun fillZone(context: Context, parent: RemoteViews, parentId: Int, st: WidgetStyle, r: WRow, zoneSel: Int?, c: WidgetColors, k: Float, end: Boolean) {
+        val dp = context.resources.displayMetrics.density
+        fun px(v: Int) = (v * dp).toInt()
+        parent.removeAllViews(parentId)
+        parent.setInt(parentId, "setGravity", if (end) android.view.Gravity.END else android.view.Gravity.START)
+        zoneLines(st, r, zoneSel).forEach { line ->
+            val lv = RemoteViews(context.packageName, R.layout.widget_line)
+            lv.removeAllViews(R.id.w_line)
+            val gap = line.maxOf { st.style("r:$it").gap }
+            lv.setViewPadding(R.id.w_line, 0, px(gap), 0, 0)
+            line.forEachIndexed { i, id ->
+                if (i > 0) lv.addView(R.id.w_line, RemoteViews(context.packageName, R.layout.widget_space))
+                val ist = st.style("r:$id")
+                val iv = RemoteViews(context.packageName, R.layout.widget_item)
+                iv.setTextViewText(R.id.w_it, itemSpan(st, id, r, c, k))
+                val p = px(ist.pad)
+                iv.setViewPadding(R.id.w_it, p, p / 2, p, p / 2)
+                if (ist.bg != 0L) iv.setInt(R.id.w_it, "setBackgroundColor", ist.bg.toInt())
+                if (ist.width > 0) iv.setInt(R.id.w_it, "setMinWidth", px(ist.width))
+                iv.setInt(R.id.w_it, "setGravity", android.view.Gravity.CENTER_VERTICAL or when (ist.align) { 1 -> android.view.Gravity.CENTER_HORIZONTAL; 2 -> android.view.Gravity.END; else -> android.view.Gravity.START })
+                lv.addView(R.id.w_line, iv)
+            }
+            parent.addView(parentId, lv)
+        }
     }
 
     /** 標題區單一項目（標題、主數字、今日列、指數列、時間）的樣式文字 */
@@ -287,7 +318,15 @@ object WidgetUpdater {
         fun head(id: Int, key: String, text: String, base: Float, def: Int, sign: Double, bold: Boolean = false) {
             val on = text.isNotBlank() && key !in st.headerHidden
             v.setViewVisibility(id, if (on) View.VISIBLE else View.GONE)
-            if (on) v.setTextViewText(id, headerText(st, key, text, base, def, sign, c, k, bold))
+            if (on) {
+                v.setTextViewText(id, headerText(st, key, text, base, def, sign, c, k, bold))
+                val ist = st.style("h:$key")
+                val p = (ist.pad * dp).toInt()
+                v.setViewPadding(id, p, p / 2 + (ist.gap * dp).toInt(), p, p / 2)
+                v.setInt(id, "setBackgroundColor", ist.bg.toInt())
+                v.setInt(id, "setMinWidth", (ist.width * dp).toInt())
+                v.setInt(id, "setGravity", when (ist.align) { 1 -> android.view.Gravity.CENTER_HORIZONTAL; 2 -> android.view.Gravity.END; else -> android.view.Gravity.START })
+            }
         }
         head(R.id.w_label, "label", m.label, 12f, c.muted, m.todaySign)
         head(R.id.w_total, "total", m.total, 24f, if (st.header == 2) trendColor(m.todaySign, c.text) else c.text, m.todaySign, true)
@@ -307,7 +346,7 @@ object WidgetUpdater {
                 pair.forEachIndexed { i, r ->
                     val cell = RemoteViews(context.packageName, R.layout.widget_cell)
                     cell.setInt(R.id.w_cbg, "setColorFilter", c.cell)
-                    cell.setTextViewText(R.id.w_ct, zoneText(st, r, null, c, k))
+                    fillZone(context, cell, R.id.w_ct, st, r, null, c, k, false)
                     val p8 = (8 * dp).toInt() + rowPadPx
                     cell.setViewPadding(R.id.w_ct, p8, p8, p8, p8)
                     gr.addView(if (i == 0) R.id.w_c1 else R.id.w_c2, cell)
@@ -318,10 +357,10 @@ object WidgetUpdater {
         } else m.rows.forEach { r ->
             // 清單：左區、右區各自依順序與換行排列
             val row = RemoteViews(context.packageName, R.layout.widget_row)
-            row.setTextViewText(R.id.w_rl, zoneText(st, r, 0, c, k))
-            val right = zoneText(st, r, 1, c, k)
-            row.setViewVisibility(R.id.w_rr, if (right.isEmpty()) View.GONE else View.VISIBLE)
-            row.setTextViewText(R.id.w_rr, right)
+            fillZone(context, row, R.id.w_rl, st, r, 0, c, k, false)
+            val hasRight = zoneLines(st, r, 1).isNotEmpty()
+            row.setViewVisibility(R.id.w_rr, if (hasRight) View.VISIBLE else View.GONE)
+            if (hasRight) fillZone(context, row, R.id.w_rr, st, r, 1, c, k, true)
             row.setViewPadding(R.id.w_row, 0, gapPx + rowPadPx, 0, rowPadPx)
             v.addView(R.id.w_list, row)
         }

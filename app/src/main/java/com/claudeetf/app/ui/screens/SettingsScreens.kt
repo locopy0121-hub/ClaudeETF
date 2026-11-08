@@ -1451,11 +1451,19 @@ private fun WidgetPreview(st: com.claudeetf.app.widget.WidgetStyle, sel: String?
     fun Modifier.pick(key: String) = this.clip(RoundedCornerShape(4.dp))
         .border(if (sel == key) 2.dp else 0.5.dp, if (sel == key) C.Primary else col(c.muted).copy(alpha = 0.35f), RoundedCornerShape(4.dp))
         .clickable { onPick(key) }.padding(horizontal = 2.dp)
+    fun Modifier.deco(ist: com.claudeetf.app.data.ItemStyle) = this
+        .then(if (ist.bg != 0L) Modifier.background(col(ist.bg.toInt())) else Modifier)
+        .padding(horizontal = ist.pad.dp, vertical = (ist.pad / 2).dp)
+        .then(if (ist.width > 0) Modifier.widthIn(min = ist.width.dp) else Modifier)
+    fun com.claudeetf.app.data.ItemStyle.textAlign() = when (align) {
+        1 -> androidx.compose.ui.text.style.TextAlign.Center; 2 -> androidx.compose.ui.text.style.TextAlign.End
+        else -> androidx.compose.ui.text.style.TextAlign.Start }
     @Composable fun Head(key: String, text: String, base: Float, def: Int, sign: Double, bold: Boolean = false) {
         if (text.isBlank() || key in st.headerHidden) return
         val ist = st.style("h:$key")
         val color = when { ist.color != 0L -> ist.color.toInt(); ist.trend -> W.trendColor(sign, c.text); else -> def }
-        Text(text, Modifier.pick("h:$key"), color = col(color), fontSize = (base * k * ist.size / 100f).sp,
+        Text(text, Modifier.padding(top = ist.gap.dp).pick("h:$key").deco(ist), color = col(color), fontSize = (base * k * ist.size / 100f).sp,
+            textAlign = ist.textAlign(),
             fontWeight = if (if (ist.weight > 0) ist.weight >= 600 else bold) FontWeight.Bold else FontWeight.Normal,
             fontFamily = if (key == "label") null else mono, maxLines = 2)
     }
@@ -1465,10 +1473,10 @@ private fun WidgetPreview(st: com.claudeetf.app.widget.WidgetStyle, sel: String?
         ids.forEach { id -> if (lines.isEmpty() || id in st.newline) lines += mutableListOf(id) else lines.last() += id }
         Column(horizontalAlignment = if (end) Alignment.End else Alignment.Start) {
             lines.forEach { line ->
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                FlowRow(Modifier.padding(top = line.maxOf { st.style("r:$it").gap }.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.Center) {
                     line.forEach { id ->
                         val ist = st.style("r:$id")
-                        Text(W.itemText(id, row)!!, Modifier.pick("r:$id"), color = col(W.itemColor(st, "r:$id", id, row, c)),
+                        Text(W.itemText(id, row)!!, Modifier.pick("r:$id").deco(ist), textAlign = ist.textAlign(), color = col(W.itemColor(st, "r:$id", id, row, c)),
                             fontSize = (W.baseSize(id, st.layout) * k * ist.size / 100f).sp,
                             fontWeight = if (if (ist.weight > 0) ist.weight >= 600 else id == "code") FontWeight.Bold else FontWeight.Normal,
                             fontFamily = if (id in com.claudeetf.app.widget.WidgetStyle.MONO) mono else null, maxLines = 1)
@@ -1565,6 +1573,29 @@ private fun WidgetSettings() {
                 Stepper("字級", cur.size, 50, 250, 10, "%") { v -> upd { it.copy(size = v) } }
                 Text("粗細", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
                 ChipRow(listOf(0 to "預設", 400 to "一般", 700 to "粗體"), cur.weight) { v -> upd { it.copy(weight = v) } }
+                Stepper("行距（上方間距）", cur.gap, 0, 24, 1, " dp") { v -> upd { it.copy(gap = v) } }
+                Stepper("內距", cur.pad, 0, 24, 1, " dp") { v -> upd { it.copy(pad = v) } }
+                Stepper("欄寬（0 = 自動）", cur.width, 0, 240, 10, " dp") { v -> upd { it.copy(width = v) } }
+                if (cur.width > 0) {
+                    Text("對齊", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                    ChipRow(listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), cur.align) { v -> upd { it.copy(align = v) } }
+                }
+                var pickingBg by remember(key) { mutableStateOf(false) }
+                if (pickingBg) ColorPickerDialog(
+                    title = "背景顏色", initial = if (cur.bg != 0L) androidx.compose.ui.graphics.Color(cur.bg.toInt()) else C.Primary,
+                    onPick = { cc -> upd { it.copy(bg = cc.toArgb().toLong() and 0xFFFFFFFFL) }; pickingBg = false },
+                    onReset = { upd { it.copy(bg = 0L) }; pickingBg = false }, onDismiss = { pickingBg = false },
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("背景顏色", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+                    Text(if (cur.bg == 0L) "✓ 無" else "無", color = C.Primary, fontSize = 12.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable { upd { it.copy(bg = 0L) } }.padding(horizontal = 10.dp, vertical = 5.dp))
+                    Box(Modifier.size(width = 40.dp, height = 26.dp).clip(RoundedCornerShape(8.dp))
+                        .background(if (cur.bg != 0L) androidx.compose.ui.graphics.Color(cur.bg.toInt()) else C.Bg)
+                        .border(1.dp, C.Border, RoundedCornerShape(8.dp)).clickable { pickingBg = true }, contentAlignment = Alignment.Center) {
+                        if (cur.bg == 0L) Text("🎨", fontSize = 12.sp)
+                    }
+                }
                 var picking by remember(key) { mutableStateOf(false) }
                 if (picking) ColorPickerDialog(
                     title = "文字顏色", initial = if (cur.color != 0L) androidx.compose.ui.graphics.Color(cur.color.toInt()) else C.Text,
