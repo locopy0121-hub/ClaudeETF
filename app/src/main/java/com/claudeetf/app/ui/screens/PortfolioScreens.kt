@@ -183,7 +183,6 @@ fun PortfolioScreen(nav: NavController) {
                     Shortcut("資料健檢", Icons.Filled.CheckCircle, Modifier.weight(1f)) { nav.navigate(Routes.HEALTH) }
                 }
             }
-            item { EtfDividendCard { nav.navigate(Routes.stock(it)) } }
             if (accChoices.size > 2) {
                 item {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -855,6 +854,8 @@ fun DividendScreen(nav: NavController) {
             // 配息現金流：下一筆預估入帳、本月入帳明細、持股配息、配息試算
             item { DivNextCard(nav) }
             item { DivMonthCard(nav) }
+            // ETF 配息總覽（原在持股頁）：年領估算與未來 12 個月分布
+            item { EtfDividendCard { nav.navigate(Routes.stock(it)) } }
             item { DivHoldingList(nav) }
             item { DivSimulatorCard() }
             item {
