@@ -247,6 +247,10 @@ object AppState {
     /** 自選個股（卡片／清單）顯示格式 */
     var watchStyle by mutableStateOf(WatchStyle())
     fun updateWatchStyle(ws: WatchStyle) { watchStyle = ws; save() }
+    /** 桌面小工具樣式 */
+    var widgetStyle by mutableStateOf(com.claudeetf.app.widget.WidgetStyle())
+    fun updateWidgetStyle(ws: com.claudeetf.app.widget.WidgetStyle) { widgetStyle = ws; save() }
+
     /** 盤中持股監控：開關、更新秒數、個股漲跌幅提醒級距（%）、漲跌停提醒、今日損益提醒級距（元，0 關閉）、含美股時段 */
     var monOn by mutableStateOf(false)
     var monInterval by mutableIntStateOf(30)
@@ -505,6 +509,7 @@ object AppState {
         divPayAlert = p.getBoolean("divPayAlert", true)
         divPayMuted.clear(); divPayMuted.addAll((p.getString("divPayMuted", "") ?: "").split(",").filter { it.isNotBlank() })
         priceBoxShow = p.getBoolean("priceBoxShow", true)
+        widgetStyle = com.claudeetf.app.widget.WidgetStyle.fromJson(p.getString("widgetStyle", null))
         monOn = p.getBoolean("monOn", false)
         monInterval = p.getInt("monInterval", 30)
         monStepPct = p.getFloat("monStepPct", 3f).toDouble()
@@ -790,6 +795,7 @@ object AppState {
             .putBoolean("autoUpdateCheck", autoUpdateCheck)
             .putString("watchStyle", watchStyle.toJson())
             .putString("holdStyle", holdStyle.toJson())
+            .putString("widgetStyle", widgetStyle.toJson())
             .putBoolean("monOn", monOn).putInt("monInterval", monInterval).putFloat("monStepPct", monStepPct.toFloat())
             .putBoolean("monLimit", monLimit).putFloat("monPnlStep", monPnlStep.toFloat()).putBoolean("monUs", monUs)
             .putBoolean("tickerShow", tickerShow).putString("tickerSymbols", tickerSymbols.joinToString(","))

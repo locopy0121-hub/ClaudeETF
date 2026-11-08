@@ -584,6 +584,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 }
             }
             if (section == "monitor") item { MonitorSettings() }
+            if (section == "widget") item { WidgetSettings() }
             if (section == "accounts") {
                 items(AppState.accounts.toList(), key = { "acc-" + it.id }) { a -> AccountCard(a) }
                 item { AddAccountRow() }
@@ -1116,6 +1117,7 @@ internal val SETTINGS_SECTIONS = listOf(
         SettingsEntry("watch", "📈", "行情卡片樣式"),
         SettingsEntry("hold", "💼", "持股卡片樣式"),
         SettingsEntry("pages", "🏠", "首頁與個股頁"),
+        SettingsEntry("widget", "🧩", "桌面小工具"),
     ),
     "資料與帳務" to listOf(
         SettingsEntry("source", "📡", "行情資料來源"),
@@ -1151,6 +1153,8 @@ private fun SettingsMenu(nav: NavController, version: String) {
         "ledger" -> "交易紀錄 ${AppState.trades.size} 筆"
         "backup" -> "匯出、匯入與備份"
         "alerts" -> "${AppState.alerts.count { it.enabled }} 項開啟"
+        "widget" -> listOf("跟隨 App", "深色", "淺色", "透明")[AppState.widgetStyle.theme.coerceIn(0, 3)] + " · " +
+            (if (AppState.widgetStyle.source == 0) "持股" else "自選") + " ${AppState.widgetStyle.rows} 列"
         "monitor" -> if (!AppState.monOn) "未開啟" else (if (com.claudeetf.app.alerts.MonitorService.running) "監控中" else "已開啟") + " · 每 ${AppState.monInterval} 秒"
         "security" -> if (AppState.appLock) "安全鎖已開啟" else "安全鎖未開啟"
         "chat" -> if (!com.claudeetf.app.chat.ChatPrefs.enabled) "未開啟" else com.claudeetf.app.chat.ChatPrefs.userName
@@ -1424,5 +1428,97 @@ private fun MonitorSettings() {
             }.padding(8.dp))
         }
         Text("測試通知", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { com.claudeetf.app.alerts.AlertEngine.test(ctx) }.padding(vertical = 6.dp))
+    }
+}
+
+
+// ============================== 桌面小工具 ==============================
+
+/** App 內預覽：與桌面小工具同一份內容與配色 */
+@Composable
+private fun WidgetPreview(st: com.claudeetf.app.widget.WidgetStyle) {
+    val W = com.claudeetf.app.widget.WidgetUpdater
+    val c = W.colors(st)
+    val m = W.model(st)
+    val k = when (st.text) { 0 -> 0.85f; 2 -> 1.2f; else -> 1f }
+    val r = when (st.radius) { 0 -> 0.dp; 1 -> 12.dp; else -> 24.dp }
+    fun col(i: Int) = androidx.compose.ui.graphics.Color(i)
+    // 桌布示意（看得出透明度）
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+        .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF3A5A8C), androidx.compose.ui.graphics.Color(0xFF8C3A6B))))
+        .padding(18.dp), contentAlignment = Alignment.Center) {
+        Column(Modifier.width(240.dp).clip(RoundedCornerShape(r)).background(col(c.bg).copy(alpha = W.bgAlpha(st) / 255f)).padding(14.dp)) {
+            Text(m.label, color = col(c.muted), fontSize = (12 * k).sp)
+            Text(m.total, color = if (st.header == 2) col(W.trendColor(m.todaySign, c.text)) else col(c.text), fontSize = (24 * k).sp,
+                fontWeight = FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+            if (m.today.isNotBlank()) Text(m.today, color = col(W.trendColor(m.todaySign, c.muted)), fontSize = (13 * k).sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+            if (m.index.isNotBlank()) Text(m.index, color = col(c.muted), fontSize = (11 * k).sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 2)
+            if (m.rows.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp).height(1.dp).background(col(c.divider)))
+            m.rows.forEach { (n, v, sgn) ->
+                Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                    Text(n, Modifier.weight(1f), color = col(c.text), fontSize = (12 * k).sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Text(v, color = col(W.trendColor(sgn, c.muted)), fontSize = (12 * k).sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1)
+                }
+            }
+            if (m.time.isNotBlank()) Text(m.time, color = col(c.muted), fontSize = (10 * k).sp, modifier = Modifier.padding(top = 4.dp))
+        }
+    }
+}
+
+@Composable
+private fun WidgetSettings() {
+    val ctx = LocalContext.current
+    val st = AppState.widgetStyle
+    val W = com.claudeetf.app.widget.WidgetUpdater
+    fun set(f: (com.claudeetf.app.widget.WidgetStyle) -> com.claudeetf.app.widget.WidgetStyle) {
+        AppState.updateWidgetStyle(f(AppState.widgetStyle)); W.update(ctx)   // 改設定立即套用到桌面
+    }
+    var placed by remember { mutableIntStateOf(W.count(ctx)) }
+    Card(padding = 14.dp) {
+        Text("桌面小工具", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Label("調整後會立即套用到桌面上的小工具。盤中開啟「盤中持股監控」時，小工具會跟著每次更新即時刷新。")
+        Spacer(Modifier.height(8.dp))
+        WidgetPreview(st)
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Label(if (placed > 0) "桌面上已有 $placed 個" else "桌面上還沒有小工具", Modifier.weight(1f))
+            Text("加到桌面", color = C.Primary, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable {
+                if (!W.requestPin(ctx)) android.widget.Toast.makeText(ctx, "此桌面不支援，請長按桌面 › 小工具 › 台美股資產", android.widget.Toast.LENGTH_LONG).show()
+            }.padding(8.dp))
+            Text("立即更新", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { W.update(ctx); placed = W.count(ctx) }.padding(8.dp))
+        }
+
+        Text("主題", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        ChipRow(listOf(0 to "跟隨 App", 1 to "深色", 2 to "淺色", 3 to "透明"), st.theme) { v -> set { it.copy(theme = v, alpha = if (v == 3) 30 else if (it.theme == 3) 92 else it.alpha) } }
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("背景不透明度", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+            Text("－", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(alpha = (it.alpha - 10).coerceAtLeast(0)) } }.padding(horizontal = 12.dp))
+            Text("${st.alpha}%", Modifier.width(48.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text("＋", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(alpha = (it.alpha + 10).coerceAtMost(100)) } }.padding(horizontal = 12.dp))
+        }
+        Text("圓角", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        ChipRow(listOf(0 to "方角", 1 to "圓角", 2 to "大圓角"), st.radius) { v -> set { it.copy(radius = v) } }
+        Text("字級", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        ChipRow(listOf(0 to "小", 1 to "中", 2 to "大"), st.text) { v -> set { it.copy(text = v) } }
+
+        Text("版面", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Text("主數字", color = C.Text, fontSize = 13.sp)
+        ChipRow(listOf(0 to "總資產", 1 to "持股市值", 2 to "今日損益"), st.header) { v -> set { it.copy(header = v) } }
+        OptToggle("顯示今日損益／報酬", st.showToday) { v -> set { it.copy(showToday = v) } }
+        OptToggle("顯示指數（加權、那斯達克）", st.showIndex) { v -> set { it.copy(showIndex = v) } }
+        OptToggle("顯示更新時間", st.showTime) { v -> set { it.copy(showTime = v) } }
+
+        Text("清單", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        ChipRow(listOf(0 to "我的持股", 1 to "自選行情"), st.source) { v -> set { it.copy(source = v) } }
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("顯示列數", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+            Text("－", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(rows = (it.rows - 1).coerceAtLeast(0)) } }.padding(horizontal = 12.dp))
+            Text(if (st.rows == 0) "不顯示" else "${st.rows} 列", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text("＋", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(rows = (it.rows + 1).coerceAtMost(8)) } }.padding(horizontal = 12.dp))
+        }
+        Text("每列內容", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        ChipRow(listOf(0 to "價格＋漲跌%", 1 to "只顯示漲跌%", 2 to "今日損益"), st.rowMode) { v -> set { it.copy(rowMode = v) } }
+        Text("排序", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        ChipRow(listOf(0 to "依清單順序", 1 to "依漲跌幅大小"), st.sort) { v -> set { it.copy(sort = v) } }
+        Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { set { com.claudeetf.app.widget.WidgetStyle() } }.padding(vertical = 8.dp))
     }
 }
