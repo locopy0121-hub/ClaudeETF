@@ -35,6 +35,7 @@ import com.claudeetf.app.ui.theme.Trend
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -446,6 +447,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 item { HoldStyleSettings() }
             }
             if (section == "look") {
+                item { AppIconPicker() }
                 item {
                     Card(padding = 14.dp) {
                         Text("主題", color = C.Text, fontSize = 14.sp)
@@ -1689,5 +1691,49 @@ private fun WidgetSettings() {
             Label("進場建議、光譜位階只顯示標籤；開啟後會在背景自動分析各檔（約需數秒），完成後自動顯示")
         }
         Text("全部恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { set { com.claudeetf.app.widget.WidgetStyle() }; target = null }.padding(vertical = 8.dp))
+    }
+}
+
+
+/** App 圖示：10 款可選，點選後立即更換桌面圖示 */
+@Composable
+private fun AppIconPicker() {
+    val ctx = LocalContext.current
+    val icons = com.claudeetf.app.util.AppIcons
+    var cur by remember { mutableIntStateOf(icons.current(ctx)) }
+    var ask by remember { mutableStateOf<Int?>(null) }
+    Card(padding = 14.dp) {
+        Text("App 圖示", color = C.Text, fontSize = 14.sp)
+        Label("目前：" + icons.all[cur].name + "。更換後桌面圖示約數秒內更新；部分桌面會把舊圖示移除，需從 App 列表重新拖到桌面。")
+        icons.all.chunked(5).forEachIndexed { r, line ->
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                line.forEachIndexed { j, ic ->
+                    val i = r * 5 + j
+                    Column(Modifier.width(60.dp).clickable { if (i != cur) ask = i }, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.size(52.dp).clip(RoundedCornerShape(14.dp))
+                            .border(if (i == cur) 2.5.dp else 0.dp, if (i == cur) C.Primary else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(14.dp))) {
+                            // 自適應圖示可見區約為中間 2/3，放大 1.5 倍裁切呈現
+                            listOf(ic.bg, ic.fg).forEach { res ->
+                                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(res), null,
+                                    Modifier.fillMaxSize().graphicsLayer(scaleX = 1.5f, scaleY = 1.5f))
+                            }
+                        }
+                        Text(ic.name, color = if (i == cur) C.Primary else C.Text2, fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
+                    }
+                }
+            }
+        }
+    }
+    ask?.let { i ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { ask = null },
+            title = { Text("更換為「" + icons.all[i].name + "」？") },
+            text = { Text("桌面上的 App 圖示會改成新樣式。少數桌面會把舊圖示移除，屆時請從 App 列表重新拖到桌面。") },
+            confirmButton = { androidx.compose.material3.TextButton({
+                icons.apply(ctx, i); cur = i; ask = null
+                android.widget.Toast.makeText(ctx, "已更換 App 圖示", android.widget.Toast.LENGTH_SHORT).show()
+            }) { Text("更換") } },
+            dismissButton = { androidx.compose.material3.TextButton({ ask = null }) { Text("取消") } },
+        )
     }
 }
