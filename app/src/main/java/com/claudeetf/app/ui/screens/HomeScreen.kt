@@ -77,7 +77,7 @@ fun HomeScreen(nav: NavController) {
     val navPoints = AppState.navSeries(listOf(7, 31, 92, 366, null)[range])
     val trend = navPoints.map { it.second.toFloat() }
     // 交易紀錄變動過、或從未重建：背景依交易紀錄＋歷史收盤價重建每日損益與資產走勢
-    LaunchedEffect(AppState.pnlDirty, AppState.trades.size) {
+    androidx.compose.runtime.LaunchedEffect(AppState.pnlDirty, AppState.trades.size) {
         if (AppState.trades.isNotEmpty() && (AppState.pnlDirty || AppState.pnlHistory.isEmpty()))
             runCatching { com.claudeetf.app.data.PnlHistory.rebuild() }
     }
@@ -155,7 +155,7 @@ fun HomeScreen(nav: NavController) {
                                         modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (on) C.Selected else Color.Transparent)
                                             .clickable { range = i }.padding(horizontal = 9.dp, vertical = 4.dp))
                                 }
-                                Spacer(Modifier.weight(1f))
+                                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                                 Text("損益日曆 ›", color = C.Primary, fontSize = 13.sp,
                                     modifier = Modifier.clickable { nav.navigate(Routes.PNL) }.padding(vertical = 6.dp))
                             }
