@@ -68,6 +68,14 @@ object EtfComposition {
         else -> "其他"
     }
 
+    /** 最近一次結果（同一資料日內重用，穿透持股計算用） */
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Result>>()
+
+    suspend fun cached(q: Quote): Result {
+        cache[q.symbol]?.takeIf { it.first == today() }?.let { return it.second }
+        return load(q)
+    }
+
     suspend fun load(q: Quote): Result = withContext(Dispatchers.IO) {
         val h = StockInfoRepo.holdings(q)
         val tw = q.market == Market.TW
@@ -82,7 +90,7 @@ object EtfComposition {
         val industries = if (tw) rows.groupBy { it.industry }.map { (k, l) -> k to l.sumOf { it.weight } }.sortedByDescending { it.second }
         else h.sectors
         val (changes, prev) = if (tw && h.asOf != null) diff(q.symbol, h.asOf, rows) else null to null
-        Result(rows, industries, h.asOf, changes, prev, tw)
+        Result(rows, industries, h.asOf, changes, prev, tw).also { cache[q.symbol] = today() to it }
     }
 
     /** 存今天的快照，並與前一個資料日比較 */

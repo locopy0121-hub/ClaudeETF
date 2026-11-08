@@ -118,6 +118,7 @@ private val features = listOf(
     Feature("股息與稅務", "配息 二代健保 預扣", Routes.DIVIDEND),
     Feature("資料健檢", "檢查 錯誤 異常 重複 匯率 修正", Routes.HEALTH),
     Feature("年度回顧", "回顧 年度 總結 最佳月份 回撤", Routes.REVIEW),
+    Feature("穿透持股", "穿透 ETF 成分 曝險 重疊 間接持有 集中度", Routes.LOOK_THROUGH),
     Feature("複利試算", "複利 股息再投入 DRIP 存股 試算 退休 目標", Routes.DRIP),
     Feature("美元匯率", "匯率 USD TWD 換匯 台銀", Routes.FX),
     Feature("交易成本分析", "手續費 交易稅 證交稅 折扣 成本", Routes.COST),

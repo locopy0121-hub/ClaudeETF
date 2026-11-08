@@ -276,7 +276,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                 }
                 Tab.CHIPS -> chipsTab(q, chips)
                 Tab.FIN -> financialsTab(q, fund)
-                Tab.HOLD -> holdingsTab(q, holdings)
+                Tab.HOLD -> holdingsTab(q, holdings, nav)
                 Tab.DIV -> dividendTab(q, divs)
                 Tab.NEWS -> newsTab(news)
                 Tab.CO -> companyTab(q, fund)
@@ -1248,11 +1248,11 @@ private fun ChipBar(name: String, shares: Long, maxAbs: Long) {
 
 // ---------------- ETF 成分股 ----------------
 
-private fun LazyListScope.holdingsTab(q: Quote, holdings: Load<com.claudeetf.app.data.EtfComposition.Result>) {
+private fun LazyListScope.holdingsTab(q: Quote, holdings: Load<com.claudeetf.app.data.EtfComposition.Result>, nav: NavController) {
     when (holdings) {
         is Load.Loading -> loading("載入成分股中…")
         is Load.Err -> showError(holdings.message)
-        is Load.Ok -> EtfCompositionSection(this, q, holdings.value)
+        is Load.Ok -> EtfCompositionSection(this, q, holdings.value, nav)
     }
 }
 
@@ -1300,8 +1300,10 @@ private fun DonutWithLegend(parts: List<Pair<String, Double>>) {
     }
 }
 
-private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudeetf.app.data.EtfComposition.Result) = with(scope) {
+private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudeetf.app.data.EtfComposition.Result, nav: NavController) = with(scope) {
     val sub = compSub[q.symbol] ?: 0
+    // 我持有此 ETF 的台幣市值（多帳戶合計）
+    val myMv = AppState.holdings.filter { it.symbol == q.symbol }.sumOf { AppState.marketValueTwd(it) }
     item {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Segmented(listOf("成分股", "產業分佈", "操作日報"), sub, { compSub[q.symbol] = it }, Modifier.weight(1f))
@@ -1316,6 +1318,12 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
     when (sub) {
         0 -> {
             item { Card(padding = 14.dp) { DonutWithLegend(r.rows.sortedByDescending { it.weight }.map { it.name to it.weight }) } }
+            if (myMv > 0) item {
+                Card(padding = 12.dp) {
+                    Text("我的持有 " + mask("NT$" + Fmt.num(Math.floor(myMv))), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Label("表格「權重」下方 ≈ 金額＝你持有此 ETF 的市值 × 成分權重，代表你經由這檔 ETF 間接持有該股的金額（元以下捨去）")
+                }
+            }
             val sort = compSort[q.symbol] ?: 0
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1350,10 +1358,18 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
                         if (row.symbol.isNotBlank()) NumText(row.symbol, 11.sp, C.Muted)
                     }
                     if (r.tw) Column(Modifier.weight(1.1f), horizontalAlignment = Alignment.End) {
-                        NumText(row.mv?.let { Fmt.num(it / 1e8, 2) + "億" } ?: "—", 13.sp)
-                        NumText(row.shares?.let { Fmt.num(Math.floor(it / 1000)) + "張" } ?: "", 11.sp, C.Muted)
+                        // 持股市值＝股數×收盤價（億元，捨去至小數第 2 位）；張數＝股數÷1,000，零股另列
+                        NumText(row.mv?.let { Fmt.numTrunc(it / 1e8, 2) + "億" } ?: "—", 13.sp)
+                        NumText(row.shares?.let { sh ->
+                            val lots = Math.floor(sh / 1000).toLong(); val odd = Math.round(sh - lots * 1000)
+                            Fmt.num(lots.toDouble()) + "張" + (if (odd > 0) " ${odd}股" else "")
+                        } ?: "", 11.sp, C.Muted)
                     }
-                    NumText(Fmt.num(row.weight, 2) + "%", 13.sp, modifier = Modifier.weight(0.8f).wrapContentWidth(Alignment.End))
+                    Column(Modifier.weight(0.8f), horizontalAlignment = Alignment.End) {
+                        NumText(Fmt.num(row.weight, 2) + "%", 13.sp)
+                        // 我的曝險＝我持有此 ETF 的市值 × 權重
+                        if (myMv > 0) NumText("≈" + mask(Fmt.num(Math.floor(myMv * row.weight / 100))), 10.sp, C.Primary)
+                    }
                     if (r.tw) Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                         val c = row.chgPct
                         val limit = c != null && kotlin.math.abs(c) >= 9.4
@@ -1442,6 +1458,10 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
                 }
             }
         }
+    }
+    item {
+        Text("看我的整體穿透持股（所有 ETF 拆回個股、重疊度）›", color = C.Primary, fontSize = 13.sp,
+            modifier = Modifier.clickable { nav.navigate(Routes.LOOK_THROUGH) }.padding(vertical = 6.dp))
     }
     item {
         Label(
