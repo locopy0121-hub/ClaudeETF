@@ -1,5 +1,8 @@
 package com.claudeetf.app.data
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.time.LocalDate
 
 /**
@@ -78,9 +81,9 @@ object PnlRebuild {
 
 /** 重建每日損益並保存（損益日曆用） */
 object PnlHistory {
-    var running by androidx.compose.runtime.mutableStateOf(false)
+    var running by mutableStateOf(false)
         private set
-    var progress by androidx.compose.runtime.mutableStateOf("")
+    var progress by mutableStateOf("")
         private set
 
     suspend fun rebuild(): String? {

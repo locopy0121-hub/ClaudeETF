@@ -95,7 +95,8 @@ fun PnlCalendarScreen(nav: NavController) {
                     )
                 }
             }
-            (com.claudeetf.app.data.PnlHistory.progress.ifBlank { null } ?: msg)?.let { t -> item { Label(t, color = C.Primary) } }
+            val note: String? = com.claudeetf.app.data.PnlHistory.progress.ifBlank { null } ?: msg
+            if (note != null) item { Label(note, color = C.Primary) }
             item {
                 Card(padding = 14.dp) {
                     Row {
