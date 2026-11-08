@@ -1448,16 +1448,46 @@ private fun WidgetPreview(st: com.claudeetf.app.widget.WidgetStyle) {
         .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF3A5A8C), androidx.compose.ui.graphics.Color(0xFF8C3A6B))))
         .padding(18.dp), contentAlignment = Alignment.Center) {
         Column(Modifier.width(240.dp).clip(RoundedCornerShape(r)).background(col(c.bg).copy(alpha = W.bgAlpha(st) / 255f)).padding(14.dp)) {
-            Text(m.label, color = col(c.muted), fontSize = (12 * k).sp)
-            Text(m.total, color = if (st.header == 2) col(W.trendColor(m.todaySign, c.text)) else col(c.text), fontSize = (24 * k).sp,
+            if (st.header != 3) Text(m.label, color = col(c.muted), fontSize = (12 * k).sp)
+            if (st.header != 3) Text(m.total, color = if (st.header == 2) col(W.trendColor(m.todaySign, c.text)) else col(c.text), fontSize = (24 * k).sp,
                 fontWeight = FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
             if (m.today.isNotBlank()) Text(m.today, color = col(W.trendColor(m.todaySign, c.muted)), fontSize = (13 * k).sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
             if (m.index.isNotBlank()) Text(m.index, color = col(c.muted), fontSize = (11 * k).sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 2)
             if (m.rows.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp).height(1.dp).background(col(c.divider)))
-            m.rows.forEach { (n, v, sgn) ->
-                Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-                    Text(n, Modifier.weight(1f), color = col(c.text), fontSize = (12 * k).sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    Text(v, color = col(W.trendColor(sgn, c.muted)), fontSize = (12 * k).sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1)
+            val mono = androidx.compose.ui.text.font.FontFamily.Monospace
+            fun xc(r: com.claudeetf.app.widget.WRow) = if (st.has("entry") && r.entry != null) col(W.entryColor(r.entryLevel, c.muted)) else col(c.muted)
+            when (st.layout) {
+                2 -> m.rows.chunked(2).forEach { pair ->
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        pair.forEach { r ->
+                            Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(col(c.cell)).padding(8.dp)) {
+                                Text(r.name + " " + r.symbol, color = col(c.text), fontSize = (11 * k).sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                Text(r.price, color = col(W.trendColor(r.sign, c.text)), fontSize = (20 * k).sp, fontWeight = FontWeight.Bold, fontFamily = mono, maxLines = 1)
+                                Text(W.valueText(st, r, withPrice = false), color = col(W.trendColor(r.sign, c.muted)), fontSize = (11 * k).sp, fontFamily = mono, maxLines = 1)
+                                W.extraText(st, r).takeIf { it.isNotBlank() }?.let { Text(it, color = xc(r), fontSize = (10 * k).sp, maxLines = 1) }
+                            }
+                        }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+                1 -> m.rows.forEach { r ->
+                    Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(r.name + " " + r.symbol, Modifier.weight(1f), color = col(c.text), fontSize = (14 * k).sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            if (st.has("price")) Text(r.price, color = col(W.trendColor(r.sign, c.text)), fontSize = (18 * k).sp, fontWeight = FontWeight.Bold, fontFamily = mono)
+                        }
+                        Row {
+                            Text(W.extraText(st, r), Modifier.weight(1f), color = xc(r), fontSize = (11 * k).sp, maxLines = 1)
+                            Text(W.valueText(st, r, withPrice = false), color = col(W.trendColor(r.sign, c.muted)), fontSize = (12 * k).sp, fontFamily = mono)
+                        }
+                    }
+                }
+                else -> m.rows.forEach { r ->
+                    Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(r.symbol + " " + r.name.take(6), Modifier.weight(1f), color = col(c.text), fontSize = (12 * k).sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        W.extraText(st, r).takeIf { it.isNotBlank() }?.let { Text(it + " ", color = xc(r), fontSize = (10 * k).sp, maxLines = 1) }
+                        Text(W.valueText(st, r), color = col(W.trendColor(r.sign, c.muted)), fontSize = (12 * k).sp, fontFamily = mono, maxLines = 1)
+                    }
                 }
             }
             if (m.time.isNotBlank()) Text(m.time, color = col(c.muted), fontSize = (10 * k).sp, modifier = Modifier.padding(top = 4.dp))
@@ -1465,6 +1495,7 @@ private fun WidgetPreview(st: com.claudeetf.app.widget.WidgetStyle) {
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun WidgetSettings() {
     val ctx = LocalContext.current
@@ -1500,25 +1531,52 @@ private fun WidgetSettings() {
         Text("字級", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
         ChipRow(listOf(0 to "小", 1 to "中", 2 to "大"), st.text) { v -> set { it.copy(text = v) } }
 
-        Text("版面", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-        Text("主數字", color = C.Text, fontSize = 13.sp)
-        ChipRow(listOf(0 to "總資產", 1 to "持股市值", 2 to "今日損益"), st.header) { v -> set { it.copy(header = v) } }
+        Text("版型", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        ChipRow(listOf(0 to "清單", 1 to "大字條列", 2 to "方格", 3 to "只顯示總覽"), st.layout) { v -> set { it.copy(layout = v) } }
+        Label(when (st.layout) {
+            1 -> "每檔兩行：名稱＋大字價格，下排附加資訊與漲跌；適合 3～4 檔重點持股"
+            2 -> "兩欄方格，每格大字價格（類似券商簡易方格）；適合 4～6 檔、桌面放 4×3 以上"
+            3 -> "只顯示總資產與今日損益（＋指數），適合 2×1 小尺寸"
+            else -> "一檔一行，資訊最密；適合 5～8 檔"
+        })
+        Text("主數字", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        ChipRow(listOf(0 to "總資產", 1 to "持股市值", 2 to "今日損益", 3 to "不顯示"), st.header) { v -> set { it.copy(header = v) } }
         OptToggle("顯示今日損益／報酬", st.showToday) { v -> set { it.copy(showToday = v) } }
-        OptToggle("顯示指數（加權、那斯達克）", st.showIndex) { v -> set { it.copy(showIndex = v) } }
         OptToggle("顯示更新時間", st.showTime) { v -> set { it.copy(showTime = v) } }
 
-        Text("清單", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-        ChipRow(listOf(0 to "我的持股", 1 to "自選行情"), st.source) { v -> set { it.copy(source = v) } }
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("顯示列數", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
-            Text("－", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(rows = (it.rows - 1).coerceAtLeast(0)) } }.padding(horizontal = 12.dp))
-            Text(if (st.rows == 0) "不顯示" else "${st.rows} 列", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            Text("＋", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(rows = (it.rows + 1).coerceAtMost(8)) } }.padding(horizontal = 12.dp))
+        Text("指數（可複選）", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Label("台股：加權、櫃買；美股：道瓊、S&P、那指、費半。依點選順序顯示，都不選就不顯示指數列")
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.claudeetf.app.widget.WidgetStyle.INDEX_NAMES.forEach { (sym, n) ->
+                val on = sym in st.indices
+                Text((if (sym == "^TWII" || sym == "^TWOII") "台 " else "美 ") + n + (if (on) " ✓" else ""), color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Primary else C.Bg)
+                        .clickable { set { it.copy(indices = if (on) it.indices - sym else it.indices + sym) } }.padding(horizontal = 12.dp, vertical = 7.dp))
+            }
         }
-        Text("每列內容", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-        ChipRow(listOf(0 to "價格＋漲跌%", 1 to "只顯示漲跌%", 2 to "今日損益"), st.rowMode) { v -> set { it.copy(rowMode = v) } }
-        Text("排序", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-        ChipRow(listOf(0 to "依清單順序", 1 to "依漲跌幅大小"), st.sort) { v -> set { it.copy(sort = v) } }
+
+        if (st.layout != 3) {
+            Text("清單", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+            ChipRow(listOf(0 to "我的持股", 1 to "自選行情"), st.source) { v -> set { it.copy(source = v) } }
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("顯示檔數", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+                Text("－", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(rows = (it.rows - 1).coerceAtLeast(0)) } }.padding(horizontal = 12.dp))
+                Text(if (st.rows == 0) "不顯示" else "${st.rows} 檔", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text("＋", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(rows = (it.rows + 1).coerceAtMost(8)) } }.padding(horizontal = 12.dp))
+            }
+            Text("每檔顯示項目（可複選）", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.claudeetf.app.widget.WidgetStyle.FIELDS.forEach { (f, n) ->
+                    val on = f in st.fields
+                    Text(n + (if (on) " ✓" else ""), color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Primary else C.Bg)
+                            .clickable { set { it.copy(fields = if (on) it.fields - f else it.fields + f) } }.padding(horizontal = 12.dp, vertical = 7.dp))
+                }
+            }
+            Label("進場建議與光譜位階需要先分析過（打開過個股頁，或開著盤中監控時會自動分析持股）；尚未分析的個股不顯示")
+            Text("排序", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            ChipRow(listOf(0 to "依清單順序", 1 to "依漲跌幅大小"), st.sort) { v -> set { it.copy(sort = v) } }
+        }
         Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { set { com.claudeetf.app.widget.WidgetStyle() } }.padding(vertical = 8.dp))
     }
 }

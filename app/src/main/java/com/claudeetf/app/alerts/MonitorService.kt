@@ -40,6 +40,7 @@ import java.time.ZonedDateTime
 class MonitorService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var loop: Job? = null
+    private var lastAnalysis = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -66,6 +67,14 @@ class MonitorService : Service() {
             runCatching { MarketData.refreshAll() }
             runCatching { AlertEngine.check(applicationContext) }
             runCatching { checkHoldings(applicationContext) }
+            // 每 5 分鐘替持股做一次 K 線與光譜分析，讓小工具能顯示進場建議與光譜位階
+            if (System.currentTimeMillis() - lastAnalysis > 5 * 60_000L) {
+                lastAnalysis = System.currentTimeMillis()
+                AppState.holdings.map { it.symbol }.distinct().mapNotNull { AppState.quote(it) }.forEach { q ->
+                    runCatching { com.claudeetf.app.data.KlineAnalysis.load(q, false) }
+                    runCatching { com.claudeetf.app.data.InvestAnalysis.analyze(q) }
+                }
+            }
             runCatching { com.claudeetf.app.widget.WidgetUpdater.update(applicationContext) }
             updateNotification()
             AppState.flush()

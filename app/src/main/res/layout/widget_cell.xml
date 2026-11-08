@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 方格單格：名稱、大字價格、漲跌、附加資訊 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content">
+    <ImageView android:id="@+id/w_cbg" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="fitXY" android:src="@drawable/widget_shape_12" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="8dp">
+        <TextView android:id="@+id/w_cn" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:ellipsize="end" android:maxLines="1" android:textColor="#E8ECF2" android:textSize="12sp" />
+        <TextView android:id="@+id/w_cp" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:fontFamily="monospace" android:maxLines="1" android:textColor="#E8ECF2" android:textSize="20sp" android:textStyle="bold" />
+        <TextView android:id="@+id/w_cc" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:fontFamily="monospace" android:maxLines="1" android:textColor="#9AA3B2" android:textSize="11sp" />
+        <TextView android:id="@+id/w_cx" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:maxLines="1" android:textColor="#9AA3B2" android:textSize="10sp" />
+    </LinearLayout>
+</FrameLayout>
