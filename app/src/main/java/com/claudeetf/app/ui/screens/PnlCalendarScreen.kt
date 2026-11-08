@@ -8,6 +8,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +29,9 @@ import kotlin.math.abs
 
 /** 由每日總資產紀錄推算的每日損益（台幣）；含股息與現金調整 */
 private fun dailyPnl(): Map<LocalDate, Double> {
+    // 已重建：用「持股股數 × 每日收盤價變動」的結果，不受入金、買賣、刪改交易影響
+    if (AppState.pnlHistory.isNotEmpty())
+        return AppState.pnlHistory.entries.mapNotNull { e -> runCatching { LocalDate.parse(e.key) }.getOrNull()?.let { it to e.value } }.toMap()
     val entries = AppState.navHistory.entries.mapNotNull { e ->
         runCatching { LocalDate.parse(e.key) }.getOrNull()?.let { it to e.value }
     }.sortedBy { it.first }
@@ -49,7 +54,13 @@ private fun short(v: Double): String {
 fun PnlCalendarScreen(nav: NavController) {
     val today = LocalDate.now(ZoneId.of("Asia/Taipei"))
     var month by remember { mutableStateOf(YearMonth.from(today)) }
-    val pnl = remember(AppState.navHistory.size) { dailyPnl() }
+    val scope = rememberCoroutineScope()
+    var msg by remember { mutableStateOf<String?>(null) }
+    // 第一次打開且有交易紀錄：自動依交易紀錄與歷史股價重建
+    LaunchedEffect(Unit) {
+        if (AppState.pnlHistory.isEmpty() && AppState.trades.isNotEmpty()) msg = com.claudeetf.app.data.PnlHistory.rebuild()
+    }
+    val pnl = remember(AppState.navHistory.size, AppState.pnlHistory.size, AppState.pnlHistory.values.sum()) { dailyPnl() }
     val inMonth = pnl.filterKeys { YearMonth.from(it) == month }
     val total = inMonth.values.sum()
     val maxAbs = inMonth.values.maxOfOrNull { abs(it) }?.takeIf { it > 0 } ?: 1.0
@@ -62,6 +73,10 @@ fun PnlCalendarScreen(nav: NavController) {
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("損益日曆", onBack = { nav.popBackStack() }) {
+            Text(if (com.claudeetf.app.data.PnlHistory.running) "計算中…" else "重新計算", color = C.Primary, fontSize = 14.sp,
+                modifier = Modifier.clickable(enabled = !com.claudeetf.app.data.PnlHistory.running) {
+                    scope.launch { msg = com.claudeetf.app.data.PnlHistory.rebuild() }
+                }.padding(horizontal = 6.dp, vertical = 12.dp))
             Text("年度回顧", color = C.Primary, fontSize = 14.sp,
                 modifier = Modifier.clickable { nav.navigate(Routes.REVIEW) }.padding(12.dp))
         }
@@ -80,6 +95,7 @@ fun PnlCalendarScreen(nav: NavController) {
                     )
                 }
             }
+            (com.claudeetf.app.data.PnlHistory.progress.ifBlank { null } ?: msg)?.let { t -> item { Label(t, color = C.Primary) } }
             item {
                 Card(padding = 14.dp) {
                     Row {
@@ -124,8 +140,10 @@ fun PnlCalendarScreen(nav: NavController) {
             }
             item {
                 Label(
-                    "每日損益＝當天與前一次紀錄的總資產差額（含股息、現金調整）。App 每天開啟或背景更新時會自動記錄；" +
-                        "沒有紀錄的日子會留白。",
+                    if (AppState.pnlHistory.isNotEmpty())
+                        "每日損益＝當日市值 − 前一交易日市值 − 當日買進成本 ＋ 當日賣出所得 ＋ 當日股息。依交易紀錄還原每天的持股股數、配合歷史收盤價計算（已還原拆股），" +
+                            "所以入金、刪改交易不會變成損益；美股以目前匯率換算（不含匯兌損益）。修改交易後請按右上「重新計算」。"
+                    else "每日損益＝當天與前一次紀錄的總資產差額（含股息、現金調整）。按右上「重新計算」可改依交易紀錄與歷史股價精確計算。",
                     Modifier.padding(top = 6.dp),
                 )
             }

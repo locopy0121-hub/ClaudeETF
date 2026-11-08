@@ -634,6 +634,8 @@ object AppState {
             accounts.add(Account(2, "美股帳戶", Market.US))
         }
 
+        pnlHistory.clear()
+        p.getString("pnlHist", null)?.let { json -> runCatching { val o = JSONObject(json); o.keys().forEach { k -> pnlHistory[k] = o.getDouble(k) } } }
         navHistory.clear()
         p.getString("nav", null)?.let { json ->
             runCatching { val o = JSONObject(json); o.keys().forEach { k -> navHistory[k] = o.getDouble(k) } }
@@ -815,6 +817,7 @@ object AppState {
             }.toString())
             .putString("targets", JSONObject().apply { targets.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("nav", JSONObject().apply { navHistory.forEach { (k, v) -> put(k, v) } }.toString())
+            .putString("pnlHist", JSONObject().apply { pnlHistory.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("mvCost", JSONObject().apply { mvCostHistory.forEach { (k, v) -> put(k, org.json.JSONArray().put(v.first).put(v.second)) } }.toString())
             .apply()
     }
@@ -1389,11 +1392,22 @@ object AppState {
     /** 日期 → (持股市值, 持股成本) */
     val mvCostHistory = mutableStateMapOf<String, Pair<Double, Double>>()
 
+    /** 重建的每日損益（日期 yyyy-MM-dd → 台幣）；空的時候損益日曆退回用總資產差額 */
+    val pnlHistory = mutableStateMapOf<String, Double>()
+    fun setPnlHistory(m: Map<String, Double>) { pnlHistory.clear(); pnlHistory.putAll(m); save() }
+
+    private fun quoteDay(q: Quote): String? = if (q.updatedAt <= 0) null else
+        java.time.Instant.ofEpochMilli(q.updatedAt).atZone(java.time.ZoneId.of("Asia/Taipei")).toLocalDate().toString()
+
     fun recordNav() {
         val total = totalAssetsTwd()
         if (total <= 0) return
         val key = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei")).toString()
         navHistory[key] = Math.round(total).toDouble()
+        // 有重建過的每日損益：今天以「持股股數 × 今日漲跌」記錄（只算股價變動，不受買賣、入金影響）
+        val dow = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Taipei")).dayOfWeek.value
+        if (pnlHistory.isNotEmpty() && dow <= 5 && holdings.any { quote(it.symbol)?.let { q -> q.prevClose > 0 && quoteDay(q) == key } == true })
+            pnlHistory[key] = Math.round(todayPnlTwd()).toDouble()
         if (navHistory.size > 900) navHistory.keys.sorted().take(navHistory.size - 900).forEach { navHistory.remove(it) }
         // 持股市值與成本（台幣）：分析頁「成本與市值走勢」
         val mv = totalMarketValueTwd(); val cost = totalCostTwd()

@@ -199,6 +199,14 @@ fun UpdateCard() {
                         .clickable { mode = v; AppUpdater.setPrefetchMode(ctx, v) }.padding(horizontal = 10.dp, vertical = 4.dp))
             }
         }
+        var auto by remember { mutableStateOf(AppUpdater.autoInstall(ctx)) }
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("下載完成直接安裝", color = C.Text2, fontSize = 13.sp)
+                Text("跳過 App 的提示視窗，直接出現系統的「更新」確認，只需按一次", color = C.Muted, fontSize = 11.sp)
+            }
+            Switch(auto, { auto = it; AppUpdater.setAutoInstall(ctx, it) })
+        }
         if (AppUpdater.ready != null && AppUpdater.hasUpdate(ctx)) Text("✓ " + AppUpdater.ready!!.removePrefix("v") + " 已下載完成，點「更新 ›」立即安裝", color = C.Primary, fontSize = 12.sp)
         else if (AppUpdater.prefetching) Label("背景下載新版中…")
         Label("從 GitHub Releases 下載最新版並驗證，交給系統安裝程式覆蓋更新。回到 App 時自動檢查（15 分鐘一次），背景每 6 小時檢查；偵測到新版會先在背景下載好，再提示你點擊安裝。")

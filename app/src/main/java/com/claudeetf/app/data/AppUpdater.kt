@@ -61,6 +61,13 @@ object AppUpdater {
         private set
     private val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
 
+    /** 這次開啟 App 時使用者在系統確認畫面按了取消的版本：不再自動跳安裝，改顯示 App 視窗 */
+    @Volatile private var abortedTag: String? = null
+
+    /** 下載完成後直接進入系統安裝確認（預設開） */
+    fun autoInstall(context: Context): Boolean = context.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE).getBoolean("autoInstall", true)
+    fun setAutoInstall(context: Context, v: Boolean) = context.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE).edit().putBoolean("autoInstall", v).apply()
+
     /** 預先下載：0 僅 Wi-Fi（預設）、1 任何網路、2 關閉（按下更新才下載） */
     fun prefetchMode(context: Context): Int = context.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE).getInt("prefetch", 0)
     fun setPrefetchMode(context: Context, v: Int) {
@@ -280,11 +287,12 @@ object AppUpdater {
     /** 有新版：能預先下載就先下載完再提示「已下載，點擊安裝」；不能（非 Wi-Fi／關閉）就直接提示 */
     private fun afterCheckPopup(context: Context, prefs: android.content.SharedPreferences) {
         if (!hasUpdate(context) || prefs.getString("skipped", "") == latest?.tag) { prompt = false; return }
-        if (ready == latest?.tag) { prompt = true; return }
         appScope.launch {
             prefetch(context)
-            // 下載完成或無法預先下載，都跳出提示（已下載時按鈕為「立即安裝」）
-            prompt = hasUpdate(context) && prefs.getString("skipped", "") != latest?.tag
+            if (!hasUpdate(context) || prefs.getString("skipped", "") == latest?.tag) return@launch
+            // 已下載且開啟「下載完成直接安裝」：不再先跳 App 自己的視窗，直接進系統確認（只按一次「更新」）
+            if (ready == latest?.tag && autoInstall(context) && abortedTag != latest?.tag) downloadAndInstall(context)
+            else prompt = true
         }
     }
 
@@ -400,7 +408,12 @@ object AppUpdater {
         params.setAppPackageName(context.packageName)
         params.setSize(file.length())
         if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-        if (Build.VERSION.SDK_INT >= 34) params.setPackageSource(android.content.pm.PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE)
+        // 以「應用程式商店」身分安裝並取得更新擁有權（Android 14+）：
+        // 這次確認後，之後的更新由本 App 擁有，系統可直接安裝不再詢問
+        if (Build.VERSION.SDK_INT >= 34) {
+            params.setPackageSource(android.content.pm.PackageInstaller.PACKAGE_SOURCE_STORE)
+            runCatching { params.setRequestUpdateOwnership(true) }
+        }
         val id = pi.createSession(params)
         // 寫入或提交失敗要放棄工作階段，否則系統會殘留未完成的安裝工作階段（佔用空間）
         try { pi.openSession(id).use { session ->
@@ -435,7 +448,7 @@ object AppUpdater {
             }
             android.content.pm.PackageInstaller.STATUS_SUCCESS -> message = "更新完成"
             // 使用者在確認畫面按了取消：不要再跳一次安裝畫面
-            android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> message = "已取消更新"
+            android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> { message = "已取消更新"; abortedTag = latest?.tag }
             // 簽章不符或空間不足：改用系統安裝畫面也一樣會失敗，直接告知原因
             android.content.pm.PackageInstaller.STATUS_FAILURE_CONFLICT,
             android.content.pm.PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> message = "更新失敗：與已安裝版本簽章不符，請先移除舊版再安裝"
