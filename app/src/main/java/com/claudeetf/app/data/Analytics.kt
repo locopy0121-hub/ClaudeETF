@@ -75,7 +75,7 @@ object Analytics {
             for (h in holdings) {
                 val p = last[h.symbol] ?: continue
                 val isUs = AppState.marketOf(h.symbol) == Market.US
-                v += AppState.valueOf(h.symbol, h.shares, p) * (if (isUs) fx else 1.0)
+                v += AppState.valueOf(h.symbol, h.shares, p.toDouble()) * (if (isUs) fx else 1.0)
             }
             values += v
             tw50Vals += b50[d] ?: tw50Vals.lastOrNull() ?: 0f
