@@ -1302,8 +1302,6 @@ private fun DonutWithLegend(parts: List<Pair<String, Double>>) {
 
 private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudeetf.app.data.EtfComposition.Result, nav: NavController) = with(scope) {
     val sub = compSub[q.symbol] ?: 0
-    // 我持有此 ETF 的台幣市值（多帳戶合計）
-    val myMv = AppState.holdings.filter { it.symbol == q.symbol }.sumOf { AppState.marketValueTwd(it) }
     item {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Segmented(listOf("成分股", "產業分佈", "操作日報"), sub, { compSub[q.symbol] = it }, Modifier.weight(1f))
@@ -1318,12 +1316,6 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
     when (sub) {
         0 -> {
             item { Card(padding = 14.dp) { DonutWithLegend(r.rows.sortedByDescending { it.weight }.map { it.name to it.weight }) } }
-            if (myMv > 0) item {
-                Card(padding = 12.dp) {
-                    Text("我的持有 " + mask("NT$" + Fmt.num(Math.floor(myMv))), color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Label("表格「權重」下方 ≈ 金額＝你持有此 ETF 的市值 × 成分權重，代表你經由這檔 ETF 間接持有該股的金額（元以下捨去）")
-                }
-            }
             val sort = compSort[q.symbol] ?: 0
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1367,8 +1359,6 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
                     }
                     Column(Modifier.weight(0.8f), horizontalAlignment = Alignment.End) {
                         NumText(Fmt.num(row.weight, 2) + "%", 13.sp)
-                        // 我的曝險＝我持有此 ETF 的市值 × 權重
-                        if (myMv > 0) NumText("≈" + mask(Fmt.num(Math.floor(myMv * row.weight / 100))), 10.sp, C.Primary)
                     }
                     if (r.tw) Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                         val c = row.chgPct
@@ -1458,10 +1448,6 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
                 }
             }
         }
-    }
-    item {
-        Text("看我的整體穿透持股（所有 ETF 拆回個股、重疊度）›", color = C.Primary, fontSize = 13.sp,
-            modifier = Modifier.clickable { nav.navigate(Routes.LOOK_THROUGH) }.padding(vertical = 6.dp))
     }
     item {
         Label(

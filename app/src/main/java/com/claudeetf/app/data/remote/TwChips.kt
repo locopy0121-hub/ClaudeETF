@@ -145,14 +145,18 @@ object MoneyDjHoldings {
             ?: Http.get("https://www.moneydj.com/ETF/X/Basic/Basic0007.xdjhtm?etfid=${code.uppercase()}.TW", ua, timeoutMs = 20_000)
         val list = ArrayList<YahooExtra.Holding>()
         for (m in rowRe.findAll(html)) {
-            val cells = cellRe.findAll(m.groupValues[1]).map { clean(it.groupValues[1]) }.toList()
+            val raw = cellRe.findAll(m.groupValues[1]).map { it.groupValues[1] }.toList()
+            val cells = raw.map { clean(it) }
             if (cells.size < 2) continue
             val name = cells[0]
             val pct = cells[1].replace("%", "").replace(",", "").trim().toDoubleOrNull() ?: continue
             if (name.isBlank() || pct <= 0 || pct > 100) continue
             if (name.contains("名稱") || name.contains("合計")) continue
             // 「台積電(2330.TW)」→ 代號 2330
-            val sym = Regex("\\(([0-9A-Z.]+)\\)").find(name)?.groupValues?.get(1)?.substringBefore(".") ?: ""
+            // 代號來源依序：名稱括號「台積電(2330.TW)」→ 連結參數（etfid=／a=／stockid=…）；都沒有時由 EtfComposition 以名稱比對證交所目錄
+            val sym = Regex("\\(([0-9A-Z.]+)\\)").find(name)?.groupValues?.get(1)?.substringBefore(".")
+                ?: Regex("[?&](?:a|stockid|id|symbol|etfid|code)=([0-9]{4,6}[A-Z]?)(?:\\.TW[O]?)?", RegexOption.IGNORE_CASE).find(raw[0])?.groupValues?.get(1)
+                ?: ""
             // 第三欄：持有股數（表頭「持有股數」）
             val shares = cells.getOrNull(2)?.replace(",", "")?.trim()?.toDoubleOrNull()?.takeIf { it > 0 }
             list += YahooExtra.Holding(sym, name.substringBefore("(").trim(), pct, shares)

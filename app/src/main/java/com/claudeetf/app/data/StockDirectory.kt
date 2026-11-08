@@ -27,6 +27,10 @@ object StockDirectory {
     /** 美股搜尋過的名稱（建立報價時用來帶入名稱） */
     private val usNames = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    /** 台股名稱 → 代號（ETF 成分只有名稱時用；名稱需完全相同，去除空白） */
+    suspend fun twCodeByName(): Map<String, String> =
+        twList().entries.groupBy({ it.value.replace(" ", "") }, { it.key }).mapValues { (_, codes) -> codes.minByOrNull { it.length }!! }
+
     /** 已知的名稱（台股目錄或搜尋過的美股）；不會觸發網路 */
     fun cachedName(symbol: String): String? = tw[symbol.uppercase()] ?: usNames[symbol.uppercase()]
 

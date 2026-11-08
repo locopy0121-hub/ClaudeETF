@@ -52,7 +52,6 @@ object Routes {
     const val REPORT = "report"
     const val COST = "cost"
     const val DRIP = "drip"
-    const val LOOK_THROUGH = "lookthrough"
     const val REVIEW = "review"
     const val HEALTH = "health"
     const val INDEX = "index"

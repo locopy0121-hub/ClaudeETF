@@ -413,7 +413,6 @@ fun AppRoot() {
             composable(Routes.REPORT) { com.claudeetf.app.ui.screens.ReportScreen(nav) }
             composable(Routes.COST) { com.claudeetf.app.ui.screens.CostScreen(nav) }
             composable(Routes.DRIP) { com.claudeetf.app.ui.screens.DripScreen(nav) }
-            composable(Routes.LOOK_THROUGH) { com.claudeetf.app.ui.screens.LookThroughScreen(nav) }
             composable(Routes.REVIEW) { com.claudeetf.app.ui.screens.ReviewScreen(nav) }
             composable(Routes.HEALTH) { com.claudeetf.app.ui.screens.HealthScreen(nav) }
             composable(

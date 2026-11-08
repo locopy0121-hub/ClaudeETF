@@ -81,7 +81,10 @@ object EtfComposition {
         val tw = q.market == Market.TW
         val px = if (tw) twPrices() else emptyMap()
         val ind = if (tw) twIndustries() else emptyMap()
-        val rows = h.holdings.map { x ->
+        // 成分只有名稱沒有代號：以證交所／櫃買目錄的名稱比對補上代號（才能帶入股價、市值、產業）
+        val byName = if (tw && h.holdings.any { it.symbol.isBlank() }) runCatching { StockDirectory.twCodeByName() }.getOrDefault(emptyMap()) else emptyMap()
+        val rows = h.holdings.map { x0 ->
+            val x = if (x0.symbol.isBlank()) byName[x0.name.replace(" ", "")]?.let { x0.copy(symbol = it) } ?: x0 else x0
             val p = px[x.symbol]
             val chg = p?.let { if (it.prevClose > 0) (it.price / it.prevClose - 1) * 100 else null }
             Row(x.symbol, x.name, x.weightPct, x.shares, p?.price, chg,

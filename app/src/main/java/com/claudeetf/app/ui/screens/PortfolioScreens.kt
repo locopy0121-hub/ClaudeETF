@@ -183,17 +183,6 @@ fun PortfolioScreen(nav: NavController) {
                     Shortcut("資料健檢", Icons.Filled.CheckCircle, Modifier.weight(1f)) { nav.navigate(Routes.HEALTH) }
                 }
             }
-            item {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).clickable { nav.navigate(Routes.LOOK_THROUGH) }
-                    .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("🔍", fontSize = 16.sp); HGap(10.dp)
-                    Column(Modifier.weight(1f)) {
-                        Text("穿透持股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Label("把 ETF 拆回個股，看實際持有哪些股票與 ETF 重疊度")
-                    }
-                    Text("›", color = C.Muted, fontSize = 20.sp)
-                }
-            }
             if (accChoices.size > 2) {
                 item {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
