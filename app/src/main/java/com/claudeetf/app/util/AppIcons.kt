@@ -6,23 +6,34 @@ import android.content.pm.PackageManager
 import com.claudeetf.app.R
 
 /**
- * App 圖示更換：Manifest 內有 10 個 activity-alias（.Icon0….Icon9），各自掛一個圖示，
+ * App 圖示更換：Manifest 內有 20 個 activity-alias（.Icon0….Icon19），各自掛一個圖示，
  * 同一時間只啟用其中一個。先啟用新的、再停用其他，避免出現「沒有任何啟動圖示」的空窗。
  */
 object AppIcons {
-    data class Icon(val name: String, val desc: String, val bg: Int, val fg: Int)
+    /** 3D 渲染圖示（drawable-nodpi/ic_r_N.webp，自適應圖示整張作背景） */
+    data class Icon(val name: String, val res: Int)
 
     val all = listOf(
-        Icon("經典", "深色底．柱狀＋折線", R.drawable.ic_bg_0, R.drawable.ic_fg_0),
-        Icon("金幣", "藏青漸層．金幣成長", R.drawable.ic_bg_1, R.drawable.ic_fg_1),
-        Icon("紅K", "白底．紅漲綠跌 K 棒", R.drawable.ic_bg_2, R.drawable.ic_fg_2),
-        Icon("極簡藍", "純色．上升箭頭", R.drawable.ic_bg_3, R.drawable.ic_fg_3),
-        Icon("霓虹", "黑底．發光走勢線", R.drawable.ic_bg_4, R.drawable.ic_fg_4),
-        Icon("台美雙色", "紅藍斜分", R.drawable.ic_bg_5, R.drawable.ic_fg_5),
-        Icon("資產環圈", "配置甜甜圈", R.drawable.ic_bg_6, R.drawable.ic_fg_6),
-        Icon("夕陽山形", "暖色面積走勢", R.drawable.ic_bg_7, R.drawable.ic_fg_7),
-        Icon("守護盾", "資產安全", R.drawable.ic_bg_8, R.drawable.ic_fg_8),
-        Icon("墨線紙本", "米白手繪線圖", R.drawable.ic_bg_9, R.drawable.ic_fg_9),
+        Icon("鉻金柱", R.drawable.ic_r_0),
+        Icon("全息球", R.drawable.ic_r_1),
+        Icon("玻璃K棒", R.drawable.ic_r_2),
+        Icon("霓虹環", R.drawable.ic_r_3),
+        Icon("金屬箭頭", R.drawable.ic_r_4),
+        Icon("液態金屬", R.drawable.ic_r_5),
+        Icon("能量核心", R.drawable.ic_r_6),
+        Icon("數據立方", R.drawable.ic_r_7),
+        Icon("星環行星", R.drawable.ic_r_8),
+        Icon("黑曜鑽", R.drawable.ic_r_9),
+        Icon("雷射山脈", R.drawable.ic_r_10),
+        Icon("熔岩球", R.drawable.ic_r_11),
+        Icon("DNA螺旋", R.drawable.ic_r_12),
+        Icon("極光玻璃", R.drawable.ic_r_13),
+        Icon("電路晶片", R.drawable.ic_r_14),
+        Icon("雙球台美", R.drawable.ic_r_15),
+        Icon("黃金階梯", R.drawable.ic_r_16),
+        Icon("粒子漩渦", R.drawable.ic_r_17),
+        Icon("鈦金幣", R.drawable.ic_r_18),
+        Icon("全息立方", R.drawable.ic_r_19),
     )
 
     private fun cn(context: Context, i: Int) = ComponentName(context.packageName, "com.claudeetf.app.Icon$i")

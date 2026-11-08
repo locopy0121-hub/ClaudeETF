@@ -1695,7 +1695,7 @@ private fun WidgetSettings() {
 }
 
 
-/** App 圖示：10 款可選，點選後立即更換桌面圖示 */
+/** App 圖示：20 款 3D 渲染風格可選，點選後立即更換桌面圖示 */
 @Composable
 private fun AppIconPicker() {
     val ctx = LocalContext.current
@@ -1713,10 +1713,8 @@ private fun AppIconPicker() {
                         Box(Modifier.size(52.dp).clip(RoundedCornerShape(14.dp))
                             .border(if (i == cur) 2.5.dp else 0.dp, if (i == cur) C.Primary else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(14.dp))) {
                             // 自適應圖示可見區約為中間 2/3，放大 1.5 倍裁切呈現
-                            listOf(ic.bg, ic.fg).forEach { res ->
-                                androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(res), null,
-                                    Modifier.fillMaxSize().graphicsLayer(scaleX = 1.5f, scaleY = 1.5f))
-                            }
+                            androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(ic.res), null,
+                                Modifier.fillMaxSize().graphicsLayer(scaleX = 1.5f, scaleY = 1.5f))
                         }
                         Text(ic.name, color = if (i == cur) C.Primary else C.Text2, fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
                     }
