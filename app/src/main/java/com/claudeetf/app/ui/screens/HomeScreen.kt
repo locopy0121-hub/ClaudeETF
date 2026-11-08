@@ -30,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,11 @@ fun HomeScreen(nav: NavController) {
     val scope = rememberCoroutineScope()
     val navPoints = AppState.navSeries(listOf(7, 31, 92, 366, null)[range])
     val trend = navPoints.map { it.second.toFloat() }
+    // 交易紀錄變動過、或從未重建：背景依交易紀錄＋歷史收盤價重建每日損益與資產走勢
+    LaunchedEffect(AppState.pnlDirty, AppState.trades.size) {
+        if (AppState.trades.isNotEmpty() && (AppState.pnlDirty || AppState.pnlHistory.isEmpty()))
+            runCatching { com.claudeetf.app.data.PnlHistory.rebuild() }
+    }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("總覽") {
@@ -125,23 +131,34 @@ fun HomeScreen(nav: NavController) {
                                 NumText(mask(Fmt.signed(unreal)) + "（" + Fmt.pct(if (cost > 0) unreal / cost * 100 else 0.0) + "）", 13.sp, Trend.fg(unreal))
                             }
                             if (trend.size >= 2) {
-                                val chg = trend.last() - trend.first()
-                                Sparkline(trend, Trend.fg(chg.toDouble()), Modifier.fillMaxWidth().height(72.dp), fill = true)
-                                Row {
-                                    Label(navPoints.first().first, Modifier.weight(1f))
+                                // 區間損益：有重建資料時用每日損益加總（不受入金、買賣影響）；否則用資產差額
+                                val from = navPoints.first().first
+                                val hist = AppState.pnlHistory.filterKeys { it > from }
+                                val chg = if (AppState.pnlHistory.isNotEmpty()) hist.values.sum() else (trend.last() - trend.first()).toDouble()
+                                Sparkline(trend, Trend.fg(chg), Modifier.fillMaxWidth().height(72.dp), fill = true)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Label(from, Modifier.weight(1f))
+                                    if (com.claudeetf.app.data.PnlHistory.running) Label("重新計算中…  ")
                                     NumText(
-                                        "區間 " + mask(Fmt.signed(chg.toDouble())) + "（" + Fmt.pct(if (trend.first() > 0) chg / trend.first() * 100.0 else 0.0) + "）",
-                                        12.sp, Trend.fg(chg.toDouble()),
+                                        "區間 " + mask(Fmt.signed(chg)) + "（" + Fmt.pct(if (trend.first() > 0) chg / trend.first() * 100.0 else 0.0) + "）",
+                                        12.sp, Trend.fg(chg),
                                     )
                                 }
                             } else {
                                 Label("每天開啟 App 會自動記錄總資產，累積兩天後顯示走勢", Modifier.padding(vertical = 18.dp))
                             }
-                            Segmented(listOf("1週", "1月", "3月", "1年", "全部"), range, { range = it }, background = C.Bg)
-                            Text(
-                                "損益日曆 ›", color = C.Primary, fontSize = 13.sp,
-                                modifier = Modifier.clickable { nav.navigate(Routes.PNL) }.padding(vertical = 6.dp),
-                            )
+                            // 區間選擇改成同一行的小標籤，並與「損益日曆」並排，不另佔一大列
+                            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                listOf("1週", "1月", "3月", "1年", "全部").forEachIndexed { i, n ->
+                                    val on = i == range
+                                    Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (on) C.Selected else Color.Transparent)
+                                            .clickable { range = i }.padding(horizontal = 9.dp, vertical = 4.dp))
+                                }
+                                Spacer(Modifier.weight(1f))
+                                Text("損益日曆 ›", color = C.Primary, fontSize = 13.sp,
+                                    modifier = Modifier.clickable { nav.navigate(Routes.PNL) }.padding(vertical = 6.dp))
+                            }
                         }
                     }
                     }

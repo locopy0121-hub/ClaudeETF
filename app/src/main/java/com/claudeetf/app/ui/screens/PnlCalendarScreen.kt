@@ -58,7 +58,7 @@ fun PnlCalendarScreen(nav: NavController) {
     var msg by remember { mutableStateOf<String?>(null) }
     // 第一次打開且有交易紀錄：自動依交易紀錄與歷史股價重建
     LaunchedEffect(Unit) {
-        if (AppState.pnlHistory.isEmpty() && AppState.trades.isNotEmpty()) msg = com.claudeetf.app.data.PnlHistory.rebuild()
+        if ((AppState.pnlHistory.isEmpty() || AppState.pnlDirty) && AppState.trades.isNotEmpty()) msg = com.claudeetf.app.data.PnlHistory.rebuild()
     }
     val pnl = remember(AppState.navHistory.size, AppState.pnlHistory.size, AppState.pnlHistory.values.sum()) { dailyPnl() }
     val inMonth = pnl.filterKeys { YearMonth.from(it) == month }

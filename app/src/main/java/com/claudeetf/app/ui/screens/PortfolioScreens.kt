@@ -138,6 +138,7 @@ fun PortfolioScreen(nav: NavController) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (AppState.tickerShow && !AppState.tickerPinned) item { IndexTicker(nav, inList = true) }
             item {
                 Card(padding = 14.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

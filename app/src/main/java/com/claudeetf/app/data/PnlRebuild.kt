@@ -26,7 +26,11 @@ object PnlRebuild {
      * @param fx 代號 → 目前匯率（台股 1）
      * @return 日期 → 當日損益（台幣）；只含 [from, to] 之間有收盤價的交易日
      */
-    fun compute(txs: List<Tx>, closes: Map<String, Map<LocalDate, Double>>, fx: Map<String, Double>, from: LocalDate, to: LocalDate): Map<LocalDate, Double> {
+    fun compute(
+        txs: List<Tx>, closes: Map<String, Map<LocalDate, Double>>, fx: Map<String, Double>, from: LocalDate, to: LocalDate,
+        /** 選填：收集每個交易日的持股市值（台幣） */
+        values: MutableMap<LocalDate, Double>? = null,
+    ): Map<LocalDate, Double> {
         val days = closes.values.flatMap { it.keys }.filter { it in from..to }.toSortedSet()
         if (days.isEmpty()) return emptyMap()
         val sorted = txs.sortedBy { it.date }
@@ -64,6 +68,7 @@ object PnlRebuild {
             closes.forEach { (s, m) -> m[d]?.let { lastClose[s] = it } }
             val v = value(d)
             out[d] = v - prev + flow
+            values?.put(d, v)
             prev = v
         }
         return out
@@ -119,8 +124,12 @@ object PnlHistory {
                 }.filterValues { it > 0 }
             }
             progress = "計算中…"
-            val r = PnlRebuild.compute(txs, closes, fx, from, today)
+            val values = LinkedHashMap<LocalDate, Double>()
+            val r = PnlRebuild.compute(txs, closes, fx, from, today, values)
             AppState.setPnlHistory(r.mapKeys { it.key.toString() }.mapValues { Math.round(it.value).toDouble() })
+            // 總資產走勢一併重建：持股市值依交易紀錄還原＋目前現金（舊紀錄中刪改交易造成的異常值一併清除）
+            AppState.rebuildNav(values.mapKeys { it.key.toString() }, from.toString())
+            AppState.pnlDirty = false
             return "已重新計算 ${r.size} 個交易日" + if (fail > 0) "（$fail 檔取不到歷史股價，未計入）" else ""
         } finally {
             running = false

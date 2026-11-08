@@ -509,6 +509,32 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                         Label("顯示在「持股」與「自選行情」頁頂部；盤中標示即時、其餘時段標示盤後，內容超過一行會自動捲動")
                         OptToggle("顯示指數跑馬燈", AppState.tickerShow) { AppState.updateTicker(show = it) }
                         if (AppState.tickerShow) {
+                            Text("位置", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+                            ChipRow(listOf(true to "固定置頂", false to "隨頁面捲動"), AppState.tickerPinned) { AppState.updateTicker(pinned = it) }
+                            Text("捲動方式", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+                            ChipRow(listOf(true to "自動跑馬燈", false to "固定（手指左右滑）"), AppState.tickerAuto) { AppState.updateTicker(auto = it) }
+                            OptToggle("只在指定時段顯示", AppState.tickerSched) { AppState.updateTicker(sched = it) }
+                            if (AppState.tickerSched) {
+                                val w = AppState.tickerWindows + List((2 - AppState.tickerWindows.size).coerceAtLeast(0)) { "" }
+                                w.take(2).forEachIndexed { i, cur ->
+                                    var start by remember(cur) { mutableStateOf(cur.substringBefore("-", "")) }
+                                    var end by remember(cur) { mutableStateOf(cur.substringAfter("-", "")) }
+                                    fun commit() {
+                                        val l = w.take(2).toMutableList()
+                                        l[i] = if (start.isBlank() || end.isBlank()) "" else "$start-$end"
+                                        AppState.updateTicker(windows = l.filter { it.contains("-") })
+                                    }
+                                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text("時段 ${i + 1}", Modifier.width(56.dp), color = C.Text2, fontSize = 13.sp)
+                                        TimeChip(start.ifBlank { "開始" }) { start = it; commit() }
+                                        Text(" — ", color = C.Muted)
+                                        TimeChip(end.ifBlank { "結束" }) { end = it; commit() }
+                                        if (cur.isNotBlank()) Text("清除", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { start = ""; end = ""; commit() }.padding(8.dp))
+                                    }
+                                }
+                                OptToggle("只在平日（週一～週五，含週六清晨美股時段）", AppState.tickerWeekdays) { AppState.updateTicker(weekdays = it) }
+                                Label("結束早於開始代表跨午夜，例如 21:00 — 05:00 為美股時段。現在" + (if (tickerInSchedule()) "在" else "不在") + "顯示時段內。")
+                            }
                             Label("選擇要顯示的指數（依點選順序排列）", Modifier.padding(top = 4.dp))
                             Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 TICKER_CHOICES.forEach { (sym, n) ->
@@ -1316,4 +1342,16 @@ private fun HoldStepper(title: String, value: Int, min: Int, max: Int, step: Int
         Text("＋", color = if (value < max) C.Primary else C.Border, fontSize = 18.sp,
             modifier = Modifier.clickable(enabled = value < max) { set((value + step).coerceAtMost(max)) }.padding(horizontal = 12.dp))
     }
+}
+
+
+/** 點擊選時間（系統時間選擇器，24 小時制） */
+@Composable
+private fun TimeChip(text: String, onPick: (String) -> Unit) {
+    val ctx = LocalContext.current
+    Text(text, color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable {
+            val t = runCatching { java.time.LocalTime.parse(text) }.getOrNull() ?: java.time.LocalTime.of(9, 0)
+            android.app.TimePickerDialog(ctx, { _, h, m -> onPick("%02d:%02d".format(h, m)) }, t.hour, t.minute, true).show()
+        }.padding(horizontal = 12.dp, vertical = 6.dp))
 }

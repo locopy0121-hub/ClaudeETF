@@ -250,7 +250,21 @@ object AppState {
     /** 持股、自選行情頁頂部的指數跑馬燈 */
     var tickerShow by mutableStateOf(true)
     var tickerSymbols by mutableStateOf(listOf("^TWII", "^DJI", "^IXIC", "^GSPC", "^SOX"))
-    fun updateTicker(show: Boolean = tickerShow, symbols: List<String> = tickerSymbols) { tickerShow = show; tickerSymbols = symbols; save() }
+    /** 固定置頂（不隨頁面捲動）／隨頁面捲動 */
+    var tickerPinned by mutableStateOf(true)
+    /** 自動跑馬燈捲動；關閉時固定不動、可手指左右滑 */
+    var tickerAuto by mutableStateOf(true)
+    /** 時段排程：開啟時只在設定的時段內顯示（「HH:mm-HH:mm」，可跨午夜），可限平日 */
+    var tickerSched by mutableStateOf(false)
+    var tickerWindows by mutableStateOf(listOf("08:30-14:00", "21:00-05:00"))
+    var tickerWeekdays by mutableStateOf(true)
+    fun updateTicker(
+        show: Boolean = tickerShow, symbols: List<String> = tickerSymbols, pinned: Boolean = tickerPinned, auto: Boolean = tickerAuto,
+        sched: Boolean = tickerSched, windows: List<String> = tickerWindows, weekdays: Boolean = tickerWeekdays,
+    ) {
+        tickerShow = show; tickerSymbols = symbols; tickerPinned = pinned; tickerAuto = auto
+        tickerSched = sched; tickerWindows = windows; tickerWeekdays = weekdays; save()
+    }
     /** 持股卡片格式（與自選行情分開） */
     var holdStyle by mutableStateOf(HoldStyle())
     fun updateHoldStyle(hs: HoldStyle) { holdStyle = hs; save() }
@@ -480,6 +494,11 @@ object AppState {
         divPayMuted.clear(); divPayMuted.addAll((p.getString("divPayMuted", "") ?: "").split(",").filter { it.isNotBlank() })
         priceBoxShow = p.getBoolean("priceBoxShow", true)
         tickerShow = p.getBoolean("tickerShow", true)
+        tickerPinned = p.getBoolean("tickerPinned", true)
+        tickerAuto = p.getBoolean("tickerAuto", true)
+        tickerSched = p.getBoolean("tickerSched", false)
+        p.getString("tickerWindows", null)?.let { v -> tickerWindows = v.split(",").filter { it.contains("-") } }
+        tickerWeekdays = p.getBoolean("tickerWeekdays", true)
         p.getString("tickerSymbols", null)?.let { v -> tickerSymbols = v.split(",").filter { it.isNotBlank() } }
         // 現價方格的顯示改由持股卡片項目開關控制：舊的「不顯示」轉成隱藏該項目
         if (!priceBoxShow) { holdStyle = holdStyle.copy(hidden = holdStyle.hidden + "price"); priceBoxShow = true }
@@ -634,6 +653,7 @@ object AppState {
             accounts.add(Account(2, "美股帳戶", Market.US))
         }
 
+        pnlDirty = p.getBoolean("pnlDirty", false)
         pnlHistory.clear()
         p.getString("pnlHist", null)?.let { json -> runCatching { val o = JSONObject(json); o.keys().forEach { k -> pnlHistory[k] = o.getDouble(k) } } }
         navHistory.clear()
@@ -753,6 +773,8 @@ object AppState {
             .putString("watchStyle", watchStyle.toJson())
             .putString("holdStyle", holdStyle.toJson())
             .putBoolean("tickerShow", tickerShow).putString("tickerSymbols", tickerSymbols.joinToString(","))
+            .putBoolean("tickerPinned", tickerPinned).putBoolean("tickerAuto", tickerAuto).putBoolean("tickerSched", tickerSched)
+            .putString("tickerWindows", tickerWindows.joinToString(",")).putBoolean("tickerWeekdays", tickerWeekdays)
             .putString("dayStats", org.json.JSONObject().also { o ->
                 dayStats.forEach { (k, d) -> o.put(k, org.json.JSONArray().put(d.high ?: -1.0).put(d.low ?: -1.0).put(d.volume ?: -1.0).put(d.at)) }
             }.toString())
@@ -817,6 +839,7 @@ object AppState {
             }.toString())
             .putString("targets", JSONObject().apply { targets.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("nav", JSONObject().apply { navHistory.forEach { (k, v) -> put(k, v) } }.toString())
+            .putBoolean("pnlDirty", pnlDirty)
             .putString("pnlHist", JSONObject().apply { pnlHistory.forEach { (k, v) -> put(k, v) } }.toString())
             .putString("mvCost", JSONObject().apply { mvCostHistory.forEach { (k, v) -> put(k, org.json.JSONArray().put(v.first).put(v.second)) } }.toString())
             .apply()
@@ -1107,6 +1130,7 @@ object AppState {
         if (res == null) return err ?: "計算失敗"
         base = newBase
         if (trades.toList() != candidate) {
+            pnlDirty = true
             trades.clear()
             trades.addAll(candidate.sortedByDescending { Ledger.sortKey(it) })
         }
@@ -1395,6 +1419,17 @@ object AppState {
     /** 重建的每日損益（日期 yyyy-MM-dd → 台幣）；空的時候損益日曆退回用總資產差額 */
     val pnlHistory = mutableStateMapOf<String, Double>()
     fun setPnlHistory(m: Map<String, Double>) { pnlHistory.clear(); pnlHistory.putAll(m); save() }
+    /** 交易紀錄有變動：每日損益與資產走勢需要重建 */
+    var pnlDirty by mutableStateOf(false)
+
+    /** 以重建的每日持股市值取代 [from] 之後的資產紀錄（＋目前現金） */
+    fun rebuildNav(mvByDay: Map<String, Double>, from: String) {
+        navHistory.keys.filter { it >= from }.toList().forEach { navHistory.remove(it) }
+        mvByDay.forEach { (k, v) -> navHistory[k] = Math.round(v + cashTwd).toDouble() }
+        mvCostHistory.keys.filter { it >= from && it !in mvByDay }.toList().forEach { mvCostHistory.remove(it) }
+        mvByDay.forEach { (k, v) -> val c = mvCostHistory[k]?.second ?: totalCostTwd(); mvCostHistory[k] = Math.round(v).toDouble() to c }
+        recordNav()
+    }
 
     private fun quoteDay(q: Quote): String? = if (q.updatedAt <= 0) null else
         java.time.Instant.ofEpochMilli(q.updatedAt).atZone(java.time.ZoneId.of("Asia/Taipei")).toLocalDate().toString()
