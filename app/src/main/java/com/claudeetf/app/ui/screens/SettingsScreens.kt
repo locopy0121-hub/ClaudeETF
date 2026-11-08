@@ -1695,7 +1695,7 @@ private fun WidgetSettings() {
 }
 
 
-/** App 圖示：20 款 3D 渲染風格可選，點選後立即更換桌面圖示 */
+/** App 圖示：20 款股市主題 3D 渲染風格可選，點選後立即更換桌面圖示 */
 @Composable
 private fun AppIconPicker() {
     val ctx = LocalContext.current
