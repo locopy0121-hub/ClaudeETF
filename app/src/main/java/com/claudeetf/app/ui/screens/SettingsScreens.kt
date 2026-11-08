@@ -583,6 +583,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                     }
                 }
             }
+            if (section == "monitor") item { MonitorSettings() }
             if (section == "accounts") {
                 items(AppState.accounts.toList(), key = { "acc-" + it.id }) { a -> AccountCard(a) }
                 item { AddAccountRow() }
@@ -1125,6 +1126,7 @@ internal val SETTINGS_SECTIONS = listOf(
     ),
     "其他" to listOf(
         SettingsEntry("alerts", "🔔", "提醒"),
+        SettingsEntry("monitor", "📡", "盤中持股監控"),
         SettingsEntry("security", "🔒", "安全"),
         SettingsEntry("chat", "💬", "群聊"),
         SettingsEntry("about", "ℹ️", "關於與更新"),
@@ -1149,6 +1151,7 @@ private fun SettingsMenu(nav: NavController, version: String) {
         "ledger" -> "交易紀錄 ${AppState.trades.size} 筆"
         "backup" -> "匯出、匯入與備份"
         "alerts" -> "${AppState.alerts.count { it.enabled }} 項開啟"
+        "monitor" -> if (!AppState.monOn) "未開啟" else (if (com.claudeetf.app.alerts.MonitorService.running) "監控中" else "已開啟") + " · 每 ${AppState.monInterval} 秒"
         "security" -> if (AppState.appLock) "安全鎖已開啟" else "安全鎖未開啟"
         "chat" -> if (!com.claudeetf.app.chat.ChatPrefs.enabled) "未開啟" else com.claudeetf.app.chat.ChatPrefs.userName
         "about" -> "版本 $version" + (if (hasUpdate) " · 有新版 " + (com.claudeetf.app.data.AppUpdater.latest?.tag ?: "") else "")
@@ -1354,4 +1357,72 @@ private fun TimeChip(text: String, onPick: (String) -> Unit) {
             val t = runCatching { java.time.LocalTime.parse(text) }.getOrNull() ?: java.time.LocalTime.of(9, 0)
             android.app.TimePickerDialog(ctx, { _, h, m -> onPick("%02d:%02d".format(h, m)) }, t.hour, t.minute, true).show()
         }.padding(horizontal = 12.dp, vertical = 6.dp))
+}
+
+
+// ============================== 盤中持股監控 ==============================
+
+@Composable
+private fun MonitorSettings() {
+    val ctx = LocalContext.current
+    val M = com.claudeetf.app.alerts.MonitorService
+    var tick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(2000); tick++ } }
+    val running = remember(tick) { M.running }
+    val exact = remember(tick) { M.canExact(ctx) }
+    Card(padding = 14.dp) {
+        Text("盤中持股監控", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Label("台股盤中（08:59～13:35）在背景持續更新報價，檢查所有提醒與持股異動，並在通知列常駐顯示今日損益與漲跌最大的持股；收盤自動停止，下一個交易日開盤前自動啟動。")
+        OptToggle("開啟盤中監控", AppState.monOn) { v ->
+            AppState.updateMonitor(on = v)
+            if (v) M.start(ctx, fromUser = true) else M.stop(ctx)
+            M.schedule(ctx)
+        }
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(if (running) "● 監控中" else "○ 未在監控", color = if (running) C.Primary else C.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            if (AppState.monOn) {
+                val nx = M.nextStart()
+                Label(if (M.inSession()) "目前在監控時段內" else "下次啟動 ${nx.monthValue}/${nx.dayOfMonth} %02d:%02d".format(nx.hour, nx.minute))
+            }
+        }
+        if (AppState.monOn && !running && M.inSession())
+            Text("立即開始今日監控 ›", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { M.start(ctx, fromUser = true) }.padding(vertical = 6.dp))
+        if (running) Text("停止今日監控", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { M.stop(ctx) }.padding(vertical = 6.dp))
+
+        Text("更新頻率", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        ChipRow(listOf(10 to "10 秒", 15 to "15 秒", 30 to "30 秒", 60 to "1 分", 120 to "2 分"), AppState.monInterval) { AppState.updateMonitor(interval = it) }
+        Label("越短越即時但越耗電；富果金鑰或證交所 MIS 的資料約 5 秒更新一次")
+
+        Text("持股漲跌幅提醒", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Label("任一持股今日漲跌幅每跨過一個級距通知一次（例如 3% → 3%、6%、9%），同一級距當天只通知一次")
+        ChipRow(listOf(0.0 to "關閉", 2.0 to "2%", 3.0 to "3%", 5.0 to "5%", 7.0 to "7%"), AppState.monStepPct) { AppState.updateMonitor(step = it) }
+        OptToggle("持股漲停／跌停時通知", AppState.monLimit) { AppState.updateMonitor(limit = it) }
+        Text("今日總損益提醒", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Label("今日持股總損益每跨過設定金額的整數倍通知一次（獲利、虧損分開計）")
+        ChipRow(listOf(0.0 to "關閉", 1_000.0 to "1,000", 5_000.0 to "5,000", 10_000.0 to "1 萬", 50_000.0 to "5 萬"), AppState.monPnlStep) { AppState.updateMonitor(pnlStep = it) }
+        OptToggle("美股盤中也監控（台灣時間晚上）", AppState.monUs) { AppState.updateMonitor(us = it); M.schedule(ctx) }
+
+        Text("確保準時啟動", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("精準鬧鐘權限", color = C.Text2, fontSize = 13.sp)
+                Label(if (exact) "已允許：開盤前會準時自動啟動" else "未允許：可能延後啟動，或改以通知請你點一下啟動")
+            }
+            if (!exact && android.os.Build.VERSION.SDK_INT >= 31) Text("前往允許", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable {
+                runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:" + ctx.packageName))) }
+            }.padding(8.dp))
+        }
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("電池最佳化", color = C.Text2, fontSize = 13.sp)
+                Label("部分手機會關掉背景服務；把本 App 設為「不最佳化／不限制」可避免中斷")
+            }
+            Text("前往設定", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable {
+                runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+            }.padding(8.dp))
+        }
+        Text("測試通知", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { com.claudeetf.app.alerts.AlertEngine.test(ctx) }.padding(vertical = 6.dp))
+    }
 }

@@ -247,6 +247,18 @@ object AppState {
     /** 自選個股（卡片／清單）顯示格式 */
     var watchStyle by mutableStateOf(WatchStyle())
     fun updateWatchStyle(ws: WatchStyle) { watchStyle = ws; save() }
+    /** 盤中持股監控：開關、更新秒數、個股漲跌幅提醒級距（%）、漲跌停提醒、今日損益提醒級距（元，0 關閉）、含美股時段 */
+    var monOn by mutableStateOf(false)
+    var monInterval by mutableIntStateOf(30)
+    var monStepPct by mutableStateOf(3.0)
+    var monLimit by mutableStateOf(true)
+    var monPnlStep by mutableStateOf(0.0)
+    var monUs by mutableStateOf(false)
+    fun updateMonitor(on: Boolean = monOn, interval: Int = monInterval, step: Double = monStepPct, limit: Boolean = monLimit,
+                      pnlStep: Double = monPnlStep, us: Boolean = monUs) {
+        monOn = on; monInterval = interval; monStepPct = step; monLimit = limit; monPnlStep = pnlStep; monUs = us; save()
+    }
+
     /** 持股、自選行情頁頂部的指數跑馬燈 */
     var tickerShow by mutableStateOf(true)
     var tickerSymbols by mutableStateOf(listOf("^TWII", "^DJI", "^IXIC", "^GSPC", "^SOX"))
@@ -493,6 +505,12 @@ object AppState {
         divPayAlert = p.getBoolean("divPayAlert", true)
         divPayMuted.clear(); divPayMuted.addAll((p.getString("divPayMuted", "") ?: "").split(",").filter { it.isNotBlank() })
         priceBoxShow = p.getBoolean("priceBoxShow", true)
+        monOn = p.getBoolean("monOn", false)
+        monInterval = p.getInt("monInterval", 30)
+        monStepPct = p.getFloat("monStepPct", 3f).toDouble()
+        monLimit = p.getBoolean("monLimit", true)
+        monPnlStep = p.getFloat("monPnlStep", 0f).toDouble()
+        monUs = p.getBoolean("monUs", false)
         tickerShow = p.getBoolean("tickerShow", true)
         tickerPinned = p.getBoolean("tickerPinned", true)
         tickerAuto = p.getBoolean("tickerAuto", true)
@@ -772,6 +790,8 @@ object AppState {
             .putBoolean("autoUpdateCheck", autoUpdateCheck)
             .putString("watchStyle", watchStyle.toJson())
             .putString("holdStyle", holdStyle.toJson())
+            .putBoolean("monOn", monOn).putInt("monInterval", monInterval).putFloat("monStepPct", monStepPct.toFloat())
+            .putBoolean("monLimit", monLimit).putFloat("monPnlStep", monPnlStep.toFloat()).putBoolean("monUs", monUs)
             .putBoolean("tickerShow", tickerShow).putString("tickerSymbols", tickerSymbols.joinToString(","))
             .putBoolean("tickerPinned", tickerPinned).putBoolean("tickerAuto", tickerAuto).putBoolean("tickerSched", tickerSched)
             .putString("tickerWindows", tickerWindows.joinToString(",")).putBoolean("tickerWeekdays", tickerWeekdays)

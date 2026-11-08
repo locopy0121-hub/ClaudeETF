@@ -115,6 +115,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        com.claudeetf.app.alerts.MonitorService.start(applicationContext)
         // 離開超過 1 分鐘重新上鎖
         if (AppState.appLock && AppState.backgroundAt > 0 && System.currentTimeMillis() - AppState.backgroundAt > 60_000) {
             AppState.locked = true
