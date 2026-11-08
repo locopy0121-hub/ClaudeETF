@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 一檔：左區、右區各一段文字（內容與樣式由程式以 Span 組成，可多行） -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_row"
     android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:layout_marginTop="2dp" android:gravity="center_vertical" android:orientation="horizontal">
-    <TextView android:id="@+id/w_rn" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-        android:ellipsize="end" android:maxLines="1" android:textColor="#E8ECF2" android:textSize="12sp" />
-    <TextView android:id="@+id/w_rx" android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_marginEnd="6dp" android:maxLines="1" android:textColor="#9AA3B2" android:textSize="10sp" />
-    <TextView android:id="@+id/w_rv" android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:fontFamily="monospace" android:maxLines="1" android:textColor="#9AA3B2" android:textSize="12sp" />
+    android:gravity="center_vertical" android:orientation="horizontal">
+    <TextView android:id="@+id/w_rl" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:ellipsize="end" android:textColor="#E8ECF2" android:textSize="12sp" />
+    <TextView android:id="@+id/w_rr" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginStart="6dp" android:gravity="end" android:textColor="#E8ECF2" android:textSize="12sp" />
 </LinearLayout>

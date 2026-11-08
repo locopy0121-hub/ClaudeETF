@@ -28,45 +28,92 @@ class AssetsWidget : AppWidgetProvider() {
 }
 
 /**
- * 小工具樣式。
- * theme 0 跟隨 App、1 深色、2 淺色、3 透明；alpha 背景不透明度 0–100；radius 0 方角、1 圓角、2 大圓角；
- * text 0 小、1 中、2 大；header 0 總資產、1 持股市值、2 今日損益、3 不顯示；
- * layout 0 清單、1 大字條列、2 方格（兩欄）、3 只顯示總覽；source 0 持股、1 自選；rows 0–8；
- * fields 每檔顯示的項目（複選）：price 價格、change 漲跌、pct 漲跌幅、pnl 今日損益、volume 成交量、entry 進場建議、band 光譜位階；
- * indices 指數（台股、美股複選）；sort 0 依清單順序、1 依漲跌幅大小。
+ * 小工具樣式（v3：自由編輯）。
+ * 外觀：theme 0 跟隨 App、1 深色、2 淺色、3 透明；alpha 背景不透明度；radius 0 方角、1 圓角、2 大圓角；text 整體字級 0 小、1 中、2 大。
+ * 版面：header 0 總資產、1 持股市值、2 今日損益、3 不顯示；layout 0 清單、2 方格（兩欄）、3 只顯示總覽。
+ * 每檔項目（items 順序、hidden 隱藏、zone 0 左／1 右、newline 從新的一行開始）＋單一項目樣式（字級、粗細、顏色）。
+ * 間距：pad 外框內距、rowGap 檔與檔間距（行距）、rowPad 每檔上下內距（dp）。
  */
 data class WidgetStyle(
     val theme: Int = 0, val alpha: Int = 92, val radius: Int = 2, val text: Int = 1,
     val header: Int = 0, val showToday: Boolean = true,
     val source: Int = 0, val rows: Int = 5, val sort: Int = 0, val showTime: Boolean = true,
     val layout: Int = 0,
-    val fields: Set<String> = setOf("price", "pct"),
     val indices: List<String> = listOf("^TWII", "^IXIC"),
+    val items: List<String> = ITEMS.keys.toList(),
+    val hidden: Set<String> = setOf("change", "pnl", "volume", "entry", "band"),
+    val zone: Map<String, Int> = DEFAULT_ZONE,
+    val newline: Set<String> = emptySet(),
+    val styles: Map<String, com.claudeetf.app.data.ItemStyle> = emptyMap(),
+    val pad: Int = 14, val rowGap: Int = 2, val rowPad: Int = 0,
+    val headerHidden: Set<String> = emptySet(),
 ) {
-    fun has(f: String) = f in fields
+    fun shows(id: String) = id !in hidden
+    fun zoneOf(id: String) = zone[id] ?: DEFAULT_ZONE[id] ?: 0
+    fun style(key: String) = styles[key] ?: com.claudeetf.app.data.ItemStyle()
+    fun withStyle(key: String, st: com.claudeetf.app.data.ItemStyle) = copy(styles = if (st.isDefault) styles - key else styles + (key to st))
 
-    fun toJson(): String = JSONObject().put("v", 2).put("theme", theme).put("alpha", alpha).put("radius", radius).put("text", text)
+    fun toJson(): String = JSONObject().put("v", 3).put("theme", theme).put("alpha", alpha).put("radius", radius).put("text", text)
         .put("header", header).put("showToday", showToday).put("source", source)
         .put("rows", rows).put("sort", sort).put("showTime", showTime).put("layout", layout)
-        .put("fields", org.json.JSONArray(fields.toList())).put("indices", org.json.JSONArray(indices)).toString()
+        .put("indices", org.json.JSONArray(indices)).put("items", org.json.JSONArray(items)).put("hidden", org.json.JSONArray(hidden.toList()))
+        .put("zone", JSONObject(zone as Map<*, *>)).put("newline", org.json.JSONArray(newline.toList()))
+        .put("styles", JSONObject().apply { styles.filterValues { !it.isDefault }.forEach { (k, v) -> put(k, v.toJson()) } })
+        .put("pad", pad).put("rowGap", rowGap).put("rowPad", rowPad).put("headerHidden", org.json.JSONArray(headerHidden.toList()))
+        .toString()
+
+    /** 套用版型預設組合（之後仍可逐項調整） */
+    fun preset(kind: Int): WidgetStyle = when (kind) {
+        // 大字條列：名稱粗體、價格放大；第二行附加資訊與漲跌
+        1 -> copy(layout = 0, hidden = setOf("change", "pnl", "volume", "band"),
+            zone = DEFAULT_ZONE, newline = setOf("entry", "pct"),
+            styles = mapOf("r:name" to com.claudeetf.app.data.ItemStyle(size = 115, weight = 700), "r:price" to com.claudeetf.app.data.ItemStyle(size = 145, weight = 700)),
+            rowGap = 6)
+        // 方格：全部靠左；名稱＋代號、大字價格、漲跌、附加資訊各一行
+        2 -> copy(layout = 2, hidden = setOf("pnl", "volume", "band"),
+            zone = ITEMS.keys.associateWith { 0 }, newline = setOf("price", "change", "entry"),
+            styles = mapOf("r:code" to com.claudeetf.app.data.ItemStyle(size = 85), "r:price" to com.claudeetf.app.data.ItemStyle(size = 170, weight = 700)),
+            rowGap = 4)
+        3 -> copy(layout = 3)
+        else -> copy(layout = 0, hidden = setOf("change", "pnl", "volume", "entry", "band"), zone = DEFAULT_ZONE, newline = emptySet(),
+            styles = styles.filterKeys { it.startsWith("h:") }, rowGap = 2)
+    }
 
     companion object {
-        /** 可選項目（順序即顯示順序） */
-        val FIELDS = linkedMapOf("price" to "價格", "change" to "漲跌", "pct" to "漲跌幅", "pnl" to "今日損益",
-            "volume" to "成交量", "entry" to "進場建議", "band" to "光譜位階")
+        /** 每檔可用項目（預設順序） */
+        val ITEMS = linkedMapOf("code" to "代號", "name" to "名稱", "price" to "價格", "change" to "漲跌", "pct" to "漲跌幅",
+            "pnl" to "今日損益", "volume" to "成交量", "entry" to "進場建議", "band" to "光譜位階")
+        val HEADER = linkedMapOf("label" to "標題", "total" to "主數字", "today" to "今日損益列", "index" to "指數列", "time" to "更新時間")
+        val DEFAULT_ZONE = mapOf("price" to 1, "change" to 1, "pct" to 1, "pnl" to 1)
         val INDEX_NAMES = linkedMapOf("^TWII" to "加權", "^TWOII" to "櫃買", "^DJI" to "道瓊", "^GSPC" to "S&P",
             "^IXIC" to "那指", "^SOX" to "費半")
+        /** 數字類項目用等寬字 */
+        val MONO = setOf("code", "price", "change", "pct", "pnl", "volume")
 
         fun fromJson(s: String?): WidgetStyle = runCatching {
             val o = JSONObject(s ?: return WidgetStyle())
             fun list(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.optString(it) } }
-            // 舊版：rowMode、showIndex 轉成新的複選項目
-            val fields = list("fields")?.toSet() ?: when (o.optInt("rowMode", 0)) { 1 -> setOf("pct"); 2 -> setOf("pnl", "pct"); else -> setOf("price", "pct") }
+            fun intMap(k: String) = o.optJSONObject(k)?.let { m -> m.keys().asSequence().associateWith { m.optInt(it) } }
             val idx = list("indices") ?: if (o.optBoolean("showIndex", true)) listOf("^TWII", "^IXIC") else emptyList()
-            WidgetStyle(o.optInt("theme", 0), o.optInt("alpha", 92).coerceIn(0, 100), o.optInt("radius", 2), o.optInt("text", 1),
+            val base = WidgetStyle(o.optInt("theme", 0), o.optInt("alpha", 92).coerceIn(0, 100), o.optInt("radius", 2), o.optInt("text", 1),
                 o.optInt("header", 0), o.optBoolean("showToday", true), o.optInt("source", 0),
-                o.optInt("rows", 5).coerceIn(0, 8), o.optInt("sort", 0), o.optBoolean("showTime", true),
-                o.optInt("layout", 0), fields, idx)
+                o.optInt("rows", 5).coerceIn(0, 12), o.optInt("sort", 0), o.optBoolean("showTime", true),
+                o.optInt("layout", 0), idx)
+            if (o.optInt("v", 1) >= 3) {
+                val l = list("items")?.filter { it in ITEMS }.orEmpty()
+                base.copy(
+                    items = l + ITEMS.keys.filter { it !in l }, hidden = list("hidden")?.toSet() ?: base.hidden,
+                    zone = intMap("zone") ?: DEFAULT_ZONE, newline = list("newline")?.toSet() ?: emptySet(),
+                    styles = o.optJSONObject("styles")?.let { m -> m.keys().asSequence().associateWith { com.claudeetf.app.data.ItemStyle.fromJson(m.optJSONObject(it)) } } ?: emptyMap(),
+                    pad = o.optInt("pad", 14), rowGap = o.optInt("rowGap", 2), rowPad = o.optInt("rowPad", 0),
+                    headerHidden = list("headerHidden")?.toSet() ?: emptySet(),
+                )
+            } else {
+                // v1／v2 → v3：舊的「每檔項目」複選轉為隱藏清單，舊版型轉為預設組合
+                val fields = list("fields")?.toSet() ?: when (o.optInt("rowMode", 0)) { 1 -> setOf("pct"); 2 -> setOf("pnl", "pct"); else -> setOf("price", "pct") }
+                val p = base.preset(if (base.layout == 1) 1 else base.layout)
+                p.copy(hidden = ITEMS.keys.filter { it !in fields && it != "code" && it != "name" }.toSet())
+            }
         }.getOrDefault(WidgetStyle())
     }
 }
@@ -148,19 +195,74 @@ object WidgetUpdater {
         return WidgetModel(label, big, todayLine, if (st.header == 2) pct else today, idx, rows, time)
     }
 
-    /** 依勾選項目組出「數值」與「附加」文字 */
-    fun valueText(st: WidgetStyle, r: WRow, withPrice: Boolean = true): String = buildList {
-        if (withPrice && st.has("price")) add(r.price)
-        if (st.has("change")) add(r.change)
-        if (st.has("pct")) add(r.pct)
-        if (st.has("pnl")) r.pnl?.let { add(it) }
-    }.joinToString("  ")
+    /** 每檔項目的文字；沒有資料回傳 null（不佔位置） */
+    fun itemText(id: String, r: WRow): String? = when (id) {
+        "code" -> r.symbol
+        "name" -> r.name
+        "price" -> r.price
+        "change" -> r.change
+        "pct" -> r.pct
+        "pnl" -> r.pnl?.let { "今日 $it" }
+        "volume" -> r.volume?.let { "量 $it" }
+        "entry" -> r.entry
+        "band" -> r.band?.let { "光譜 $it" }
+        else -> null
+    }
 
-    fun extraText(st: WidgetStyle, r: WRow): String = buildList {
-        if (st.has("entry")) r.entry?.let { add(it) }
-        if (st.has("band")) r.band?.let { add("光譜 $it") }
-        if (st.has("volume")) r.volume?.let { add("量 $it") }
-    }.joinToString(" · ")
+    /** 項目基本字級（sp，乘上整體字級與單一項目字級） */
+    fun baseSize(id: String, layout: Int): Float = when (id) {
+        "price" -> if (layout == 2) 12f else 13f
+        "code", "name" -> 12f
+        "volume", "entry", "band" -> 10f
+        else -> 12f
+    }
+
+    /** 項目顏色：自訂色 ＞ 漲跌色 ＞ 預設（價格類依漲跌、進場依等級、其餘依主題） */
+    fun itemColor(st: WidgetStyle, key: String, id: String, r: WRow, c: WidgetColors): Int {
+        val ist = st.style(key)
+        if (ist.color != 0L) return ist.color.toInt()
+        if (ist.trend) return trendColor(r.sign, c.text)
+        return when (id) {
+            "price", "change", "pct", "pnl" -> trendColor(r.sign, if (id == "price") c.text else c.muted)
+            "entry" -> entryColor(r.entryLevel, c.muted)
+            "volume", "band" -> c.muted
+            else -> c.text
+        }
+    }
+
+    /**
+     * 組出某一區（左／右）的文字：依項目順序，同一行以兩個空白分隔，標記「換行」的項目從新的一行開始；
+     * 每個項目各自套用字級、粗細、顏色、等寬字（Span，RemoteViews 支援）。
+     */
+    fun zoneText(st: WidgetStyle, r: WRow, zoneSel: Int?, c: WidgetColors, k: Float): CharSequence {
+        val sb = android.text.SpannableStringBuilder()
+        st.items.filter { st.shows(it) && (zoneSel == null || st.zoneOf(it) == zoneSel) }.forEach { id ->
+            val t = itemText(id, r) ?: return@forEach
+            if (sb.isNotEmpty()) sb.append(if (id in st.newline) "\n" else "  ")
+            val start = sb.length
+            sb.append(t)
+            val ist = st.style("r:$id")
+            val sz = (baseSize(id, st.layout) * k * ist.size / 100f).toInt().coerceAtLeast(6)
+            sb.setSpan(android.text.style.AbsoluteSizeSpan(sz, true), start, sb.length, 0)
+            sb.setSpan(android.text.style.ForegroundColorSpan(itemColor(st, "r:$id", id, r, c)), start, sb.length, 0)
+            val bold = if (ist.weight > 0) ist.weight >= 600 else id == "code"
+            if (bold) sb.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, sb.length, 0)
+            if (id in WidgetStyle.MONO) sb.setSpan(android.text.style.TypefaceSpan("monospace"), start, sb.length, 0)
+        }
+        return sb
+    }
+
+    /** 標題區單一項目（標題、主數字、今日列、指數列、時間）的樣式文字 */
+    fun headerText(st: WidgetStyle, id: String, text: String, base: Float, defColor: Int, sign: Double, c: WidgetColors, k: Float, defBold: Boolean = false): CharSequence {
+        val ist = st.style("h:$id")
+        val sb = android.text.SpannableString(text)
+        val color = when { ist.color != 0L -> ist.color.toInt(); ist.trend -> trendColor(sign, c.text); else -> defColor }
+        sb.setSpan(android.text.style.AbsoluteSizeSpan((base * k * ist.size / 100f).toInt().coerceAtLeast(6), true), 0, sb.length, 0)
+        sb.setSpan(android.text.style.ForegroundColorSpan(color), 0, sb.length, 0)
+        if (if (ist.weight > 0) ist.weight >= 600 else defBold) sb.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, sb.length, 0)
+        if (id != "label") sb.setSpan(android.text.style.TypefaceSpan("monospace"), 0, sb.length, 0)
+        return sb
+    }
 
     /** 進場建議的顏色（可進場紅／綠依配色、觀望黃、不宜灰） */
     fun entryColor(level: Int, muted: Int): Int = when {
@@ -174,77 +276,55 @@ object WidgetUpdater {
         val c = colors(st)
         val m = model(st)
         val v = RemoteViews(context.packageName, R.layout.widget_assets)
-        // 背景：圓角圖層上色＋透明度
+        // 背景：圓角圖層上色＋透明度；外框內距
         v.setImageViewResource(R.id.w_bg, when (st.radius) { 0 -> R.drawable.widget_shape_0; 1 -> R.drawable.widget_shape_12; else -> R.drawable.widget_shape_24 })
         v.setInt(R.id.w_bg, "setColorFilter", c.bg)
         v.setInt(R.id.w_bg, "setImageAlpha", bgAlpha(st))
+        val dp = context.resources.displayMetrics.density
+        val padPx = (st.pad.coerceIn(0, 32) * dp).toInt()
+        v.setViewPadding(R.id.w_content, padPx, padPx, padPx, padPx)
         val k = when (st.text) { 0 -> 0.85f; 2 -> 1.2f; else -> 1f }
-        fun size(id: Int, sp: Float) = v.setTextViewTextSize(id, TypedValue.COMPLEX_UNIT_SP, sp * k)
-        val headerOn = st.header != 3
-        v.setViewVisibility(R.id.w_label, if (headerOn) View.VISIBLE else View.GONE)
-        v.setViewVisibility(R.id.w_total, if (headerOn) View.VISIBLE else View.GONE)
-        v.setTextViewText(R.id.w_label, m.label); v.setTextColor(R.id.w_label, c.muted); size(R.id.w_label, 12f)
-        v.setTextViewText(R.id.w_total, m.total); size(R.id.w_total, 24f)
-        v.setTextColor(R.id.w_total, if (st.header == 2) trendColor(m.todaySign, c.text) else c.text)
-        v.setViewVisibility(R.id.w_today, if (m.today.isBlank()) View.GONE else View.VISIBLE)
-        v.setTextViewText(R.id.w_today, m.today); v.setTextColor(R.id.w_today, trendColor(m.todaySign, c.muted)); size(R.id.w_today, 13f)
-        v.setViewVisibility(R.id.w_index, if (m.index.isBlank()) View.GONE else View.VISIBLE)
-        v.setTextViewText(R.id.w_index, m.index); v.setTextColor(R.id.w_index, c.muted); size(R.id.w_index, 11f)
-        v.setViewVisibility(R.id.w_div, if (m.rows.isEmpty()) View.GONE else View.VISIBLE)
+        fun head(id: Int, key: String, text: String, base: Float, def: Int, sign: Double, bold: Boolean = false) {
+            val on = text.isNotBlank() && key !in st.headerHidden
+            v.setViewVisibility(id, if (on) View.VISIBLE else View.GONE)
+            if (on) v.setTextViewText(id, headerText(st, key, text, base, def, sign, c, k, bold))
+        }
+        head(R.id.w_label, "label", m.label, 12f, c.muted, m.todaySign)
+        head(R.id.w_total, "total", m.total, 24f, if (st.header == 2) trendColor(m.todaySign, c.text) else c.text, m.todaySign, true)
+        head(R.id.w_today, "today", m.today, 13f, trendColor(m.todaySign, c.muted), m.todaySign)
+        head(R.id.w_index, "index", m.index, 11f, c.muted, 0.0)
+        head(R.id.w_time, "time", m.time, 10f, c.muted, 0.0)
+        v.setViewVisibility(R.id.w_div, if (m.rows.isEmpty() || (st.header == 3 && m.index.isBlank())) View.GONE else View.VISIBLE)
         v.setInt(R.id.w_div, "setBackgroundColor", c.divider)
         v.removeAllViews(R.id.w_list)
-        when (st.layout) {
-            // 方格：兩欄，每格名稱／大字價格／漲跌／附加
-            2 -> m.rows.chunked(2).forEach { pair ->
+        val gapPx = (st.rowGap.coerceIn(0, 24) * dp).toInt()
+        val rowPadPx = (st.rowPad.coerceIn(0, 24) * dp).toInt()
+        if (st.layout == 2) {
+            // 方格：兩欄，每格依項目順序與換行排列
+            m.rows.chunked(2).forEach { pair ->
                 val gr = RemoteViews(context.packageName, R.layout.widget_grid_row)
                 gr.removeAllViews(R.id.w_c1); gr.removeAllViews(R.id.w_c2)
                 pair.forEachIndexed { i, r ->
                     val cell = RemoteViews(context.packageName, R.layout.widget_cell)
                     cell.setInt(R.id.w_cbg, "setColorFilter", c.cell)
-                    cell.setTextViewText(R.id.w_cn, r.name + " " + r.symbol); cell.setTextColor(R.id.w_cn, c.text)
-                    cell.setTextViewText(R.id.w_cp, r.price); cell.setTextColor(R.id.w_cp, trendColor(r.sign, c.text))
-                    cell.setTextViewText(R.id.w_cc, valueText(st, r, withPrice = false)); cell.setTextColor(R.id.w_cc, trendColor(r.sign, c.muted))
-                    val x = extraText(st, r)
-                    cell.setViewVisibility(R.id.w_cx, if (x.isBlank()) View.GONE else View.VISIBLE)
-                    cell.setTextViewText(R.id.w_cx, x); cell.setTextColor(R.id.w_cx, if (st.has("entry") && r.entry != null) entryColor(r.entryLevel, c.muted) else c.muted)
-                    cell.setTextViewTextSize(R.id.w_cn, TypedValue.COMPLEX_UNIT_SP, 11f * k)
-                    cell.setTextViewTextSize(R.id.w_cp, TypedValue.COMPLEX_UNIT_SP, 20f * k)
-                    cell.setTextViewTextSize(R.id.w_cc, TypedValue.COMPLEX_UNIT_SP, 11f * k)
-                    cell.setTextViewTextSize(R.id.w_cx, TypedValue.COMPLEX_UNIT_SP, 10f * k)
+                    cell.setTextViewText(R.id.w_ct, zoneText(st, r, null, c, k))
+                    val p8 = (8 * dp).toInt() + rowPadPx
+                    cell.setViewPadding(R.id.w_ct, p8, p8, p8, p8)
                     gr.addView(if (i == 0) R.id.w_c1 else R.id.w_c2, cell)
                 }
+                gr.setViewPadding(R.id.w_c1, 0, gapPx, 0, 0); gr.setViewPadding(R.id.w_c2, 0, gapPx, 0, 0)
                 v.addView(R.id.w_list, gr)
             }
-            // 大字條列：名稱＋大字價格，下排附加資訊＋漲跌
-            1 -> m.rows.forEach { r ->
-                val b = RemoteViews(context.packageName, R.layout.widget_row_big)
-                b.setTextViewText(R.id.w_bn, r.name + " " + r.symbol); b.setTextColor(R.id.w_bn, c.text)
-                b.setTextViewText(R.id.w_bp, if (st.has("price")) r.price else ""); b.setTextColor(R.id.w_bp, trendColor(r.sign, c.text))
-                b.setTextViewText(R.id.w_bc, valueText(st, r, withPrice = false)); b.setTextColor(R.id.w_bc, trendColor(r.sign, c.muted))
-                b.setTextViewText(R.id.w_bx, extraText(st, r))
-                b.setTextColor(R.id.w_bx, if (st.has("entry") && r.entry != null) entryColor(r.entryLevel, c.muted) else c.muted)
-                b.setTextViewTextSize(R.id.w_bn, TypedValue.COMPLEX_UNIT_SP, 14f * k)
-                b.setTextViewTextSize(R.id.w_bp, TypedValue.COMPLEX_UNIT_SP, 18f * k)
-                b.setTextViewTextSize(R.id.w_bc, TypedValue.COMPLEX_UNIT_SP, 12f * k)
-                b.setTextViewTextSize(R.id.w_bx, TypedValue.COMPLEX_UNIT_SP, 11f * k)
-                v.addView(R.id.w_list, b)
-            }
-            // 清單：名稱、附加、數值同一行
-            else -> m.rows.forEach { r ->
-                val row = RemoteViews(context.packageName, R.layout.widget_row)
-                row.setTextViewText(R.id.w_rn, r.symbol + " " + r.name.take(6)); row.setTextColor(R.id.w_rn, c.text)
-                val x = extraText(st, r)
-                row.setViewVisibility(R.id.w_rx, if (x.isBlank()) View.GONE else View.VISIBLE)
-                row.setTextViewText(R.id.w_rx, x); row.setTextColor(R.id.w_rx, if (st.has("entry") && r.entry != null) entryColor(r.entryLevel, c.muted) else c.muted)
-                row.setTextViewText(R.id.w_rv, valueText(st, r)); row.setTextColor(R.id.w_rv, trendColor(r.sign, c.muted))
-                row.setTextViewTextSize(R.id.w_rn, TypedValue.COMPLEX_UNIT_SP, 12f * k)
-                row.setTextViewTextSize(R.id.w_rx, TypedValue.COMPLEX_UNIT_SP, 10f * k)
-                row.setTextViewTextSize(R.id.w_rv, TypedValue.COMPLEX_UNIT_SP, 12f * k)
-                v.addView(R.id.w_list, row)
-            }
+        } else m.rows.forEach { r ->
+            // 清單：左區、右區各自依順序與換行排列
+            val row = RemoteViews(context.packageName, R.layout.widget_row)
+            row.setTextViewText(R.id.w_rl, zoneText(st, r, 0, c, k))
+            val right = zoneText(st, r, 1, c, k)
+            row.setViewVisibility(R.id.w_rr, if (right.isEmpty()) View.GONE else View.VISIBLE)
+            row.setTextViewText(R.id.w_rr, right)
+            row.setViewPadding(R.id.w_row, 0, gapPx + rowPadPx, 0, rowPadPx)
+            v.addView(R.id.w_list, row)
         }
-        v.setViewVisibility(R.id.w_time, if (m.time.isBlank()) View.GONE else View.VISIBLE)
-        v.setTextViewText(R.id.w_time, m.time); v.setTextColor(R.id.w_time, c.muted); size(R.id.w_time, 10f)
         val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         v.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(context, 1, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         return v

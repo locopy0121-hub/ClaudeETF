@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 可自由調整大小：最小約 1×1 格，可橫向、直向任意拉伸 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_desc"
     android:initialLayout="@layout/widget_assets"
-    android:minWidth="180dp"
-    android:minHeight="110dp"
+    android:previewLayout="@layout/widget_assets"
+    android:minWidth="110dp"
+    android:minHeight="50dp"
+    android:minResizeWidth="40dp"
+    android:minResizeHeight="40dp"
     android:targetCellWidth="3"
-    android:targetCellHeight="3"
+    android:targetCellHeight="2"
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="1800000"
-    android:previewLayout="@layout/widget_assets"
     android:widgetCategory="home_screen" />

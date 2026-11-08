@@ -1434,63 +1434,73 @@ private fun MonitorSettings() {
 
 // ============================== 桌面小工具 ==============================
 
-/** App 內預覽：與桌面小工具同一份內容與配色 */
+/**
+ * App 內預覽（可點選編輯）：與桌面小工具同一份內容、順序、換行與樣式。
+ * 點標題區項目編輯「h:項目」，點個股項目編輯「r:項目」。
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun WidgetPreview(st: com.claudeetf.app.widget.WidgetStyle) {
+private fun WidgetPreview(st: com.claudeetf.app.widget.WidgetStyle, sel: String?, onPick: (String) -> Unit) {
     val W = com.claudeetf.app.widget.WidgetUpdater
     val c = W.colors(st)
     val m = W.model(st)
     val k = when (st.text) { 0 -> 0.85f; 2 -> 1.2f; else -> 1f }
     val r = when (st.radius) { 0 -> 0.dp; 1 -> 12.dp; else -> 24.dp }
     fun col(i: Int) = androidx.compose.ui.graphics.Color(i)
-    // 桌布示意（看得出透明度）
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-        .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF3A5A8C), androidx.compose.ui.graphics.Color(0xFF8C3A6B))))
-        .padding(18.dp), contentAlignment = Alignment.Center) {
-        Column(Modifier.width(240.dp).clip(RoundedCornerShape(r)).background(col(c.bg).copy(alpha = W.bgAlpha(st) / 255f)).padding(14.dp)) {
-            if (st.header != 3) Text(m.label, color = col(c.muted), fontSize = (12 * k).sp)
-            if (st.header != 3) Text(m.total, color = if (st.header == 2) col(W.trendColor(m.todaySign, c.text)) else col(c.text), fontSize = (24 * k).sp,
-                fontWeight = FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-            if (m.today.isNotBlank()) Text(m.today, color = col(W.trendColor(m.todaySign, c.muted)), fontSize = (13 * k).sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-            if (m.index.isNotBlank()) Text(m.index, color = col(c.muted), fontSize = (11 * k).sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 2)
-            if (m.rows.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp).height(1.dp).background(col(c.divider)))
-            val mono = androidx.compose.ui.text.font.FontFamily.Monospace
-            fun xc(r: com.claudeetf.app.widget.WRow) = if (st.has("entry") && r.entry != null) col(W.entryColor(r.entryLevel, c.muted)) else col(c.muted)
-            when (st.layout) {
-                2 -> m.rows.chunked(2).forEach { pair ->
-                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        pair.forEach { r ->
-                            Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(col(c.cell)).padding(8.dp)) {
-                                Text(r.name + " " + r.symbol, color = col(c.text), fontSize = (11 * k).sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                Text(r.price, color = col(W.trendColor(r.sign, c.text)), fontSize = (20 * k).sp, fontWeight = FontWeight.Bold, fontFamily = mono, maxLines = 1)
-                                Text(W.valueText(st, r, withPrice = false), color = col(W.trendColor(r.sign, c.muted)), fontSize = (11 * k).sp, fontFamily = mono, maxLines = 1)
-                                W.extraText(st, r).takeIf { it.isNotBlank() }?.let { Text(it, color = xc(r), fontSize = (10 * k).sp, maxLines = 1) }
-                            }
-                        }
-                        if (pair.size == 1) Spacer(Modifier.weight(1f))
-                    }
-                }
-                1 -> m.rows.forEach { r ->
-                    Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(r.name + " " + r.symbol, Modifier.weight(1f), color = col(c.text), fontSize = (14 * k).sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                            if (st.has("price")) Text(r.price, color = col(W.trendColor(r.sign, c.text)), fontSize = (18 * k).sp, fontWeight = FontWeight.Bold, fontFamily = mono)
-                        }
-                        Row {
-                            Text(W.extraText(st, r), Modifier.weight(1f), color = xc(r), fontSize = (11 * k).sp, maxLines = 1)
-                            Text(W.valueText(st, r, withPrice = false), color = col(W.trendColor(r.sign, c.muted)), fontSize = (12 * k).sp, fontFamily = mono)
-                        }
-                    }
-                }
-                else -> m.rows.forEach { r ->
-                    Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(r.symbol + " " + r.name.take(6), Modifier.weight(1f), color = col(c.text), fontSize = (12 * k).sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        W.extraText(st, r).takeIf { it.isNotBlank() }?.let { Text(it + " ", color = xc(r), fontSize = (10 * k).sp, maxLines = 1) }
-                        Text(W.valueText(st, r), color = col(W.trendColor(r.sign, c.muted)), fontSize = (12 * k).sp, fontFamily = mono, maxLines = 1)
+    val mono = androidx.compose.ui.text.font.FontFamily.Monospace
+    fun Modifier.pick(key: String) = this.clip(RoundedCornerShape(4.dp))
+        .border(if (sel == key) 2.dp else 0.5.dp, if (sel == key) C.Primary else col(c.muted).copy(alpha = 0.35f), RoundedCornerShape(4.dp))
+        .clickable { onPick(key) }.padding(horizontal = 2.dp)
+    @Composable fun Head(key: String, text: String, base: Float, def: Int, sign: Double, bold: Boolean = false) {
+        if (text.isBlank() || key in st.headerHidden) return
+        val ist = st.style("h:$key")
+        val color = when { ist.color != 0L -> ist.color.toInt(); ist.trend -> W.trendColor(sign, c.text); else -> def }
+        Text(text, Modifier.pick("h:$key"), color = col(color), fontSize = (base * k * ist.size / 100f).sp,
+            fontWeight = if (if (ist.weight > 0) ist.weight >= 600 else bold) FontWeight.Bold else FontWeight.Normal,
+            fontFamily = if (key == "label") null else mono, maxLines = 2)
+    }
+    @Composable fun Zone(row: com.claudeetf.app.widget.WRow, zone: Int?, end: Boolean) {
+        val ids = st.items.filter { st.shows(it) && (zone == null || st.zoneOf(it) == zone) && W.itemText(it, row) != null }
+        val lines = ArrayList<MutableList<String>>()
+        ids.forEach { id -> if (lines.isEmpty() || id in st.newline) lines += mutableListOf(id) else lines.last() += id }
+        Column(horizontalAlignment = if (end) Alignment.End else Alignment.Start) {
+            lines.forEach { line ->
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    line.forEach { id ->
+                        val ist = st.style("r:$id")
+                        Text(W.itemText(id, row)!!, Modifier.pick("r:$id"), color = col(W.itemColor(st, "r:$id", id, row, c)),
+                            fontSize = (W.baseSize(id, st.layout) * k * ist.size / 100f).sp,
+                            fontWeight = if (if (ist.weight > 0) ist.weight >= 600 else id == "code") FontWeight.Bold else FontWeight.Normal,
+                            fontFamily = if (id in com.claudeetf.app.widget.WidgetStyle.MONO) mono else null, maxLines = 1)
                     }
                 }
             }
-            if (m.time.isNotBlank()) Text(m.time, color = col(c.muted), fontSize = (10 * k).sp, modifier = Modifier.padding(top = 4.dp))
+        }
+    }
+    // 桌布示意（看得出透明度）
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+        .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF3A5A8C), androidx.compose.ui.graphics.Color(0xFF8C3A6B))))
+        .padding(14.dp), contentAlignment = Alignment.Center) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(r)).background(col(c.bg).copy(alpha = W.bgAlpha(st) / 255f)).padding(st.pad.dp)) {
+            Head("label", m.label, 12f, c.muted, m.todaySign)
+            Head("total", m.total, 24f, if (st.header == 2) W.trendColor(m.todaySign, c.text) else c.text, m.todaySign, true)
+            Head("today", m.today, 13f, W.trendColor(m.todaySign, c.muted), m.todaySign)
+            Head("index", m.index, 11f, c.muted, 0.0)
+            if (m.rows.isNotEmpty()) Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp).height(1.dp).background(col(c.divider)))
+            if (st.layout == 2) m.rows.take(4).chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth().padding(top = st.rowGap.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    pair.forEach { row ->
+                        Box(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(col(c.cell)).padding((8 + st.rowPad).dp)) { Zone(row, null, false) }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            } else m.rows.forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(top = (st.rowGap + st.rowPad).dp, bottom = st.rowPad.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { Zone(row, 0, false) }
+                    Zone(row, 1, true)
+                }
+            }
+            Head("time", m.time, 10f, c.muted, 0.0)
         }
     }
 }
@@ -1501,15 +1511,82 @@ private fun WidgetSettings() {
     val ctx = LocalContext.current
     val st = AppState.widgetStyle
     val W = com.claudeetf.app.widget.WidgetUpdater
+    val WS = com.claudeetf.app.widget.WidgetStyle
     fun set(f: (com.claudeetf.app.widget.WidgetStyle) -> com.claudeetf.app.widget.WidgetStyle) {
         AppState.updateWidgetStyle(f(AppState.widgetStyle)); W.update(ctx)   // 改設定立即套用到桌面
     }
+    fun move(id: String, d: Int) = set { s ->
+        val l = s.items.toMutableList(); val i = l.indexOf(id); val j = i + d
+        if (i < 0 || j !in l.indices) s else s.copy(items = l.also { it.add(j, it.removeAt(i)) })
+    }
+    @Composable fun Stepper(title: String, value: Int, min: Int, max: Int, step: Int, unit: String, onSet: (Int) -> Unit) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+            Text("－", color = if (value > min) C.Primary else C.Border, fontSize = 18.sp, modifier = Modifier.clickable(enabled = value > min) { onSet((value - step).coerceAtLeast(min)) }.padding(horizontal = 12.dp))
+            Text("$value$unit", Modifier.width(60.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text("＋", color = if (value < max) C.Primary else C.Border, fontSize = 18.sp, modifier = Modifier.clickable(enabled = value < max) { onSet((value + step).coerceAtMost(max)) }.padding(horizontal = 12.dp))
+        }
+    }
     var placed by remember { mutableIntStateOf(W.count(ctx)) }
+    var target by remember { mutableStateOf<String?>(null) }
     Card(padding = 14.dp) {
         Text("桌面小工具", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        Label("調整後會立即套用到桌面上的小工具。盤中開啟「盤中持股監控」時，小工具會跟著每次更新即時刷新。")
+        Label("點預覽中的任一項目（標題、主數字、代號、名稱、價格…）即可單獨調整位置、換行、順序、字級、粗細與顏色；調整後立即套用到桌面。小工具可任意調整大小（長按桌面上的小工具拖曳邊框）。")
         Spacer(Modifier.height(8.dp))
-        WidgetPreview(st)
+        WidgetPreview(st, target) { target = if (target == it) null else it }
+
+        // ---- 單一項目編輯（同其他模組的編輯模式）
+        target?.let { key ->
+            val isRow = key.startsWith("r:")
+            val id = key.substringAfter(":")
+            val cur = st.style(key)
+            fun upd(f: (com.claudeetf.app.data.ItemStyle) -> com.claudeetf.app.data.ItemStyle) = set { it.withStyle(key, f(it.style(key))) }
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Primary.copy(alpha = 0.10f))
+                .border(1.dp, C.Primary.copy(alpha = 0.5f), RoundedCornerShape(10.dp)).padding(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("小工具 › " + (if (isRow) WS.ITEMS[id] else WS.HEADER[id]), Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("完成", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { target = null }.padding(6.dp))
+                }
+                if (isRow) {
+                    if (st.layout != 2) {
+                        Text("位置", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                        ChipRow(listOf(0 to "左側", 1 to "右側"), st.zoneOf(id)) { v -> set { it.copy(zone = it.zone + (id to v)) } }
+                    }
+                    OptToggle("從新的一行開始", id in st.newline) { v -> set { it.copy(newline = if (v) it.newline + id else it.newline - id) } }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("順序", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+                        Text("↑ 往前", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { move(id, -1) }.padding(8.dp))
+                        Text("↓ 往後", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { move(id, 1) }.padding(8.dp))
+                        Text("隱藏", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { set { it.copy(hidden = it.hidden + id) }; target = null }.padding(8.dp))
+                    }
+                } else {
+                    Text("隱藏此列", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { set { it.copy(headerHidden = it.headerHidden + id) }; target = null }.padding(vertical = 6.dp))
+                }
+                Stepper("字級", cur.size, 50, 250, 10, "%") { v -> upd { it.copy(size = v) } }
+                Text("粗細", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                ChipRow(listOf(0 to "預設", 400 to "一般", 700 to "粗體"), cur.weight) { v -> upd { it.copy(weight = v) } }
+                var picking by remember(key) { mutableStateOf(false) }
+                if (picking) ColorPickerDialog(
+                    title = "文字顏色", initial = if (cur.color != 0L) androidx.compose.ui.graphics.Color(cur.color.toInt()) else C.Text,
+                    onPick = { cc -> upd { it.copy(color = cc.toArgb().toLong() and 0xFFFFFFFFL, trend = false) }; picking = false },
+                    onReset = { upd { it.copy(color = 0L, trend = false) }; picking = false }, onDismiss = { picking = false },
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("文字顏色", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+                    Text(if (cur.color == 0L && !cur.trend) "✓ 預設" else "預設", color = C.Primary, fontSize = 12.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable { upd { it.copy(color = 0L, trend = false) } }.padding(horizontal = 10.dp, vertical = 5.dp))
+                    Text(if (cur.trend) "✓ 漲跌色" else "漲跌色", color = C.Primary, fontSize = 12.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable { upd { it.copy(trend = !it.trend, color = 0L) } }.padding(horizontal = 10.dp, vertical = 5.dp))
+                    Box(Modifier.size(width = 40.dp, height = 26.dp).clip(RoundedCornerShape(8.dp))
+                        .background(if (cur.color != 0L) androidx.compose.ui.graphics.Color(cur.color.toInt()) else C.Bg)
+                        .border(1.dp, C.Border, RoundedCornerShape(8.dp)).clickable { picking = true }, contentAlignment = Alignment.Center) {
+                        if (cur.color == 0L) Text("🎨", fontSize = 12.sp)
+                    }
+                }
+                if (!cur.isDefault) Text("此項目恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { upd { com.claudeetf.app.data.ItemStyle() } }.padding(top = 6.dp))
+            }
+        }
+
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Label(if (placed > 0) "桌面上已有 $placed 個" else "桌面上還沒有小工具", Modifier.weight(1f))
             Text("加到桌面", color = C.Primary, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable {
@@ -1518,36 +1595,38 @@ private fun WidgetSettings() {
             Text("立即更新", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { W.update(ctx); placed = W.count(ctx) }.padding(8.dp))
         }
 
-        Text("主題", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-        ChipRow(listOf(0 to "跟隨 App", 1 to "深色", 2 to "淺色", 3 to "透明"), st.theme) { v -> set { it.copy(theme = v, alpha = if (v == 3) 30 else if (it.theme == 3) 92 else it.alpha) } }
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("背景不透明度", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
-            Text("－", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(alpha = (it.alpha - 10).coerceAtLeast(0)) } }.padding(horizontal = 12.dp))
-            Text("${st.alpha}%", Modifier.width(48.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            Text("＋", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(alpha = (it.alpha + 10).coerceAtMost(100)) } }.padding(horizontal = 12.dp))
+        Text("版型（預設組合，套用後仍可逐項調整）", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(0 to "清單", 1 to "大字條列", 2 to "方格", 3 to "只顯示總覽").forEach { (v, n) ->
+                Text(n, color = C.Text2, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(C.Bg)
+                    .clickable { set { it.preset(v) }; target = null }.padding(horizontal = 12.dp, vertical = 7.dp))
+            }
         }
+        Label("目前：" + listOf("清單", "清單", "方格", "只顯示總覽")[st.layout.coerceIn(0, 3)])
+
+        Text("外觀", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        ChipRow(listOf(0 to "跟隨 App", 1 to "深色", 2 to "淺色", 3 to "透明"), st.theme) { v -> set { it.copy(theme = v, alpha = if (v == 3) 30 else if (it.theme == 3) 92 else it.alpha) } }
+        Stepper("背景不透明度", st.alpha, 0, 100, 10, "%") { v -> set { it.copy(alpha = v) } }
         Text("圓角", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
         ChipRow(listOf(0 to "方角", 1 to "圓角", 2 to "大圓角"), st.radius) { v -> set { it.copy(radius = v) } }
-        Text("字級", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+        Text("整體字級", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
         ChipRow(listOf(0 to "小", 1 to "中", 2 to "大"), st.text) { v -> set { it.copy(text = v) } }
 
-        Text("版型", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-        ChipRow(listOf(0 to "清單", 1 to "大字條列", 2 to "方格", 3 to "只顯示總覽"), st.layout) { v -> set { it.copy(layout = v) } }
-        Label(when (st.layout) {
-            1 -> "每檔兩行：名稱＋大字價格，下排附加資訊與漲跌；適合 3～4 檔重點持股"
-            2 -> "兩欄方格，每格大字價格（類似券商簡易方格）；適合 4～6 檔、桌面放 4×3 以上"
-            3 -> "只顯示總資產與今日損益（＋指數），適合 2×1 小尺寸"
-            else -> "一檔一行，資訊最密；適合 5～8 檔"
-        })
-        Text("主數字", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        Text("間距", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Stepper("外框內距", st.pad, 0, 32, 2, " dp") { v -> set { it.copy(pad = v) } }
+        Stepper("行距（檔與檔之間）", st.rowGap, 0, 24, 1, " dp") { v -> set { it.copy(rowGap = v) } }
+        Stepper("每檔內距", st.rowPad, 0, 24, 1, " dp") { v -> set { it.copy(rowPad = v) } }
+
+        Text("標題區", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Text("主數字", color = C.Text, fontSize = 13.sp)
         ChipRow(listOf(0 to "總資產", 1 to "持股市值", 2 to "今日損益", 3 to "不顯示"), st.header) { v -> set { it.copy(header = v) } }
         OptToggle("顯示今日損益／報酬", st.showToday) { v -> set { it.copy(showToday = v) } }
         OptToggle("顯示更新時間", st.showTime) { v -> set { it.copy(showTime = v) } }
-
-        Text("指數（可複選）", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-        Label("台股：加權、櫃買；美股：道瓊、S&P、那指、費半。依點選順序顯示，都不選就不顯示指數列")
+        if (st.headerHidden.isNotEmpty()) Text("顯示已隱藏的標題項目（${st.headerHidden.joinToString("、") { WS.HEADER[it] ?: it }}）", color = C.Primary, fontSize = 12.sp,
+            modifier = Modifier.clickable { set { it.copy(headerHidden = emptySet()) } }.padding(vertical = 4.dp))
+        Text("指數（可複選）", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            com.claudeetf.app.widget.WidgetStyle.INDEX_NAMES.forEach { (sym, n) ->
+            WS.INDEX_NAMES.forEach { (sym, n) ->
                 val on = sym in st.indices
                 Text((if (sym == "^TWII" || sym == "^TWOII") "台 " else "美 ") + n + (if (on) " ✓" else ""), color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp,
                     modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Primary else C.Bg)
@@ -1556,27 +1635,27 @@ private fun WidgetSettings() {
         }
 
         if (st.layout != 3) {
-            Text("清單", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+            Text("個股清單", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
             ChipRow(listOf(0 to "我的持股", 1 to "自選行情"), st.source) { v -> set { it.copy(source = v) } }
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("顯示檔數", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
-                Text("－", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(rows = (it.rows - 1).coerceAtLeast(0)) } }.padding(horizontal = 12.dp))
-                Text(if (st.rows == 0) "不顯示" else "${st.rows} 檔", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                Text("＋", color = C.Primary, fontSize = 18.sp, modifier = Modifier.clickable { set { it.copy(rows = (it.rows + 1).coerceAtMost(8)) } }.padding(horizontal = 12.dp))
-            }
-            Text("每檔顯示項目（可複選）", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-            FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                com.claudeetf.app.widget.WidgetStyle.FIELDS.forEach { (f, n) ->
-                    val on = f in st.fields
-                    Text(n + (if (on) " ✓" else ""), color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Primary else C.Bg)
-                            .clickable { set { it.copy(fields = if (on) it.fields - f else it.fields + f) } }.padding(horizontal = 12.dp, vertical = 7.dp))
+            Stepper("顯示檔數", st.rows, 0, 12, 1, " 檔") { v -> set { it.copy(rows = v) } }
+            Text("排序", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+            ChipRow(listOf(0 to "依清單順序", 1 to "依漲跌幅大小"), st.sort) { v -> set { it.copy(sort = v) } }
+            Text("每檔項目（開關、順序；點名稱可編輯）", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            st.items.forEachIndexed { i, id ->
+                val on = st.shows(id)
+                Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).clickable { target = "r:$id" }) {
+                        Text(WS.ITEMS[id] ?: id, color = if (on) C.Text else C.Muted, fontSize = 14.sp)
+                        Text((if (st.layout == 2) "" else (if (st.zoneOf(id) == 1) "右側" else "左側")) + (if (id in st.newline) " · 換行" else ""), color = C.Muted, fontSize = 10.sp)
+                    }
+                    Text("↑", color = if (i > 0) C.Primary else C.Line, fontSize = 18.sp, modifier = Modifier.clickable(enabled = i > 0) { move(id, -1) }.padding(horizontal = 10.dp, vertical = 4.dp))
+                    Text("↓", color = if (i < st.items.lastIndex) C.Primary else C.Line, fontSize = 18.sp, modifier = Modifier.clickable(enabled = i < st.items.lastIndex) { move(id, 1) }.padding(horizontal = 10.dp, vertical = 4.dp))
+                    androidx.compose.material3.Switch(on, { v -> set { s -> s.copy(hidden = if (v) s.hidden - id else s.hidden + id) } },
+                        colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary, uncheckedTrackColor = C.Border))
                 }
             }
             Label("進場建議與光譜位階需要先分析過（打開過個股頁，或開著盤中監控時會自動分析持股）；尚未分析的個股不顯示")
-            Text("排序", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-            ChipRow(listOf(0 to "依清單順序", 1 to "依漲跌幅大小"), st.sort) { v -> set { it.copy(sort = v) } }
         }
-        Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { set { com.claudeetf.app.widget.WidgetStyle() } }.padding(vertical = 8.dp))
+        Text("全部恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { set { com.claudeetf.app.widget.WidgetStyle() }; target = null }.padding(vertical = 8.dp))
     }
 }
