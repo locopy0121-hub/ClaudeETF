@@ -1536,6 +1536,7 @@ private fun WidgetSettings() {
         }
     }
     var placed by remember { mutableIntStateOf(W.count(ctx)) }
+    LaunchedEffect(st.hidden, st.source, st.rows, st.sort) { W.ensureAnalysis(ctx, st) }
     var target by remember { mutableStateOf<String?>(null) }
     Card(padding = 14.dp) {
         Text("桌面小工具", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
@@ -1685,7 +1686,7 @@ private fun WidgetSettings() {
                         colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary, uncheckedTrackColor = C.Border))
                 }
             }
-            Label("進場建議與光譜位階需要先分析過（打開過個股頁，或開著盤中監控時會自動分析持股）；尚未分析的個股不顯示")
+            Label("進場建議、光譜位階只顯示標籤；開啟後會在背景自動分析各檔（約需數秒），完成後自動顯示")
         }
         Text("全部恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { set { com.claudeetf.app.widget.WidgetStyle() }; target = null }.padding(vertical = 8.dp))
     }

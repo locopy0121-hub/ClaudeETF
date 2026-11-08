@@ -14,6 +14,7 @@ import com.claudeetf.app.R
 import com.claudeetf.app.data.AppState
 import com.claudeetf.app.data.ColorMode
 import com.claudeetf.app.util.Fmt
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -134,6 +135,66 @@ data class WidgetModel(
 data class WidgetColors(val bg: Int, val text: Int, val muted: Int, val divider: Int, val cell: Int)
 
 object WidgetUpdater {
+    /** 個股標籤快取：進場建議（標籤＋等級）、光譜位階 */
+    data class Tag(val entry: String?, val level: Int, val band: String?)
+    private val tags = java.util.concurrent.ConcurrentHashMap<String, Tag>()
+    @Volatile private var tagsDirty = false
+    @Volatile private var tagsLoaded = false
+    private val pending = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun loadTags(context: Context) {
+        if (tagsLoaded) return
+        tagsLoaded = true
+        runCatching {
+            val o = JSONObject(context.getSharedPreferences("widget_tags", Context.MODE_PRIVATE).getString("t", "{}") ?: "{}")
+            o.keys().forEach { k ->
+                val t = o.getJSONObject(k)
+                tags.putIfAbsent(k, Tag(t.optString("e").ifBlank { null }, t.optInt("l"), t.optString("b").ifBlank { null }))
+            }
+        }
+    }
+
+    private fun saveTags(context: Context) {
+        if (!tagsDirty) return
+        tagsDirty = false
+        val o = JSONObject()
+        tags.forEach { (k, t) -> o.put(k, JSONObject().put("e", t.entry ?: "").put("l", t.level).put("b", t.band ?: "")) }
+        context.getSharedPreferences("widget_tags", Context.MODE_PRIVATE).edit().putString("t", o.toString()).apply()
+    }
+
+    /** 小工具要顯示的個股（依來源、排序、檔數） */
+    fun rowQuotes(st: WidgetStyle): List<com.claudeetf.app.data.Quote> {
+        val quotes = if (st.source == 1) AppState.quotes.toList()
+            else AppState.holdings.map { it.symbol }.distinct().mapNotNull { AppState.quote(it) }
+        val sorted = if (st.sort == 1) quotes.sortedByDescending { kotlin.math.abs(it.changePct) } else quotes
+        return sorted.take(if (st.layout == 3) 0 else st.rows)
+    }
+
+    /**
+     * 有開「進場建議／光譜位階」但個股尚未分析過時，在背景自動分析（每檔 10 分鐘最多一次），
+     * 完成後再刷新小工具；不必先打開個股頁。
+     */
+    fun ensureAnalysis(context: Context, st: WidgetStyle) {
+        val wantE = st.shows("entry"); val wantB = st.shows("band")
+        if (!wantE && !wantB) return
+        val now = System.currentTimeMillis()
+        val need = rowQuotes(st).filter { q ->
+            ((wantE && com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol] == null) ||
+                (wantB && com.claudeetf.app.data.InvestAnalysis.results[q.symbol]?.band == null)) &&
+                now - (pending[q.symbol] ?: 0L) > 10 * 60_000L
+        }
+        if (need.isEmpty()) return
+        need.forEach { pending[it.symbol] = now }
+        val app = context.applicationContext
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
+            need.forEach { q ->
+                if (wantE && com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol] == null) runCatching { com.claudeetf.app.data.KlineAnalysis.load(q, false) }
+                if (wantB && com.claudeetf.app.data.InvestAnalysis.results[q.symbol]?.band == null) runCatching { com.claudeetf.app.data.InvestAnalysis.analyze(q) }
+            }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { update(app) }
+        }
+    }
+
     fun colors(st: WidgetStyle): WidgetColors {
         val dark = when (st.theme) { 1 -> true; 2 -> false; 3 -> true; else -> AppState.themeMode != 2 }
         return when {
@@ -174,21 +235,22 @@ object WidgetUpdater {
         val allIdx = AppState.twIndices + AppState.usIndices
         val idx = st.indices.mapNotNull { sym -> allIdx.firstOrNull { it.symbol == sym && it.value > 0 } }
             .joinToString("  ") { (WidgetStyle.INDEX_NAMES[it.symbol] ?: it.name) + " " + Fmt.num(it.value, 0) + " " + Fmt.pct(it.changePct) }
-        val quotes = if (st.source == 1) AppState.quotes.toList()
-            else AppState.holdings.map { it.symbol }.distinct().mapNotNull { AppState.quote(it) }
-        val sorted = if (st.sort == 1) quotes.sortedByDescending { kotlin.math.abs(it.changePct) } else quotes
-        val rows = sorted.take(if (st.layout == 3) 0 else st.rows).map { q ->
+        val rows = rowQuotes(st).map { q ->
             val sh = AppState.holdings.filter { it.symbol == q.symbol }.sumOf { it.shares }
             val d = (q.price - q.prevClose) * sh * AppState.fxFor(q.market)
             val vol = (AppState.dayStats[q.symbol]?.volume ?: com.claudeetf.app.data.KlineAnalysis.volumeOn(q))?.takeIf { it > 0 }
                 ?.let { v -> com.claudeetf.app.ui.screens.volumeText(v, q.market) }
             val e = com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol]?.entry
+            val bandNow = com.claudeetf.app.data.InvestAnalysis.results[q.symbol]?.band?.zoneName
+            // 有新結果就記下來（App 重開、背景程序重建後仍能顯示上次的標籤）
+            val old = tags[q.symbol]
+            val tag = Tag(e?.label ?: old?.entry, e?.level ?: old?.level ?: 0, bandNow ?: old?.band)
+            if (tag != old && (e != null || bandNow != null)) { tags[q.symbol] = tag; tagsDirty = true }
             WRow(
                 q.symbol, q.name.ifBlank { q.symbol },
                 if (q.price > 0) Fmt.price(q.price) else "—", Fmt.signed(q.change, 2), Fmt.signedPct(q.changePct), q.change,
                 if (sh > 0 && q.prevClose > 0) (if (hide) "＊＊＊" else Fmt.signed(d)) else null,
-                vol, e?.label, e?.level ?: 0,
-                com.claudeetf.app.data.InvestAnalysis.results[q.symbol]?.band?.zoneName,
+                vol, tag.entry, tag.level, tag.band,
             )
         }
         val time = if (!st.showTime) "" else "更新 " + ZonedDateTime.now(ZoneId.of("Asia/Taipei")).format(DateTimeFormatter.ofPattern("M/d HH:mm"))
@@ -205,7 +267,7 @@ object WidgetUpdater {
         "pnl" -> r.pnl?.let { "今日 $it" }
         "volume" -> r.volume?.let { "量 $it" }
         "entry" -> r.entry
-        "band" -> r.band?.let { "光譜 $it" }
+        "band" -> r.band
         else -> null
     }
 
@@ -305,7 +367,9 @@ object WidgetUpdater {
     fun views(context: Context): RemoteViews {
         val st = AppState.widgetStyle
         val c = colors(st)
+        loadTags(context)
         val m = model(st)
+        saveTags(context)
         val v = RemoteViews(context.packageName, R.layout.widget_assets)
         // 背景：圓角圖層上色＋透明度；外框內距
         v.setImageViewResource(R.id.w_bg, when (st.radius) { 0 -> R.drawable.widget_shape_0; 1 -> R.drawable.widget_shape_12; else -> R.drawable.widget_shape_24 })
@@ -385,6 +449,7 @@ object WidgetUpdater {
         if (ids.isEmpty()) return
         val views = views(context)
         ids.forEach { manager.updateAppWidget(it, views) }
+        ensureAnalysis(context, AppState.widgetStyle)
     }
 
     fun count(context: Context): Int =

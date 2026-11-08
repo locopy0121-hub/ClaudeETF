@@ -879,7 +879,16 @@ object AppState {
         quote(symbol)?.market ?: if (symbol.firstOrNull()?.isDigit() == true) Market.TW else Market.US
 
     /** 持股市值（原幣） */
-    fun marketValue(h: Holding): Double = h.shares * (quote(h.symbol)?.price ?: h.avgCost)
+    fun marketValue(h: Holding): Double = valueOf(h.symbol, h.shares, quote(h.symbol)?.price ?: h.avgCost)
+
+    /**
+     * 市值 = 股數 × 價格。台股比照集保：以十進位精確相乘後「無條件捨去」到整數元
+     * （例：50 股 × 48.95 = 2,447.5 → 2,447，不四捨五入）；美股保留原值。
+     */
+    fun valueOf(symbol: String, shares: Double, price: Double): Double =
+        if (marketOf(symbol) == Market.US) shares * price
+        else java.math.BigDecimal.valueOf(shares).multiply(java.math.BigDecimal.valueOf(price))
+            .setScale(0, java.math.RoundingMode.DOWN).toDouble()
 
     fun fxFor(market: Market): Double = if (market == Market.US) usdTwd else 1.0
 
