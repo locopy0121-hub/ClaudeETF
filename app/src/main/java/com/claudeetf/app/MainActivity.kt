@@ -131,6 +131,8 @@ class MainActivity : ComponentActivity() {
         runCatching { com.claudeetf.app.data.AppUpdater.detectUpdated(applicationContext) }
         com.claudeetf.app.data.remote.TdccOpenData.cacheDir = filesDir
         com.claudeetf.app.data.StockDirectory.cacheDir = filesDir
+        com.claudeetf.app.data.MarketChanges.init(applicationContext)
+        com.claudeetf.app.data.TwPicks.init(applicationContext)
         com.claudeetf.app.data.EtfComposition.dir = filesDir
         watchNetwork()
         AppState.systemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
@@ -153,6 +155,16 @@ class MainActivity : ComponentActivity() {
                 // 配息現金流（下一筆入帳、本月明細）與入帳提醒
                 runCatching { com.claudeetf.app.data.DividendFlow.refresh() }
                 runCatching { com.claudeetf.app.alerts.AlertEngine.checkPayDays(applicationContext) }
+            }
+        }
+        // 台股目錄（含新上市、尚無成交的股票與 ETF）：開啟 App 時與前景每 30 分鐘檢查，每天更新、收盤後再更新一次，並記錄市場異動
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                delay(4_000L)
+                while (true) {
+                    if (com.claudeetf.app.data.StockDirectory.stale()) runCatching { com.claudeetf.app.data.StockDirectory.refresh() }
+                    delay(30 * 60_000L)
+                }
             }
         }
         // 線上更新：每次回到 App（前景）時檢查 GitHub 最新版本，距上次超過 15 分鐘才重新查詢
@@ -424,6 +436,7 @@ fun AppRoot() {
                 arguments = listOf(navArgument("sym") { type = NavType.StringType }),
             ) { com.claudeetf.app.ui.screens.IndexScreen(nav, java.net.URLDecoder.decode(it.arguments?.getString("sym") ?: "", "UTF-8")) }
             composable(Routes.FX) { com.claudeetf.app.ui.screens.FxScreen(nav) }
+            composable(Routes.MARKET_CHANGES) { com.claudeetf.app.ui.screens.MarketChangesScreen(nav) }
             composable(Routes.SETTINGS) { SettingsScreen(nav) }
             composable(Routes.SETTINGS_SECTION) { e -> SettingsScreen(nav, e.arguments?.getString("section")) }
             composable(Routes.CHAT) { com.claudeetf.app.ui.screens.ChatScreen(nav) }
@@ -431,6 +444,8 @@ fun AppRoot() {
         // 群聊新訊息彈幕（不在聊天畫面時從右往左飄過，點一下開啟群聊）
         if (route != Routes.CHAT) com.claudeetf.app.ui.screens.DanmakuOverlay { nav.navigate(Routes.CHAT) }
         com.claudeetf.app.ui.screens.UpdatePrompt()
+        if (!com.claudeetf.app.data.AppUpdater.prompt && route != Routes.WELCOME)
+            com.claudeetf.app.ui.screens.MarketChangePrompt { nav.navigate(Routes.MARKET_CHANGES) }
         }
         }
     }

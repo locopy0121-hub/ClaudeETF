@@ -1,6 +1,7 @@
 package com.claudeetf.app.data
 
 import com.claudeetf.app.data.remote.TpexApi
+import com.claudeetf.app.data.remote.TwIsin
 import com.claudeetf.app.data.remote.TwseApi
 import com.claudeetf.app.data.remote.YahooExtra
 import kotlinx.coroutines.Dispatchers
@@ -12,7 +13,8 @@ import java.io.File
 
 /**
  * 搜尋用股票目錄。
- * 台股：證交所（上市）＋櫃買中心（上櫃）每日收盤資料的代號與中文名稱，存檔 3 天內重複使用；
+ * 台股：證交所（上市）＋櫃買中心（上櫃）每日收盤資料＋ISIN 上市櫃一覽表（含新上市、尚無成交的股票與 ETF），
+ *       每天更新（收盤後再更新一次），並記錄市場異動；
  * 美股：Yahoo 代號搜尋。
  */
 object StockDirectory {
@@ -34,30 +36,112 @@ object StockDirectory {
     /** 已知的名稱（台股目錄或搜尋過的美股）；不會觸發網路 */
     fun cachedName(symbol: String): String? = tw[symbol.uppercase()] ?: usNames[symbol.uppercase()]
 
-    private suspend fun twList(): Map<String, String> = lock.withLock {
-        if (tw.isNotEmpty()) return@withLock tw
-        val f = cacheDir?.let { File(it, "tw_directory.json") }
-        val fo = cacheDir?.let { File(it, "tw_directory_otc.txt") }
-        if (f != null && f.exists() && fo != null && fo.exists() && System.currentTimeMillis() - f.lastModified() < 3 * 86_400_000L) {
-            runCatching { JSONObject(f.readText()).let { o -> o.keys().asSequence().associateWith { o.optString(it) } } }.getOrNull()
-                ?.takeIf { it.isNotEmpty() }?.let {
-                    tw = it
-                    otc = runCatching { fo.readText().split(",").filter { c -> c.isNotBlank() }.toSet() }.getOrDefault(emptySet())
-                    return@withLock it
-                }
+    /** ISIN 一覽表的額外資訊：代號 → 類型、上市日、產業 */
+    @Volatile private var meta: Map<String, TwIsin.Sec> = emptyMap()
+    fun metaOf(symbol: String): TwIsin.Sec? = meta[symbol.uppercase()]
+    fun isOtc(symbol: String) = symbol.uppercase() in otc
+
+    private fun f(name: String) = cacheDir?.let { File(it, name) }
+
+    /** 讀取存檔（不檢查新舊；更新交給 refresh） */
+    private fun loadFiles(): Boolean {
+        val fj = f("tw_directory.json") ?: return false
+        if (!fj.exists()) return false
+        val m = runCatching { JSONObject(fj.readText()).let { o -> o.keys().asSequence().associateWith { o.optString(it) } } }.getOrNull()
+        if (m.isNullOrEmpty()) return false
+        tw = m
+        otc = runCatching { f("tw_directory_otc.txt")!!.readText().split(",").filter { c -> c.isNotBlank() }.toSet() }.getOrDefault(emptySet())
+        meta = runCatching {
+            val o = JSONObject(f("tw_isin.json")!!.readText())
+            o.keys().asSequence().associateWith { k ->
+                val a = o.getJSONArray(k)
+                TwIsin.Sec(k, a.optString(0), a.optString(1), a.optString(2), a.optString(3), a.optString(4))
+            }
+        }.getOrDefault(emptyMap())
+        MarketChanges.updatedAt = fj.lastModified()
+        return true
+    }
+
+    private suspend fun twList(): Map<String, String> {
+        if (tw.isNotEmpty()) return tw
+        lock.withLock { if (tw.isEmpty()) loadFiles() }
+        if (tw.isEmpty()) refresh(force = true)
+        return tw
+    }
+
+    /**
+     * 是否該重新抓目錄：不同日，或今天 14:35（收盤資料公布）後還沒更新過。
+     */
+    fun stale(now: Long = System.currentTimeMillis()): Boolean {
+        val last = f("tw_directory.json")?.takeIf { it.exists() }?.lastModified() ?: return true
+        val z = java.time.ZoneId.of("Asia/Taipei")
+        val n = java.time.Instant.ofEpochMilli(now).atZone(z)
+        val l = java.time.Instant.ofEpochMilli(last).atZone(z)
+        if (n.toLocalDate() != l.toLocalDate()) return true
+        val cut = n.toLocalDate().atTime(14, 35).atZone(z)
+        return n.isAfter(cut) && l.isBefore(cut)
+    }
+
+    /**
+     * 更新台股目錄：證交所＋櫃買每日收盤（名稱）＋ISIN 上市／上櫃一覽表（含尚未有成交的新上市股票與 ETF）。
+     * 比對前後差異寫入市場異動紀錄。
+     */
+    suspend fun refresh(force: Boolean = false): Boolean = lock.withLock {
+        if (tw.isEmpty()) loadFiles()
+        if (!force && !stale()) return@withLock true
+        MarketChanges.updating = true
+        try {
+            val o2 = HashSet<String>()
+            val (names, isin, complete) = withContext(Dispatchers.IO) {
+                val out = LinkedHashMap<String, String>()
+                runCatching { TwseApi.dayAll() }.getOrNull()?.forEach { (k, v) -> out[k] = v.name ?: k }
+                runCatching { TpexApi.dayAll() }.getOrNull()?.forEach { (k, v) -> if (k !in out) { out[k] = v.name ?: k; o2 += k } }
+                val iL = runCatching { TwIsin.fetch(2) }.getOrNull()
+                val iO = runCatching { TwIsin.fetch(4) }.getOrNull()
+                val im = LinkedHashMap<String, TwIsin.Sec>()
+                iL?.forEach { im[it.code] = it }
+                iO?.forEach { im[it.code] = it; o2 += it.code }
+                // 兩份 ISIN 都取得才當作完整清單（用於判斷下市）
+                Triple(out, im, iL != null && iO != null)
+            }
+            if (names.isEmpty() && isin.isEmpty()) {
+                MarketChanges.lastError = "目錄更新失敗（網路或來源暫時無法連線）"
+                return@withLock false
+            }
+            // 合併：每日行情名稱優先，ISIN 補上尚未有成交的代號
+            val merged = LinkedHashMap<String, String>(names)
+            isin.values.forEach { s -> if (s.code !in merged) merged[s.code] = s.name }
+            if (names.isEmpty()) tw.forEach { (k, v) -> merged.putIfAbsent(k, v) }
+            val oldNames = runCatching { f("tw_names_day.json")?.takeIf { it.exists() }?.readText()?.let { t -> JSONObject(t).let { o -> o.keys().asSequence().associateWith { o.optString(it) } } } }.getOrNull() ?: emptyMap()
+            val oldIsin = meta.keys
+            runCatching {
+                MarketChanges.record(oldNames, names, if (complete) oldIsin else emptySet(), isin, o2, complete)
+            }
+            tw = merged; otc = o2 + otc.filter { it in merged && it !in names }
+            if (complete) meta = isin
+            runCatching {
+                f("tw_directory.json")?.writeText(JSONObject(merged as Map<*, *>).toString())
+                f("tw_directory_otc.txt")?.writeText(otc.joinToString(","))
+                if (names.isNotEmpty()) f("tw_names_day.json")?.writeText(JSONObject(names as Map<*, *>).toString())
+                if (complete) f("tw_isin.json")?.writeText(JSONObject().apply {
+                    isin.values.forEach { s -> put(s.code, org.json.JSONArray(listOf(s.name, s.listDate, s.market, s.industry, s.type))) }
+                }.toString())
+            }
+            MarketChanges.updatedAt = System.currentTimeMillis()
+            MarketChanges.lastError = null
+            true
+        } finally {
+            MarketChanges.updating = false
         }
-        val o2 = HashSet<String>()
-        val m = withContext(Dispatchers.IO) {
-            val out = LinkedHashMap<String, String>()
-            runCatching { TwseApi.dayAll() }.getOrNull()?.forEach { (k, v) -> out[k] = v.name ?: k }
-            runCatching { TpexApi.dayAll() }.getOrNull()?.forEach { (k, v) -> if (k !in out) { out[k] = v.name ?: k; o2 += k } }
-            out
-        }
-        if (m.isNotEmpty()) {
-            tw = m; otc = o2
-            runCatching { f?.writeText(JSONObject(m as Map<*, *>).toString()); fo?.writeText(o2.joinToString(",")) }
-        }
-        m
+    }
+
+    /** 目錄沒有的台股代號：即時向證交所查詢（新上市當天、目錄尚未更新時） */
+    private suspend fun lookupTw(code: String): Item? = withContext(Dispatchers.IO) {
+        val t = runCatching { com.claudeetf.app.data.remote.TwseMisApi.quotes(listOf(code)) }.getOrNull()?.get(code) ?: return@withContext null
+        val name = t.quote.name ?: return@withContext null
+        tw = tw + (code to name)
+        if (t.isOtc) otc = otc + code
+        Item(code, name, Market.TW, if (code.startsWith("00")) "ETF" else "", if (t.isOtc) "櫃" else "市")
     }
 
     /**
@@ -84,9 +168,13 @@ object StockDirectory {
             .sortedWith(compareBy({ it.third }, { it.first.length }, { it.first }))
             .take(limit)
             .map { (code, name, _) ->
-                Item(code, name, Market.TW, if (code.startsWith("00")) "ETF" else "", if (code in otc) "櫃" else "市")
+                Item(code, name, Market.TW, meta[code]?.type?.takeIf { it != "股票" } ?: if (code.startsWith("00")) "ETF" else "", if (code in otc) "櫃" else "市")
             }
             .toList()
+            .let { hits ->
+                // 看起來是台股代號但目錄沒有：即時查詢
+                if (hits.none { it.symbol == up } && Regex("^\\d{4,6}[A-Z]?$").matches(up)) (listOfNotNull(lookupTw(up)) + hits) else hits
+            }
         val usHits = if (q.any { it in 'A'..'Z' || it in 'a'..'z' }) withContext(Dispatchers.IO) {
             runCatching { YahooExtra.symbolSearch(q) }.getOrDefault(emptyList())
                 .map { Item(it.symbol, it.name, Market.US, if (it.type == "ETF") "ETF" else "", "美").also { i -> usNames[i.symbol.uppercase()] = i.name } }

@@ -49,6 +49,7 @@ import kotlin.math.abs
 fun MarketScreen(nav: NavController) {
     var tab by remember { mutableIntStateOf(0) }
     var moverTab by remember { mutableIntStateOf(0) }
+    var pickSide by remember { mutableIntStateOf(0) }
     var reload by remember { mutableIntStateOf(0) }
     val s = rememberUsSession()
     val scope = rememberCoroutineScope()
@@ -56,6 +57,7 @@ fun MarketScreen(nav: NavController) {
     var global by remember { mutableStateOf<Load<List<Pair<String, MarketBoards.GlobalItem>>>>(Load.Loading) }
 
     LaunchedEffect(tab, reload) {
+        if (tab == 1) com.claudeetf.app.data.TwPicks.start()
         if (tab == 2) {
             global = Load.Loading
             global = runCatching { MarketBoards.global(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
@@ -142,6 +144,8 @@ fun MarketScreen(nav: NavController) {
                 items(AppState.twIndices.chunked(2)) { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { ix -> IndexCard(ix, Modifier.weight(1f)) { nav.navigate(Routes.index(ix.symbol)) } } }
                 }
+                marketChangesEntry(nav)
+                twPicksSection(pickSide, { pickSide = it }, ::open)
             }
             if (tab != 2) boardSection(board, tab == 0, moverTab, { moverTab = it }, ::open)
             item {
