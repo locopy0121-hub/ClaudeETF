@@ -20,7 +20,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,18 +46,32 @@ import kotlin.math.abs
 
 /** 直向排列，行距可為負值（各行重疊靠近） */
 @Composable
-private fun Lines(gapDp: Int, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun Lines(gapDp: Int, modifier: Modifier = Modifier, extra: List<Int> = emptyList(), content: @Composable () -> Unit) {
     Layout(content, modifier) { ms, c ->
         val gap = gapDp.dp.roundToPx()
         val ps = ms.map { it.measure(c.copy(minHeight = 0)) }
+        val gaps = ps.indices.map { k -> if (k == 0) 0 else gap + (extra.getOrElse(k) { 0 }).dp.roundToPx() }
         val w = (ps.maxOfOrNull { it.width } ?: 0).coerceAtLeast(c.minWidth)
-        val h = (ps.sumOf { it.height } + gap * (ps.size - 1).coerceAtLeast(0)).coerceAtLeast(0)
+        val h = (ps.sumOf { it.height } + gaps.sum()).coerceAtLeast(0)
         layout(w, h) {
             var y = 0
-            ps.forEach { p -> p.place(0, y); y += p.height + gap }
+            ps.forEachIndexed { k, p -> y += gaps[k]; p.place(0, y); y += p.height }
         }
     }
 }
+
+/** 外距（可負）：增減項目佔用的空間 */
+private fun Modifier.outer(mxDp: Int, myDp: Int) = if (mxDp == 0 && myDp == 0) this else layout { m, c ->
+    val mx = mxDp.dp.roundToPx(); val my = myDp.dp.roundToPx()
+    val p = m.measure(c.offset(-2 * mx.coerceAtLeast(0), -2 * my.coerceAtLeast(0)).copy(minWidth = 0, minHeight = 0))
+    val w = (p.width + 2 * mx).coerceIn(c.minWidth, c.maxWidth.coerceAtLeast(c.minWidth))
+    val h = (p.height + 2 * my).coerceAtLeast(0).coerceIn(c.minHeight, if (c.hasBoundedHeight) c.maxHeight else Int.MAX_VALUE)
+    layout(w, h) { p.place(mx, my) }
+}
+
+/** 依底色亮度選黑或白字 */
+private val GOLD = Color(0xFFF2B544)
+private fun onColor(c: Color) = if (c.luminance() > 0.55f) Color(0xFF111111) else Color.White
 
 /** 顯示中的項目依「同一行」分組 */
 private fun lines(items: List<WallItem>): List<List<WallItem>> {
@@ -84,50 +103,73 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, onClick: 
     val total = AppState.holdings.sumOf { AppState.marketValueTwd(it) }.takeIf { it > 0 }
 
     fun sg(v: Double, d: Int) = (if (v > 0) "+" else if (v < 0) "−" else "") + if (d > 0) Fmt.numTrunc(abs(v), d) else Fmt.num(abs(v))
-    fun text(i: WallItem): String? {
-        fun p(label: String) = if (i.label) "$label " else ""
+    val band = com.claudeetf.app.data.InvestAnalysis.results[h.symbol]?.band
+    /** 前綴文字＋數值 */
+    fun parts(i: WallItem): Pair<String, String>? {
+        fun p(label: String) = if (i.label) label else ""
         return when (i.id) {
-            "name" -> q?.name ?: h.symbol
-            "code" -> h.symbol
-            "price" -> q?.price?.takeIf { it > 0 }?.let { Fmt.price(it) } ?: "—"
-            "arrow" -> if (chg > 0) "▲" else if (chg < 0) "▼" else "－"
-            "chg" -> sg(chg, if (abs(chg) < 10) 2 else 1)
-            "pct" -> Fmt.num(abs(pct), 2) + "%"
-            "band" -> com.claudeetf.app.data.InvestAnalysis.results[h.symbol]?.band?.zoneName?.let { p("光譜") + it }
-            "mv" -> p("市值") + mask(Fmt.num(AppState.marketValueTwd(h)))
-            "day" -> p("今日") + mask(sg(chg * h.shares * fx, 0))
-            "ret" -> ret?.let { p("報酬") + Fmt.signedPct(it) }
-            "pl" -> q?.price?.takeIf { it > 0 }?.let { p("損益") + mask(sg(AppState.marketValueTwd(h) - AppState.costTwd(h), 0)) }
-            "shares" -> Fmt.shares(h.shares) + " 股"
-            "avg" -> p("均") + Fmt.price(h.avgCost)
-            "cost" -> p("成本") + mask(Fmt.num(AppState.costTwd(h)))
-            "weight" -> total?.let { p("占") + Fmt.num(AppState.marketValueTwd(h) / it * 100, 1) + "%" }
-            "vol" -> AppState.dayStats[h.symbol]?.volume?.let { v -> p("量") + if (AppState.marketOf(h.symbol) == com.claudeetf.app.data.Market.TW) Fmt.num(v / 1000) + " 張" else Fmt.num(v) }
+            "name" -> "" to (q?.name ?: h.symbol)
+            "code" -> "" to h.symbol
+            "price" -> "" to (q?.price?.takeIf { it > 0 }?.let { Fmt.price(it) } ?: "—")
+            "arrow" -> "" to if (chg > 0) "▲" else if (chg < 0) "▼" else "－"
+            "chg" -> "" to sg(chg, if (abs(chg) < 10) 2 else 1)
+            "pct" -> "" to Fmt.num(abs(pct), 2) + "%"
+            "entry" -> entry?.entry?.label?.let { "" to it }
+            "band" -> band?.zoneName?.let { p("光譜") to it }
+            "mv" -> p("市值") to mask(Fmt.num(AppState.marketValueTwd(h)))
+            "day" -> p("今日") to mask(sg(chg * h.shares * fx, 0))
+            "ret" -> ret?.let { p("報酬") to Fmt.signedPct(it) }
+            "pl" -> q?.price?.takeIf { it > 0 }?.let { p("損益") to mask(sg(AppState.marketValueTwd(h) - AppState.costTwd(h), 0)) }
+            "shares" -> "" to Fmt.shares(h.shares) + " 股"
+            "avg" -> p("均") to Fmt.price(h.avgCost)
+            "cost" -> p("成本") to mask(Fmt.num(AppState.costTwd(h)))
+            "weight" -> total?.let { p("占") to Fmt.num(AppState.marketValueTwd(h) / it * 100, 1) + "%" }
+            "vol" -> AppState.dayStats[h.symbol]?.volume?.let { v -> p("量") to if (AppState.marketOf(h.symbol) == com.claudeetf.app.data.Market.TW) Fmt.num(v / 1000) + " 張" else Fmt.num(v) }
             else -> null
         }
     }
+    fun natural(i: WallItem): Color = when (i.id) {
+        "price", "arrow", "chg", "pct" -> trend
+        "name" -> C.Text
+        "code" -> C.Muted
+        "day", "pl" -> Trend.fg(if (i.id == "day") chg else AppState.marketValueTwd(h) - AppState.costTwd(h))
+        "ret" -> Trend.fg(ret ?: 0.0)
+        "entry" -> entryColor(entry?.entry?.level ?: 0)
+        "band" -> band?.let { zoneColor(it.zone) } ?: C.Text2
+        else -> C.Text2
+    }
+    fun level(i: WallItem): Color = when (i.id) {
+        "entry" -> entryColor(entry?.entry?.level ?: 0)
+        "band" -> band?.let { zoneColor(it.zone) } ?: trend
+        else -> trend
+    }
+    fun bgColor(i: WallItem): Color? = when (i.bg) {
+        1 -> trend; 2 -> level(i); 3 -> C.Muted; 4 -> GOLD; 5 -> C.Primary; 6 -> Color.White; 7 -> C.Bg
+        else -> null
+    }?.copy(alpha = i.ba / 100f)
     fun color(i: WallItem): Color = when (i.color) {
-        1 -> trend; 2 -> C.Text; 3 -> C.Muted; 4 -> Color(0xFFF2B544); 5 -> C.Primary
-        else -> when (i.id) {
-            "price", "arrow", "chg", "pct" -> trend
-            "name" -> C.Text
-            "code" -> C.Muted
-            "day", "pl" -> Trend.fg(if (i.id == "day") chg else AppState.marketValueTwd(h) - AppState.costTwd(h))
-            "ret" -> Trend.fg(ret ?: 0.0)
-            else -> C.Text2
-        }
+        1 -> trend; 2 -> C.Text; 3 -> C.Muted; 4 -> GOLD; 5 -> C.Primary; 6 -> level(i)
+        else -> bgColor(i)?.takeIf { it.alpha >= 0.6f }?.let { onColor(it) } ?: natural(i)
+    }
+    fun labelColor(i: WallItem, main: Color): Color = when (i.lc) {
+        1 -> C.Muted; 2 -> C.Text; 3 -> GOLD; 4 -> C.Primary; 5 -> trend
+        else -> main
     }
     @Composable fun Item(i: WallItem) {
-        if (i.id == "entry") {
-            val e = entry?.entry ?: return
-            Text(e.label, color = Color.White, fontSize = i.size.sp, fontWeight = if (i.bold) FontWeight.Bold else FontWeight.Normal, maxLines = 1,
-                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(entryColor(e.level)).padding(horizontal = 6.dp, vertical = 1.dp))
-            return
+        val (pre, v) = parts(i) ?: return
+        val main = color(i)
+        val bgc = bgColor(i)
+        val ilh = if (i.lh > 0) i.lh / 100f else lh
+        val txt = buildAnnotatedString {
+            if (pre.isNotEmpty()) { withStyle(SpanStyle(color = labelColor(i, main), fontWeight = FontWeight.Normal)) { append(pre) }; append(" ") }
+            append(v)
         }
-        val t = text(i) ?: return
-        Text(t, color = color(i), fontSize = i.size.sp, lineHeight = (i.size * 1.18f * lh).sp,
+        Text(txt, color = main, fontSize = i.size.sp, lineHeight = (i.size * 1.18f * ilh).sp,
             fontWeight = if (i.bold) FontWeight.Bold else FontWeight.Normal, fontFamily = if (i.mono) FontFamily.Monospace else null,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = textAlignOf(i.align))
+            maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = textAlignOf(i.align),
+            modifier = Modifier.outer(i.mx, i.my)
+                .then(if (bgc != null) Modifier.clip(RoundedCornerShape(6.dp)).background(bgc) else Modifier)
+                .padding(horizontal = i.px.dp, vertical = i.py.dp))
     }
     @Composable fun Line(line: List<WallItem>) {
         // 單一項目：整行依對齊；多個項目：依對齊分成左、中、右三組，各組依內容寬度排列，空間不足時左組省略
@@ -148,10 +190,10 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, onClick: 
             .then(if (st.border) Modifier.border(1.dp, trend.copy(alpha = 0.55f), RoundedCornerShape(6.dp)) else Modifier)
             .clickable(onClick = onClick),
     ) {
-        if (headLines.isNotEmpty()) Lines(st.lineGap.coerceAtMost(0),
-            Modifier.fillMaxWidth().background(if (st.header) C.Bg.copy(alpha = 0.7f) else Color.Transparent)
+        if (headLines.isNotEmpty()) Lines(st.lineGap.coerceAtMost(0), extra = headLines.map { it.first().lg },
+            modifier = Modifier.fillMaxWidth().background(if (st.header) C.Bg.copy(alpha = 0.7f) else Color.Transparent)
                 .padding(horizontal = pad, vertical = (pad.value * 0.6f).dp)) { headLines.forEach { Line(it) } }
-        if (bodyLines.isNotEmpty()) Lines(st.lineGap, Modifier.fillMaxWidth().padding(horizontal = pad, vertical = pad)) { bodyLines.forEach { Line(it) } }
+        if (bodyLines.isNotEmpty()) Lines(st.lineGap, Modifier.fillMaxWidth().padding(horizontal = pad, vertical = pad), extra = bodyLines.map { it.first().lg }) { bodyLines.forEach { Line(it) } }
     }
 }
 
@@ -172,12 +214,12 @@ fun QuoteWall(list: List<Holding>, st: WallStyle = AppState.wallStyle, onOpen: (
 
 /** 加減步進（可負值） */
 @Composable
-private fun WStep(label: String, v: Int, min: Int, max: Int, step: Int, unit: String, set: (Int) -> Unit) {
+private fun WStep(label: String, v: Int, min: Int, max: Int, step: Int, unit: String, show: (Int) -> String = { "$it$unit" }, set: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
         Text("－", color = if (v > min) C.Primary else C.Border, fontSize = 18.sp,
             modifier = Modifier.clickable(enabled = v > min) { set((v - step).coerceAtLeast(min)) }.padding(horizontal = 12.dp))
-        Text("$v$unit", Modifier.width(64.dp), color = C.Text, fontSize = 13.sp, textAlign = TextAlign.Center)
+        Text(show(v), Modifier.width(64.dp), color = C.Text, fontSize = 13.sp, textAlign = TextAlign.Center)
         Text("＋", color = if (v < max) C.Primary else C.Border, fontSize = 18.sp,
             modifier = Modifier.clickable(enabled = v < max) { set((v + step).coerceAtMost(max)) }.padding(horizontal = 12.dp))
     }
@@ -193,6 +235,11 @@ private fun WChips(title: String?, opts: List<Pair<Int, String>>, sel: Int, onPi
                 .background(if (on) C.Primary else C.Bg).clickable { onPick(v) }.padding(horizontal = 10.dp, vertical = 6.dp))
         }
     }
+}
+
+@Composable
+private fun WSub(title: String) {
+    Text(title, color = C.Primary, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
 }
 
 @Composable
@@ -223,6 +270,8 @@ private fun Blind(key: String, title: String, summary: String, open: String?, on
 
 private val ALIGN_NAMES = listOf("左", "中", "右")
 private val COLOR_OPTS = listOf(0 to "預設", 1 to "依漲跌", 2 to "白", 3 to "灰", 4 to "金", 5 to "主色")
+private val BG_OPTS = listOf(0 to "無", 2 to "依等級", 1 to "依漲跌", 3 to "灰", 4 to "金", 5 to "主色", 6 to "白", 7 to "深色")
+private val LABEL_COLOR_OPTS = listOf(0 to "同文字", 1 to "灰", 2 to "白", 3 to "金", 4 to "主色", 5 to "依漲跌")
 private val LABELED = setOf("band", "mv", "day", "ret", "pl", "avg", "cost", "weight", "vol")
 
 /** 行情牆即時預覽（設定頁置頂用） */
@@ -245,7 +294,7 @@ fun WallStyleSettings(showPreview: Boolean = true) {
     fun toggle(k: String) { open = if (open == k) null else k }
     Card(padding = 14.dp) {
         Text("行情牆模式", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        Label("持股頁「行情牆」的格子：每個項目都能選擇顯示、位置、同行、對齊、字級、粗細與顏色；內距與行距可設負值，字高調整行高。點分區標題展開或收合。")
+        Label("持股頁「行情牆」的格子：每個項目都能選擇顯示、位置、同行、對齊、字級、粗細、外距、內距、行距、字高與文字／底色／前綴配色；內距與行距可設負值，字高調整行高。點分區標題展開或收合。")
         if (showPreview) WallPreview(Modifier.padding(top = 10.dp))
 
         Blind("preset", "預設組合", "標準、精簡、完整資訊、大字看盤", open, ::toggle) {
@@ -275,7 +324,8 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                     Row(Modifier.fillMaxWidth().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f).clickable { editing = if (isEd) null else i.id }.padding(vertical = 8.dp)) {
                             Text(name + if (isEd) "  ▲" else "  ▼", color = if (i.show) C.Text else C.Muted, fontSize = 14.sp)
-                            Text((if (i.head) "標題列" else "內容") + (if (i.inline) " · 同行" else "") + " · " + ALIGN_NAMES[i.align] + " · ${i.size}sp" + (if (i.bold) " · 粗" else ""),
+                            Text((if (i.head) "標題列" else "內容") + (if (i.inline) " · 同行" else "") + " · " + ALIGN_NAMES[i.align] + " · ${i.size}sp" + (if (i.bold) " · 粗" else "") + (if (i.bg != 0) " · 底色" else "") +
+                                (if (i.mx != 0 || i.my != 0 || i.px != 0 || i.py != 0 || i.lg != 0 || i.lh != 0) " · 間距自訂" else ""),
                                 color = C.Muted, fontSize = 11.sp)
                         }
                         Text("↑", color = if (idx > 0) C.Primary else C.Border, fontSize = 18.sp, modifier = Modifier.clickable(enabled = idx > 0) {
@@ -294,10 +344,30 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                             WChips("對齊", listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), i.align) { v -> upd { it.copy(align = v) } }
                             WStep("字級", i.size, 8, 60, 1, " sp") { v -> upd { it.copy(size = v) } }
                             WToggle("粗體", i.bold) { v -> upd { it.copy(bold = v) } }
-                            if (i.id != "entry") WChips("顏色", COLOR_OPTS, i.color) { v -> upd { it.copy(color = v) } }
                             if (i.id in setOf("price", "chg", "pct", "mv", "day", "pl", "cost", "avg", "shares", "vol", "weight", "ret"))
                                 WToggle("等寬數字", i.mono) { v -> upd { it.copy(mono = v) } }
-                            if (i.id in LABELED) WToggle("顯示前綴文字（例如「市值」）", i.label) { v -> upd { it.copy(label = v) } }
+
+                            WSub("間距與字高")
+                            WStep("外距・左右（可負）", i.mx, -8, 24, 1, " dp") { v -> upd { it.copy(mx = v) } }
+                            WStep("外距・上下（可負）", i.my, -12, 24, 1, " dp") { v -> upd { it.copy(my = v) } }
+                            WStep("內距・左右", i.px, 0, 20, 1, " dp") { v -> upd { it.copy(px = v) } }
+                            WStep("內距・上下", i.py, 0, 16, 1, " dp") { v -> upd { it.copy(py = v) } }
+                            if (!i.inline) WStep("行距・與上一行（可負）", i.lg, -12, 16, 1, " dp") { v -> upd { it.copy(lg = v) } }
+                            WStep("字高（行高倍率）", i.lh, 0, 170, 5, "%", show = { if (it == 0) "跟隨" else "$it%" }) { v ->
+                                upd { it.copy(lh = if (v in 1..69) (if (v > it.lh) 70 else 0) else v) } }
+
+                            WSub("配色")
+                            WChips("文字顏色", COLOR_OPTS + (if (i.id == "entry" || i.id == "band") listOf(6 to "依等級") else emptyList()), i.color) { v -> upd { it.copy(color = v) } }
+                            WChips("標籤底色", BG_OPTS.filter { it.first != 2 || i.id == "entry" || i.id == "band" }, i.bg) { v -> upd { it.copy(bg = v) } }
+                            if (i.bg != 0) WStep("底色濃度", i.ba, 10, 100, 5, "%") { v -> upd { it.copy(ba = v) } }
+                            if (i.id in LABELED) {
+                                WToggle("顯示前綴文字（例如「市值」）", i.label) { v -> upd { it.copy(label = v) } }
+                                if (i.label) WChips("前綴文字顏色", LABEL_COLOR_OPTS, i.lc) { v -> upd { it.copy(lc = v) } }
+                            }
+                            Text("此項目恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp).clickable {
+                                val d = WallStyle.DEFAULT_ITEMS.first { it.id == i.id }
+                                upd { it.copy(head = d.head, inline = d.inline, align = d.align, size = d.size, bold = d.bold, color = d.color, mono = d.mono, label = d.label,
+                                    mx = d.mx, my = d.my, px = d.px, py = d.py, lg = d.lg, lh = d.lh, bg = d.bg, ba = d.ba, lc = d.lc) } }.padding(vertical = 4.dp))
                             if (i.id == "entry") Label("進場建議依 K 線分析（與個股頁相同），未分析過的個股會在背景分析後顯示。")
                         }
                     }

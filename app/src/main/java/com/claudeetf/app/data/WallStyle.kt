@@ -8,6 +8,9 @@ import org.json.JSONObject
  * head：放在標題列（否則在內容區）；inline：與上一個顯示中的項目同一行；
  * align：0 靠左、1 置中、2 靠右；color：0 預設、1 依漲跌、2 主文字、3 次要灰、4 金色、5 主色；
  * label：顯示前綴文字（例如「市值」）。
+ * mx/my：外距（左右／上下，可負）；px/py：內距（底色內留白）；lg：與上一行的行距（可負，僅行首項目有效）；
+ * lh：字高（行高倍率 %，0＝跟隨版面）；bg：底色 0 無、1 依漲跌、2 依等級、3 灰、4 金、5 主色、6 白、7 深色；
+ * ba：底色濃度 %；lc：前綴文字顏色 0 同項目、1 灰、2 白、3 金、4 主色、5 依漲跌；color 另有 6 依等級（進場建議／光譜）。
  */
 data class WallItem(
     val id: String,
@@ -20,14 +23,27 @@ data class WallItem(
     val color: Int = 0,
     val mono: Boolean = false,
     val label: Boolean = true,
+    val mx: Int = 0,
+    val my: Int = 0,
+    val px: Int = 0,
+    val py: Int = 0,
+    val lg: Int = 0,
+    val lh: Int = 0,
+    val bg: Int = 0,
+    val ba: Int = 25,
+    val lc: Int = 0,
 ) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("s", show).put("h", head).put("i", inline).put("a", align)
         .put("z", size).put("b", bold).put("c", color).put("m", mono).put("l", label)
+        .put("mx", mx).put("my", my).put("px", px).put("py", py).put("lg", lg).put("lh", lh).put("bg", bg).put("ba", ba).put("lc", lc)
 
     companion object {
         fun fromJson(o: JSONObject, d: WallItem) = WallItem(
             d.id, o.optBoolean("s", d.show), o.optBoolean("h", d.head), o.optBoolean("i", d.inline), o.optInt("a", d.align).coerceIn(0, 2),
-            o.optInt("z", d.size).coerceIn(8, 60), o.optBoolean("b", d.bold), o.optInt("c", d.color).coerceIn(0, 5), o.optBoolean("m", d.mono), o.optBoolean("l", d.label),
+            o.optInt("z", d.size).coerceIn(8, 60), o.optBoolean("b", d.bold), o.optInt("c", d.color).coerceIn(0, 6), o.optBoolean("m", d.mono), o.optBoolean("l", d.label),
+            o.optInt("mx", d.mx).coerceIn(-8, 24), o.optInt("my", d.my).coerceIn(-12, 24), o.optInt("px", d.px).coerceIn(0, 20), o.optInt("py", d.py).coerceIn(0, 16),
+            o.optInt("lg", d.lg).coerceIn(-12, 16), o.optInt("lh", d.lh).let { if (it == 0) 0 else it.coerceIn(70, 170) },
+            o.optInt("bg", d.bg).coerceIn(0, 7), o.optInt("ba", d.ba).coerceIn(10, 100), o.optInt("lc", d.lc).coerceIn(0, 5),
         )
     }
 }
@@ -74,8 +90,8 @@ data class WallStyle(
             WallItem("arrow", true, size = 13),
             WallItem("chg", true, inline = true, align = 2, size = 16, mono = true),
             WallItem("pct", true, inline = true, align = 2, size = 16, mono = true),
-            WallItem("entry", false, align = 1, size = 12, bold = true),
-            WallItem("band", false, inline = true, align = 2, size = 12),
+            WallItem("entry", false, align = 1, size = 12, bold = true, px = 6, py = 1, bg = 2, ba = 100),
+            WallItem("band", false, inline = true, align = 2, size = 12, color = 6, px = 5, py = 1, bg = 2, ba = 22),
             WallItem("mv", false, align = 2, size = 11),
             WallItem("day", false, align = 2, size = 11),
             WallItem("ret", false, inline = true, align = 2, size = 11),
