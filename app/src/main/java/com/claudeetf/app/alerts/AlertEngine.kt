@@ -348,6 +348,7 @@ object AlertEngine {
         if (on.isEmpty()) return
         val day = today.toString()
         if (on.any { it.id == "nsf" }) {
+            runCatching { K.refreshNews(false) }
             K.evalIndex(K.indexCandles())?.takeIf { it.met }?.let { e ->
                 val key = "$day|^TWII|nsf"
                 if (!AppState.kcondSent(key)) {

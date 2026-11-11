@@ -102,7 +102,7 @@ object KlineConditions {
 
     private fun f1(v: Double) = String.format("%.1f", v)
 
-    /** 加權指數是否達國安基金進場條件 */
+    /** 加權指數是否達國安基金進場條件（含官方新聞：已宣布進場且尚未退場時直接達成） */
     fun evalIndex(cs: List<Candle>): Eval? {
         if (cs.size < 2) return null
         val s = setting("nsf")
@@ -110,9 +110,98 @@ object KlineConditions {
         val hi = cs.takeLast(60).maxOf { it.c }
         val dd = (hi - c) / hi * 100
         val day = (cs[cs.size - 2].c - c) / cs[cs.size - 2].c * 100
-        val met = dd >= s.a || day >= s.b
-        return Eval(def("nsf"), met, "距 60 日高點 −${f1(dd)}%，今日 ${if (day >= 0) "−" else "+"}${f1(abs(day))}%")
+        val official = AppState.kcondNsfOfficial && nsf?.state == 1
+        val met = dd >= s.a || day >= s.b || official
+        val txt = "距 60 日高點 −${f1(dd)}%，今日 ${if (day >= 0) "−" else "+"}${f1(abs(day))}%"
+        return Eval(def("nsf"), met, if (official) "官方已宣布進場（${nsf!!.dateText}）· $txt" else txt)
     }
+
+    // ---------------------------------------------------------------- 國安基金與大盤新聞（線上自動更新）
+
+    /**
+     * state：1 已宣布進場（護盤中）、-1 已退場、0 暫不進場／未明
+     * headline：判定依據的新聞標題；news：國安基金新聞；market：大盤相關新聞
+     */
+    data class NsfStatus(
+        val state: Int, val date: Long, val headline: String,
+        val news: List<com.claudeetf.app.data.remote.YahooExtra.News>,
+        val market: List<com.claudeetf.app.data.remote.YahooExtra.News>,
+        val fetchedAt: Long,
+    ) {
+        val dateText: String get() = if (date <= 0) "日期不明" else java.time.Instant.ofEpochMilli(date).atZone(java.time.ZoneId.of("Asia/Taipei"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy/M/d"))
+        val label: String get() = when (state) { 1 -> "護盤中（已宣布進場）"; -1 -> "已退場"; else -> "未進場" }
+    }
+
+    var nsf by androidx.compose.runtime.mutableStateOf<NsfStatus?>(null)
+        private set
+    var nsfLoading by androidx.compose.runtime.mutableStateOf(false)
+        private set
+    var nsfError by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+
+    /** 標題判讀：先看否定與退場，再看進場 */
+    fun classify(t: String): Int? {
+        if (!t.contains("國安基金")) return null
+        return when {
+            Regex("退場|撤出|撤場|結束護盤|功成身退|出場").containsMatchIn(t) -> -1
+            Regex("不進場|暫不|無須|不必|未進場|沒進場|不會進場|不出手|按兵不動").containsMatchIn(t) -> 0
+            Regex("進場|護盤|出手|啟動|宣布進駐|入市").containsMatchIn(t) -> 1
+            else -> null
+        }
+    }
+
+    private fun newsJson(l: List<com.claudeetf.app.data.remote.YahooExtra.News>) = org.json.JSONArray().apply {
+        l.forEach { put(JSONObject().put("t", it.title).put("p", it.publisher).put("l", it.link).put("ts", it.time)) }
+    }
+    private fun newsList(a: org.json.JSONArray?) = (0 until (a?.length() ?: 0)).map { i ->
+        val o = a!!.getJSONObject(i); com.claudeetf.app.data.remote.YahooExtra.News(o.optString("t"), o.optString("p"), o.optString("l"), o.optLong("ts"))
+    }
+
+    private fun loadCached() {
+        if (nsf != null) return
+        runCatching {
+            val o = JSONObject(AppState.cacheGet("nsf") ?: return)
+            nsf = NsfStatus(o.getInt("s"), o.optLong("d"), o.optString("h"), newsList(o.optJSONArray("n")), newsList(o.optJSONArray("m")), o.optLong("f"))
+        }
+    }
+
+    /**
+     * 從 Google 新聞抓「國安基金」與大盤新聞，依最新一則有明確立場的標題判定國安基金狀態。
+     * force = false 時 6 小時內沿用快取。
+     */
+    suspend fun refreshNews(force: Boolean) {
+        loadCached()
+        val cur = nsf
+        if (!force && cur != null && System.currentTimeMillis() - cur.fetchedAt < 6 * 3600_000L) return
+        if (nsfLoading) return
+        nsfLoading = true; nsfError = null
+        try {
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val g = com.claudeetf.app.data.remote.GoogleNews
+                val a = runCatching { g.search("國安基金 進場", 20) }.getOrDefault(emptyList())
+                val b = runCatching { g.search("國安基金 退場 OR 護盤", 20) }.getOrDefault(emptyList())
+                val m = runCatching { g.search("台股 加權指數 大盤", 10) }.getOrDefault(emptyList())
+                Triple((a + b).filter { it.title.contains("國安基金") }.distinctBy { it.title }.sortedByDescending { it.time }, m.sortedByDescending { it.time }, Unit)
+            }
+            val (news, market, _) = r
+            if (news.isEmpty() && market.isEmpty()) throw IllegalStateException("沒有取得新聞")
+            // 最新一則有明確立場的新聞；一年以前的不採用
+            val year = System.currentTimeMillis() - 365L * 86_400_000L
+            val decisive = news.firstOrNull { it.time > year && classify(it.title) != null }
+            val st = NsfStatus(decisive?.let { classify(it.title) } ?: 0, decisive?.time ?: 0L, decisive?.title ?: "", news.take(8), market.take(6), System.currentTimeMillis())
+            nsf = st
+            AppState.cachePut("nsf", JSONObject().put("s", st.state).put("d", st.date).put("h", st.headline)
+                .put("n", newsJson(st.news)).put("m", newsJson(st.market)).put("f", st.fetchedAt).toString())
+        } catch (e: Exception) {
+            nsfError = "更新失敗：" + (e.message ?: e.javaClass.simpleName)
+        } finally {
+            nsfLoading = false
+        }
+    }
+
+    /** 立即重抓大盤日 K（清除快取） */
+    fun clearIndexCache() { idxCache = null }
 
     /** 個股條件（只算已開啟的；國安基金另由 evalIndex 計算） */
     fun evalStock(cs: List<Candle>, only: List<Def> = enabled()): List<Eval> {

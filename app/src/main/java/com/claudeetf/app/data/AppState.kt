@@ -146,6 +146,12 @@ object AppState {
     var kconds by mutableStateOf<Map<String, com.claudeetf.app.data.KCondSetting>>(emptyMap())
     fun updateKCond(id: String, v: com.claudeetf.app.data.KCondSetting) { kconds = kconds + (id to v); save() }
     fun resetKConds() { kconds = emptyMap(); save() }
+    /** 國安基金：官方宣布進場（新聞）時直接視為條件達成 */
+    var kcondNsfOfficial by mutableStateOf(true)
+    fun updateKCondNsfOfficial(v: Boolean) { kcondNsfOfficial = v; save() }
+    /** 小型快取（JSON 字串），例如國安基金新聞 */
+    fun cacheGet(key: String): String? = prefs?.getString("cache_$key", null)
+    fun cachePut(key: String, v: String) { prefs?.edit()?.putString("cache_$key", v)?.apply() }
     /** 條件達成時通知（持股；國安基金條件看大盤） */
     var kcondNotify by mutableStateOf(false)
     fun updateKCondNotify(v: Boolean) { kcondNotify = v; save() }
@@ -521,6 +527,7 @@ object AppState {
         twIntradaySource = p.getString("twIntradaySource", "fugle") ?: "fugle"
         twOfficialClose = p.getBoolean("twOfficialClose", true)
         kcondNotify = p.getBoolean("kcondNotify", false)
+        kcondNsfOfficial = p.getBoolean("kcondNsfOfficial", true)
         kconds = com.claudeetf.app.data.KCondSetting.parseAll(p.getString("kconds", "") ?: "")
         monthlyReport = p.getBoolean("monthlyReport", true)
         showKeyLevels = p.getBoolean("showKeyLevels", true)
@@ -837,6 +844,7 @@ object AppState {
             .putString("twIntradaySource", twIntradaySource)
             .putBoolean("twOfficialClose", twOfficialClose)
             .putBoolean("kcondNotify", kcondNotify)
+            .putBoolean("kcondNsfOfficial", kcondNsfOfficial)
             .putString("kconds", com.claudeetf.app.data.KCondSetting.toJsonAll(kconds))
             .putBoolean("monthlyReport", monthlyReport)
             .putBoolean("showKeyLevels", showKeyLevels)

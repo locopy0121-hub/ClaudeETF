@@ -1799,7 +1799,11 @@ private fun KCondSettings() {
     val K = com.claudeetf.app.data.KlineConditions
     val cur = AppState.kconds
     var idx by remember { mutableStateOf<com.claudeetf.app.data.KlineConditions.Eval?>(null) }
-    LaunchedEffect(cur) { idx = runCatching { K.evalIndex(K.indexCandles()) }.getOrNull() }
+    val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
+    // 打開時自動更新線上資訊（6 小時內沿用），國安基金官方動態會影響大盤條件判定
+    LaunchedEffect(Unit) { runCatching { K.refreshNews(false) } }
+    LaunchedEffect(cur, K.nsf, AppState.kcondNsfOfficial) { idx = runCatching { K.evalIndex(K.indexCandles()) }.getOrNull() }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Card(padding = 14.dp) {
             Text("K 棒分析條件", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
@@ -1815,6 +1819,53 @@ private fun KCondSettings() {
                     }
                 }
             }
+        }
+        // ---- 線上資訊：國安基金動態與大盤新聞，可手動更新
+        Card(padding = 14.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("線上資訊", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    val n = K.nsf
+                    Label(if (n == null) "尚未更新" else "更新於 " + java.time.Instant.ofEpochMilli(n.fetchedAt).atZone(java.time.ZoneId.of("Asia/Taipei"))
+                        .format(java.time.format.DateTimeFormatter.ofPattern("M/d HH:mm")) + " · 每 6 小時自動更新")
+                }
+                Text(if (K.nsfLoading) "更新中…" else "↻ 更新", color = C.OnPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Primary).clickable(enabled = !K.nsfLoading) {
+                        scope.launch {
+                            K.clearIndexCache()
+                            K.refreshNews(true)
+                            idx = runCatching { K.evalIndex(K.indexCandles()) }.getOrNull()
+                        }
+                    }.padding(horizontal = 14.dp, vertical = 8.dp))
+            }
+            K.nsfError?.let { Text(it, color = C.Red, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+            K.nsf?.let { n ->
+                val col = when (n.state) { 1 -> com.claudeetf.app.ui.theme.Trend.up; -1 -> com.claudeetf.app.ui.theme.Trend.down; else -> C.Text2 }
+                Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(col.copy(alpha = 0.12f)).padding(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("國安基金：", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(n.label, color = col, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                    }
+                    if (n.headline.isNotBlank()) Label("依據：" + n.headline + "（" + n.dateText + "）")
+                    else Label("近一年新聞沒有明確的進場或退場消息")
+                }
+                @Composable fun NewsList(title: String, list: List<com.claudeetf.app.data.remote.YahooExtra.News>) {
+                    if (list.isEmpty()) return
+                    Text(title, color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                    list.take(5).forEach { item ->
+                        Column(Modifier.fillMaxWidth().clickable {
+                            runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(item.link))) }
+                        }.padding(vertical = 5.dp)) {
+                            Text(item.title, color = C.Text, fontSize = 13.sp, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Label(item.publisher + (if (item.time > 0) " · " + java.time.Instant.ofEpochMilli(item.time).atZone(java.time.ZoneId.of("Asia/Taipei"))
+                                .format(java.time.format.DateTimeFormatter.ofPattern("M/d HH:mm")) else ""))
+                        }
+                    }
+                }
+                NewsList("國安基金新聞", n.news)
+                NewsList("大盤新聞", n.market)
+            }
+            Label("資料來源：Google 新聞。依最新一則有明確立場的國安基金新聞判定狀態，僅供參考，以財政部公告為準。", Modifier.padding(top = 6.dp))
         }
         K.defs.forEach { d ->
             val st = K.setting(d.id)
@@ -1832,6 +1883,7 @@ private fun KCondSettings() {
                         colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary, uncheckedTrackColor = C.Border))
                 }
                 Label(d.desc)
+                if (d.id == "nsf" && st.on) OptToggle("官方宣布進場時直接視為達成（依線上新聞）", AppState.kcondNsfOfficial) { AppState.updateKCondNsfOfficial(it) }
                 if (st.on) {
                     KStep(d.a, st.a) { upd(st.copy(a = it)) }
                     d.b?.let { b -> KStep(b, st.b) { upd(st.copy(b = it)) } }

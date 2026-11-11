@@ -380,7 +380,7 @@ private fun KCondBox(q: Quote, r: KlineAnalysis.Result) {
     val wantIdx = q.market == Market.TW && on.any { it.id == "nsf" }
     var idx by remember(q.symbol) { mutableStateOf<com.claudeetf.app.data.KlineConditions.Eval?>(null) }
     val conf = AppState.kconds
-    LaunchedEffect(q.symbol, wantIdx, conf) { if (wantIdx) idx = K.evalIndex(K.indexCandles()) }
+    LaunchedEffect(q.symbol, wantIdx, conf, K.nsf) { if (wantIdx) { runCatching { K.refreshNews(false) }; idx = K.evalIndex(K.indexCandles()) } }
     val stock = remember(r, conf) { K.evalStock(r.candles, on) }
     val list = listOfNotNull(if (wantIdx) idx else null) + stock
     Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(10.dp)) {
