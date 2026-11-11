@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.SpanStyle
@@ -169,18 +171,33 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, onClick: 
             fontWeight = if (i.bold) FontWeight.Bold else FontWeight.Normal, fontFamily = if (i.mono) FontFamily.Monospace else null,
             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = textAlignOf(i.align),
             modifier = Modifier.outer(i.mx, i.my)
-                .then(if (bgc != null) Modifier.clip(RoundedCornerShape(6.dp)).background(bgc) else Modifier)
-                .padding(horizontal = i.px.dp, vertical = i.py.dp))
+                .then(if (bgc != null) Modifier.drawBehind { drawRoundRect(bgc, cornerRadius = CornerRadius(6.dp.toPx())) } else Modifier)
+                .outer(i.px, i.py))
     }
     @Composable fun Line(line: List<WallItem>) {
-        // 單一項目：整行依對齊；多個項目：依對齊分成左、中、右三組，各組依內容寬度排列，空間不足時左組省略
-        if (line.size == 1) { Box(Modifier.fillMaxWidth(), contentAlignment = alignOf(line[0].align)) { Item(line[0]) }; return }
+        // 左、中、右三組：右組貼齊右緣、中組以整格寬度置中、左組使用剩下的寬度（不足時省略）
         val groups = (0..2).map { a -> line.filter { it.align == a } }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            groups.forEachIndexed { a, g ->
-                if (a > 0) Spacer(Modifier.weight(1f))
-                if (g.isNotEmpty()) Row(if (a == 0) Modifier.weight(3f, fill = false) else Modifier,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) { g.forEach { Item(it) } }
+        Layout(content = {
+            groups.forEach { g ->
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) { g.forEach { Item(it) } }
+            }
+        }, modifier = Modifier.fillMaxWidth()) { ms, c ->
+            val w = c.maxWidth
+            val gap = 5.dp.roundToPx()
+            val free = c.copy(minWidth = 0, minHeight = 0)
+            val r = ms[2].measure(free)
+            val ce = ms[1].measure(free.copy(maxWidth = (w - (if (r.width > 0) r.width + gap else 0)).coerceAtLeast(0)))
+            val used = (if (r.width > 0) r.width + gap else 0) + (if (ce.width > 0) ce.width + gap else 0)
+            val l = ms[0].measure(free.copy(maxWidth = (w - used).coerceAtLeast(0)))
+            val hh = maxOf(l.height, ce.height, r.height)
+            layout(w, hh) {
+                l.place(0, (hh - l.height) / 2)
+                r.place(w - r.width, (hh - r.height) / 2)
+                if (ce.width > 0) {
+                    val lo = if (l.width > 0) l.width + gap else 0
+                    val hi = w - (if (r.width > 0) r.width + gap else 0) - ce.width
+                    ce.place(((w - ce.width) / 2).coerceIn(lo, hi.coerceAtLeast(lo)), (hh - ce.height) / 2)
+                }
             }
         }
     }
@@ -348,12 +365,12 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                             if (i.id in setOf("price", "chg", "pct", "mv", "day", "pl", "cost", "avg", "shares", "vol", "weight", "ret"))
                                 WToggle("等寬數字", i.mono) { v -> upd { it.copy(mono = v) } }
 
-                            WSub("間距與字高")
-                            WStep("外距・左右（可負）", i.mx, -8, 24, 1, " dp") { v -> upd { it.copy(mx = v) } }
-                            WStep("外距・上下（可負）", i.my, -12, 24, 1, " dp") { v -> upd { it.copy(my = v) } }
-                            WStep("內距・左右", i.px, 0, 20, 1, " dp") { v -> upd { it.copy(px = v) } }
-                            WStep("內距・上下", i.py, 0, 16, 1, " dp") { v -> upd { it.copy(py = v) } }
-                            if (!i.inline) WStep("行距・與上一行（可負）", i.lg, -12, 16, 1, " dp") { v -> upd { it.copy(lg = v) } }
+                            WSub("間距與字高（外距、內距、行距皆可設負值）")
+                            WStep("外距・左右", i.mx, -8, 24, 1, " dp") { v -> upd { it.copy(mx = v) } }
+                            WStep("外距・上下", i.my, -12, 24, 1, " dp") { v -> upd { it.copy(my = v) } }
+                            WStep("內距・左右", i.px, -10, 20, 1, " dp") { v -> upd { it.copy(px = v) } }
+                            WStep("內距・上下", i.py, -10, 16, 1, " dp") { v -> upd { it.copy(py = v) } }
+                            if (!i.inline) WStep("行距・與上一行", i.lg, -12, 16, 1, " dp") { v -> upd { it.copy(lg = v) } }
                             WStep("字高（行高倍率）", i.lh, 0, 170, 5, "%", show = { if (it == 0) "跟隨" else "$it%" }) { v ->
                                 upd { it.copy(lh = if (v in 1..69) (if (v > it.lh) 70 else 0) else v) } }
 

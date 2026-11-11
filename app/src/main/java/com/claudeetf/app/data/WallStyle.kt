@@ -41,7 +41,7 @@ data class WallItem(
         fun fromJson(o: JSONObject, d: WallItem) = WallItem(
             d.id, o.optBoolean("s", d.show), o.optBoolean("h", d.head), o.optBoolean("i", d.inline), o.optInt("a", d.align).coerceIn(0, 2),
             o.optInt("z", d.size).coerceIn(8, 60), o.optBoolean("b", d.bold), o.optInt("c", d.color).coerceIn(0, 6), o.optBoolean("m", d.mono), o.optBoolean("l", d.label),
-            o.optInt("mx", d.mx).coerceIn(-8, 24), o.optInt("my", d.my).coerceIn(-12, 24), o.optInt("px", d.px).coerceIn(0, 20), o.optInt("py", d.py).coerceIn(0, 16),
+            o.optInt("mx", d.mx).coerceIn(-8, 24), o.optInt("my", d.my).coerceIn(-12, 24), o.optInt("px", d.px).coerceIn(-10, 20), o.optInt("py", d.py).coerceIn(-10, 16),
             o.optInt("lg", d.lg).coerceIn(-12, 16), o.optInt("lh", d.lh).let { if (it == 0) 0 else it.coerceIn(70, 170) },
             o.optInt("bg", d.bg).coerceIn(0, 7), o.optInt("ba", d.ba).coerceIn(10, 100), o.optInt("lc", d.lc).coerceIn(0, 5),
         )
