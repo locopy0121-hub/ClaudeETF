@@ -146,6 +146,23 @@ object DailyReport {
             sorted.take(3).map { it.first.name to it.second }, sorted.takeLast(3).reversed().map { it.first.name to it.second })
     }
 
+    /** 我的持股／自選出現在推薦名單中 */
+    data class Mine(val symbol: String, val name: String, val held: Boolean, val list: String, val bull: Boolean, val rank: Int, val pick: TwPicks.Pick)
+
+    fun mine(r: Report): List<Mine> {
+        val held = AppState.holdings.map { it.symbol }.toSet()
+        val watched = AppState.quotes.map { it.symbol }.toSet()
+        val out = ArrayList<Mine>()
+        listOf(Triple("個股看漲", true, r.bulls), Triple("個股看跌", false, r.bears), Triple("ETF 看漲", true, r.etfBulls), Triple("ETF 看跌", false, r.etfBears))
+            .forEach { (n, bull, l) ->
+                l.forEachIndexed { i, p ->
+                    if (p.symbol in held || p.symbol in watched) out += Mine(p.symbol, p.name, p.symbol in held, n, bull, i + 1, p)
+                }
+            }
+        // 持股優先、看跌優先
+        return out.sortedWith(compareBy({ !it.held }, { it.bull }, { it.rank }))
+    }
+
     const val TOP = 25
     const val TOP_ETF = 15
     val HIST_LABELS = listOf("≤-9", "-9", "-6", "-3", "-1", "0", "+1", "+3", "+6", "+9", "≥9")
@@ -198,6 +215,10 @@ object DailyReport {
         val r = generate() ?: return null
         if (r.date == java.time.LocalDate.now(TPE).toString() && notifyOn) runCatching {
             com.claudeetf.app.alerts.AlertEngine.notify(ctx, 905, "台股盤後報表 " + r.date.substring(5).replace("-", "/"), r.summary.take(3).joinToString("\n"))
+            // 持股被列入看跌名單：另外提醒
+            val risk = mine(r).filter { it.held && !it.bull }
+            if (risk.isNotEmpty()) com.claudeetf.app.alerts.AlertEngine.notify(ctx, 906, "持股風險提醒：${risk.size} 檔列入看跌名單",
+                risk.joinToString("\n") { it.symbol + " " + it.name + "：" + it.list + "第 " + it.rank + " 名（" + it.pick.entry + "）" })
         }
         return r
     }

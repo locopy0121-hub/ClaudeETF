@@ -198,6 +198,8 @@ fun DailyReportScreen(nav: NavController) {
                         r.summary.forEach { Text("• $it", color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 4.dp)) }
                     }
                 }
+                // ---- 我的持股與自選
+                item { MineCard(r) { open(it) } }
                 // ---- 前次推薦表現追蹤
                 item { PerfCard(r) }
                 // ---- 指數走勢
@@ -482,6 +484,32 @@ private fun PerfCard(r: DailyReport.Report) {
                 KeyValue("看跌名單 平均次日報酬", "%+.2f".format(t.bearAvg) + "%（下跌比例 " + "%.0f".format(t.bearWin) + "%）", Trend.fg(t.bearAvg))
                 KeyValue("看漲名單 超額報酬（對加權）", "%+.2f".format(t.excess) + " 個百分點", Trend.fg(t.excess))
                 Label("以每份報表到下一份報表收盤的漲跌計算；樣本少時僅供參考。")
+            }
+        }
+    }
+}
+
+
+/** 我的持股與自選出現在今日推薦名單：持股被列入看跌時特別標示 */
+@Composable
+private fun MineCard(r: DailyReport.Report, open: (String) -> Unit) {
+    val list = remember(r.date, AppState.holdings.size, AppState.quotes.size) { DailyReport.mine(r) }
+    Card(padding = 14.dp) {
+        Text("我的持股與自選", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        if (list.isEmpty()) { Label("今天的看漲、看跌名單中沒有你的持股或自選。"); return@Card }
+        val risk = list.count { it.held && !it.bull }
+        if (risk > 0) Text("⚠ $risk 檔持股列入看跌名單，建議檢視停損與部位", color = Trend.fg(-1.0), fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+        list.forEach { m ->
+            val c = Trend.fg(if (m.bull) 1.0 else -1.0)
+            Row(Modifier.fillMaxWidth().clickable { open(m.symbol) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (m.held) "持股" else "自選", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(if (m.held) C.Primary else C.Muted).padding(horizontal = 5.dp, vertical = 1.dp))
+                HGap(6.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(m.name + " " + m.symbol, color = C.Text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(m.list + " 第 ${m.rank} 名 · " + m.pick.entry, color = c, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Column(horizontalAlignment = Alignment.End) { NumText(Fmt.price(m.pick.price), 13.sp); ChangePill(m.pick.pct) }
             }
         }
     }
