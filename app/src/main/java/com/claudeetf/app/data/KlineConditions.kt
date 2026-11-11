@@ -2,6 +2,8 @@ package com.claudeetf.app.data
 
 import com.claudeetf.app.data.KlineAnalysis.Candle
 import org.json.JSONObject
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -110,10 +112,11 @@ object KlineConditions {
         val hi = cs.takeLast(60).maxOf { it.c }
         val dd = (hi - c) / hi * 100
         val day = (cs[cs.size - 2].c - c) / cs[cs.size - 2].c * 100
-        val official = AppState.kcondNsfOfficial && nsf?.state == 1
+        val ns = nsf
+        val official = AppState.kcondNsfOfficial && ns?.state == 1
         val met = dd >= s.a || day >= s.b || official
         val txt = "距 60 日高點 −${f1(dd)}%，今日 ${if (day >= 0) "−" else "+"}${f1(abs(day))}%"
-        return Eval(def("nsf"), met, if (official) "官方已宣布進場（${nsf!!.dateText}）· $txt" else txt)
+        return Eval(def("nsf"), met, if (official) "官方已宣布進場（${ns!!.dateText}）· $txt" else txt)
     }
 
     // ---------------------------------------------------------------- 國安基金與大盤新聞（線上自動更新）
