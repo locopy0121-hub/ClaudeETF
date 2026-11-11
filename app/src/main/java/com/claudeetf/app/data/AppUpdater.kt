@@ -42,6 +42,7 @@ object AppUpdater {
         private set
     /** 下載進度 0..1；null = 未下載 */
     var progress by mutableStateOf<Float?>(null)
+        private set
     /** 下載細節（前景與背景預先下載都會更新）：已下載、總大小（位元組）、速度（位元組／秒） */
     var dlDone by mutableStateOf(0L)
     var dlTotal by mutableStateOf(0L)
@@ -82,7 +83,6 @@ object AppUpdater {
     /** 回到 App 發現新版時跳出更新視窗 */
     fun popupNew(c: Context): Boolean = prefs(c).getBoolean("popupNew", true)
     fun setPopupNew(c: Context, v: Boolean) = prefs(c).edit().putBoolean("popupNew", v).apply()
-        private set
     /** 上次檢查時間（毫秒） */
     var lastCheckAt by mutableStateOf(0L)
         private set
