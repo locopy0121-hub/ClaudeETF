@@ -473,7 +473,7 @@ private fun qrBitmap(text: String, size: Int = 900): ImageBitmap? = runCatching 
     android.graphics.Bitmap.createBitmap(px, size, size, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
 }.getOrNull()
 
-private fun shareText(ctx: android.content.Context, text: String, title: String) {
+internal fun shareText(ctx: android.content.Context, text: String, title: String) {
     runCatching {
         ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), title)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

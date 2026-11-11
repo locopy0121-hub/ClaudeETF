@@ -87,7 +87,7 @@ object AppState {
         "session" to "美股交易時段", "index" to "主要指數", "source" to "資料來源", "goal" to "資產目標",
         "pnlsplit" to "今日損益（台股／美股）", "watch" to "自選前五檔", "holdings" to "持股前五大",
         "keys" to "持股三關位置", "divcal" to "持股除息行事曆", "alerts" to "最近通知", "fx" to "匯率與總經",
-        "fut" to "台指期近月", "news" to "財經新聞（RSS）")
+        "fut" to "台指期近月", "news" to "財經新聞（RSS）", "report" to "每日盤後報表")
     /** v0.1.45 新增的固定卡片：舊使用者預設隱藏，到設定勾選 */
     private val newHomeCards = setOf("pnlsplit", "watch", "holdings", "keys", "divcal", "alerts", "fx", "fut", "news")
 
@@ -522,6 +522,12 @@ object AppState {
         if (!p.getBoolean("homeTwiiAdded", false)) {
             if ("idx:^TWII" !in homeOrder) homeOrder.add(0, "idx:^TWII")
             p.edit().putBoolean("homeTwiiAdded", true).apply()
+        }
+        // 一次性：每日盤後報表卡片放在首頁上方
+        if (!p.getBoolean("homeReportAdded", false)) {
+            homeOrder.remove("report"); homeHidden.remove("report")
+            homeOrder.add(minOf(1, homeOrder.size), "report")
+            p.edit().putBoolean("homeReportAdded", true).apply()
         }
         // 一次性：台指期卡片放在加權指數下方
         if (!p.getBoolean("homeFutAdded", false)) {

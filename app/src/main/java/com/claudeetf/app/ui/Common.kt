@@ -59,6 +59,7 @@ object Routes {
     fun index(symbol: String) = "$INDEX/" + java.net.URLEncoder.encode(symbol, "UTF-8")
     const val FX = "fx"
     const val MARKET_CHANGES = "marketChanges"
+    const val DAILY_REPORT = "dailyReport"
 
     fun alerts(symbol: String = "") = "$ALERTS?s=$symbol"
     const val SEARCH = "search"

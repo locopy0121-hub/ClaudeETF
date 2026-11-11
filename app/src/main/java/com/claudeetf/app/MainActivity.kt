@@ -133,6 +133,7 @@ class MainActivity : ComponentActivity() {
         com.claudeetf.app.data.StockDirectory.cacheDir = filesDir
         com.claudeetf.app.data.MarketChanges.init(applicationContext)
         com.claudeetf.app.data.TwPicks.init(applicationContext)
+        com.claudeetf.app.data.DailyReport.init(applicationContext)
         com.claudeetf.app.data.EtfComposition.dir = filesDir
         watchNetwork()
         AppState.systemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
@@ -161,9 +162,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 delay(4_000L)
+                var n = 0
                 while (true) {
-                    if (com.claudeetf.app.data.StockDirectory.stale()) runCatching { com.claudeetf.app.data.StockDirectory.refresh() }
-                    delay(30 * 60_000L)
+                    if (n % 3 == 0 && com.claudeetf.app.data.StockDirectory.stale()) runCatching { com.claudeetf.app.data.StockDirectory.refresh() }
+                    // 每日盤後報表：平日 14:45 後自動產生
+                    runCatching { com.claudeetf.app.data.DailyReport.ensureToday(applicationContext) }
+                    n++
+                    delay(10 * 60_000L)
                 }
             }
         }
@@ -437,6 +442,7 @@ fun AppRoot() {
             ) { com.claudeetf.app.ui.screens.IndexScreen(nav, java.net.URLDecoder.decode(it.arguments?.getString("sym") ?: "", "UTF-8")) }
             composable(Routes.FX) { com.claudeetf.app.ui.screens.FxScreen(nav) }
             composable(Routes.MARKET_CHANGES) { com.claudeetf.app.ui.screens.MarketChangesScreen(nav) }
+            composable(Routes.DAILY_REPORT) { com.claudeetf.app.ui.screens.DailyReportScreen(nav) }
             composable(Routes.SETTINGS) { SettingsScreen(nav) }
             composable(Routes.SETTINGS_SECTION) { e -> SettingsScreen(nav, e.arguments?.getString("section")) }
             composable(Routes.CHAT) { com.claudeetf.app.ui.screens.ChatScreen(nav) }

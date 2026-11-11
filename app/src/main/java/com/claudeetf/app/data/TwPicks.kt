@@ -61,6 +61,9 @@ object TwPicks {
     var total by mutableIntStateOf(0); private set
     var error by mutableStateOf<String?>(null); private set
 
+    /** 最近一次分析的全部個股（含分數，報表用；不存檔） */
+    @Volatile var all: List<Pick> = emptyList(); private set
+
     private var file: File? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var job: Job? = null
@@ -96,6 +99,17 @@ object TwPicks {
         job = scope.launch { runCatching { run() }.onFailure { error = "分析失敗：" + (it.message ?: it.javaClass.simpleName) }; running = false }
     }
 
+    /** 等待分析完成並回傳全部結果（盤後報表用）；需要時才重算 */
+    suspend fun analyzeAll(force: Boolean = false): List<Pick> {
+        if (running) { while (running) kotlinx.coroutines.delay(500) }
+        if (force || stale() || all.isEmpty()) {
+            kotlinx.coroutines.withContext(Dispatchers.Main) { running = true }
+            try { runCatching { run() }.onFailure { error = "分析失敗：" + (it.message ?: it.javaClass.simpleName) } }
+            finally { kotlinx.coroutines.withContext(Dispatchers.Main) { running = false } }
+        }
+        return all
+    }
+
     private fun clamp(v: Double, a: Double) = v.coerceIn(-a, a)
 
     private suspend fun run() {
@@ -127,6 +141,7 @@ object TwPicks {
             }.awaitAll().filterNotNull()
         }
         if (picks.isEmpty()) { error = "分析結果為空（K 線資料暫時無法取得）"; return }
+        all = picks
         fun bull(l: List<Pick>) = l.filter { it.score > 0.6 }.sortedByDescending { it.score }.take(10)
         fun bear(l: List<Pick>) = l.filter { it.score < -0.6 }.sortedBy { it.score }.take(10)
         val (o, t) = picks.partition { it.otc }

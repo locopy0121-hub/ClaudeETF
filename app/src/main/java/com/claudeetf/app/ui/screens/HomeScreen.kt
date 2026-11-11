@@ -224,6 +224,7 @@ fun HomeScreen(nav: NavController) {
                     "fx" -> item { FxCard(nav) }
                     "fut" -> item { FuturesCard(nav) }
                     "news" -> item { NewsCard() }
+                    "report" -> item { DailyReportHomeCard(nav) }
                     "index" -> {
                     val idx = listOf(AppState.twIndices[0]) + AppState.usIndices.filter {
                         it.name in listOf("S&P 500", "Nasdaq", "費城半導體")

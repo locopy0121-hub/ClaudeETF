@@ -158,6 +158,8 @@ object AlertEngine {
             AppState.logNotice("定期定額：${p.symbol} 本月扣款日已到")
         }
         if (AppState.kcondNotify) runCatching { checkKConds(context, today) }
+        // 每日盤後報表（App 不在前景時由背景排程產生）
+        runCatching { com.claudeetf.app.data.DailyReport.ensureToday(context) }
         for (a in AppState.alerts.toList()) {
             if (!a.enabled) continue
             val result: Pair<String, String>? = when (a.type) {
