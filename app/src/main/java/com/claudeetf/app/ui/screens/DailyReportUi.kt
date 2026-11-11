@@ -198,6 +198,8 @@ fun DailyReportScreen(nav: NavController) {
                         r.summary.forEach { Text("• $it", color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 4.dp)) }
                     }
                 }
+                // ---- 前次推薦表現追蹤
+                item { PerfCard(r) }
                 // ---- 指數走勢
                 item {
                     Card(padding = 14.dp) {
@@ -430,6 +432,56 @@ private fun ScoreBars(list: List<TwPicks.Pick>, bull: Boolean, modifier: Modifie
                     Box(Modifier.fillMaxWidth((kotlin.math.abs(p.score) / mx).toFloat().coerceIn(0.02f, 1f)).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(c.copy(alpha = 0.85f)))
                 }
                 Text("%+.1f".format(p.score), Modifier.width(36.dp), color = c, fontSize = 10.sp, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun PerfGroupRow(title: String, g: DailyReport.Group?, bull: Boolean) {
+    if (g == null) return
+    val c = Trend.fg(g.avg)
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            NumText("%+.2f".format(g.avg) + "%", 14.sp, c, FontWeight.Bold)
+            Text("  " + (if (bull) "上漲" else "下跌") + " ${g.win}/${g.n}（" + "%.0f".format(g.winRate) + "%）", color = C.Text2, fontSize = 12.sp)
+        }
+        // 命中率條
+        Box(Modifier.fillMaxWidth().padding(top = 4.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(C.Bg)) {
+            Box(Modifier.fillMaxWidth((g.winRate / 100).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(if (g.winRate >= 50) Trend.fg(if (bull) 1.0 else -1.0) else C.Muted))
+        }
+        Text("最佳：" + g.best.joinToString("、") { it.first + " " + "%+.1f".format(it.second) + "%" } +
+            "　最差：" + g.worst.joinToString("、") { it.first + " " + "%+.1f".format(it.second) + "%" },
+            color = C.Text2, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 3.dp))
+    }
+}
+
+/** 前一份報表的推薦名單到本日收盤的實際表現，以及歷史累計勝率 */
+@Composable
+private fun PerfCard(r: DailyReport.Report) {
+    val tr = remember(r.date, DailyReport.dates.size) { DailyReport.track() }
+    Card(padding = 14.dp) {
+        Text("推薦表現追蹤", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        val p = r.perf
+        if (p == null) {
+            Label("需要前一份報表才能比對；明天產生報表後就會顯示前一天推薦名單的實際漲跌。")
+        } else {
+            Label("前次報表 " + p.fromDate.replace("-", "/") + " 的推薦，到本日收盤的漲跌 · 同期加權指數 " + "%+.2f".format(p.market) + "%")
+            PerfGroupRow("個股看漲 ${DailyReport.TOP}", p.bull, true)
+            PerfGroupRow("個股看跌 ${DailyReport.TOP}", p.bear, false)
+            PerfGroupRow("ETF 看漲", p.etfBull, true)
+            PerfGroupRow("ETF 看跌", p.etfBear, false)
+            p.bull?.let { b -> Label("看漲名單" + (if (b.avg >= p.market) "勝過" else "落後") + "大盤 " + "%.2f".format(kotlin.math.abs(b.avg - p.market)) + " 個百分點。", Modifier.padding(top = 6.dp)) }
+        }
+        tr?.let { t ->
+            Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(10.dp)) {
+                Text("歷史累計（${t.days} 份報表）", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                KeyValue("看漲名單 平均次日報酬", "%+.2f".format(t.bullAvg) + "%（上漲比例 " + "%.0f".format(t.bullWin) + "%）", Trend.fg(t.bullAvg))
+                KeyValue("看跌名單 平均次日報酬", "%+.2f".format(t.bearAvg) + "%（下跌比例 " + "%.0f".format(t.bearWin) + "%）", Trend.fg(t.bearAvg))
+                KeyValue("看漲名單 超額報酬（對加權）", "%+.2f".format(t.excess) + " 個百分點", Trend.fg(t.excess))
+                Label("以每份報表到下一份報表收盤的漲跌計算；樣本少時僅供參考。")
             }
         }
     }

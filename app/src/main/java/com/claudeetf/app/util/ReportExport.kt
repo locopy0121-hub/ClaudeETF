@@ -98,6 +98,26 @@ object ReportExport {
             drawText("市場總結", x0, y + 56f, paint(34f, TEXT, bold = true))
             save(); translate(x0, y + 80f); sl.draw(this); restore()
         }
+        // ---- 前次推薦表現
+        r.perf?.let { pf ->
+            val gs = listOf("個股看漲" to pf.bull, "個股看跌" to pf.bear, "ETF 看漲" to pf.etfBull, "ETF 看跌" to pf.etfBear).filter { it.second != null }
+            out += Block(120f + gs.size * 96f) { y ->
+                drawText("推薦表現追蹤", x0, y + 56f, paint(34f, TEXT, bold = true))
+                drawText("前次報表 " + pf.fromDate.replace("-", "/") + " 的推薦到本日收盤 · 同期加權 " + "%+.2f".format(pf.market) + "%", x0, y + 96f, paint(22f, MUTED))
+                gs.forEachIndexed { i, (t, g0) ->
+                    val g = g0!!
+                    val yy = y + 140f + i * 96f
+                    val bull = t.contains("漲")
+                    drawText(t, x0, yy, paint(26f, TEXT, bold = true))
+                    drawText("%+.2f".format(g.avg) + "%", x0 + 260f, yy, paint(26f, up(g.avg), bold = true, mono = true))
+                    drawText((if (bull) "上漲 " else "下跌 ") + "${g.win}/${g.n}（" + "%.0f".format(g.winRate) + "%）", x0 + inner, yy, paint(22f, TEXT2, align = Paint.Align.RIGHT))
+                    drawRect(x0, yy + 14f, x0 + inner, yy + 24f, fill(GRID))
+                    drawRect(x0, yy + 14f, x0 + (inner * g.winRate / 100).toFloat(), yy + 24f, fill(if (g.winRate >= 50) up(if (bull) 1.0 else -1.0) else MUTED))
+                    drawText(fit("最佳：" + g.best.joinToString("、") { it.first + " " + "%+.1f".format(it.second) + "%" } +
+                        "　最差：" + g.worst.joinToString("、") { it.first + " " + "%+.1f".format(it.second) + "%" }, paint(20f, TEXT2), inner), x0, yy + 54f, paint(20f, TEXT2))
+                }
+            }
+        }
         // ---- 加權指數走勢
         out += Block(560f) { y ->
             drawText("加權指數", x0, y + 56f, paint(34f, TEXT, bold = true))

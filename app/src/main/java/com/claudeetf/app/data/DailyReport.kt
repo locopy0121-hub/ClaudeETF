@@ -54,6 +54,8 @@ object DailyReport {
         val etfUp: Int = 0, val etfDown: Int = 0, val etfFlat: Int = 0, val etfValue: Double = 0.0,
         val etfGainers: List<Mover> = emptyList(), val etfLosers: List<Mover> = emptyList(), val etfActives: List<Mover> = emptyList(),
         val etfBulls: List<TwPicks.Pick> = emptyList(), val etfBears: List<TwPicks.Pick> = emptyList(), val etfAnalyzed: Int = 0,
+        /** 前一份報表推薦名單到本日收盤的實際表現 */
+        val perf: Perf? = null,
     ) {
         val hasEtf: Boolean get() = etfUp + etfDown + etfFlat > 0
         val moodLabel: String get() = when (mood) { 2 -> "強勢偏多"; 1 -> "偏多"; -1 -> "偏空"; -2 -> "弱勢偏空"; else -> "中性震盪" }
@@ -76,7 +78,7 @@ object DailyReport {
             .put("ea", JSONArray().apply { etfActives.forEach { put(it.toJson()) } })
             .put("eb", JSONArray().apply { etfBulls.forEach { put(it.toJson()) } })
             .put("ex", JSONArray().apply { etfBears.forEach { put(it.toJson()) } })
-            .put("en", etfAnalyzed)
+            .put("en", etfAnalyzed).put("pf", perf?.toJson() ?: JSONObject.NULL)
 
         companion object {
             fun of(o: JSONObject): Report {
@@ -94,9 +96,54 @@ object DailyReport {
                     o.optJSONArray("sum")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
                     o.optInt("eu"), o.optInt("ed"), o.optInt("ef"), o.optDouble("ev", 0.0),
                     movers("eg"), movers("el"), movers("ea"), picks("eb"), picks("ex"), o.optInt("en"),
+                    o.optJSONObject("pf")?.let { Perf.of(it) },
                 )
             }
         }
+    }
+
+    /** 單一名單的表現：平均報酬、勝率（看漲＝上漲比例；看跌＝下跌比例） */
+    data class Group(val n: Int, val avg: Double, val win: Int, val best: List<Pair<String, Double>>, val worst: List<Pair<String, Double>>) {
+        val winRate: Double get() = if (n > 0) win * 100.0 / n else 0.0
+        fun toJson(): JSONObject = JSONObject().put("n", n).put("a", avg).put("w", win)
+            .put("b", JSONArray().apply { best.forEach { put(JSONArray(listOf(it.first, it.second))) } })
+            .put("x", JSONArray().apply { worst.forEach { put(JSONArray(listOf(it.first, it.second))) } })
+        companion object {
+            fun of(o: JSONObject): Group {
+                fun l(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getJSONArray(it).let { p -> p.optString(0) to p.optDouble(1) } } } ?: emptyList()
+                return Group(o.optInt("n"), o.optDouble("a"), o.optInt("w"), l("b"), l("x"))
+            }
+        }
+    }
+
+    data class Perf(val fromDate: String, val bull: Group?, val bear: Group?, val etfBull: Group?, val etfBear: Group?, val market: Double) {
+        fun toJson(): JSONObject = JSONObject().put("f", fromDate).put("m", market)
+            .put("b", bull?.toJson() ?: JSONObject.NULL).put("x", bear?.toJson() ?: JSONObject.NULL)
+            .put("eb", etfBull?.toJson() ?: JSONObject.NULL).put("ex", etfBear?.toJson() ?: JSONObject.NULL)
+        companion object {
+            fun of(o: JSONObject) = Perf(o.optString("f"), o.optJSONObject("b")?.let { Group.of(it) }, o.optJSONObject("x")?.let { Group.of(it) },
+                o.optJSONObject("eb")?.let { Group.of(it) }, o.optJSONObject("ex")?.let { Group.of(it) }, o.optDouble("m"))
+        }
+    }
+
+    /** 歷史累計：所有已存報表的前次推薦表現加總 */
+    data class Track(val days: Int, val bullAvg: Double, val bullWin: Double, val bearAvg: Double, val bearWin: Double, val excess: Double)
+
+    fun track(limit: Int = 60): Track? {
+        val ps = dates.take(limit).mapNotNull { load(it)?.perf }
+        if (ps.isEmpty()) return null
+        val b = ps.mapNotNull { it.bull }; val x = ps.mapNotNull { it.bear }
+        fun avg(l: List<Group>) = if (l.isEmpty()) 0.0 else l.sumOf { it.avg * it.n } / l.sumOf { it.n }.coerceAtLeast(1)
+        fun win(l: List<Group>) = if (l.isEmpty()) 0.0 else l.sumOf { it.win } * 100.0 / l.sumOf { it.n }.coerceAtLeast(1)
+        return Track(ps.size, avg(b), win(b), avg(x), win(x), avg(b) - ps.map { it.market }.average())
+    }
+
+    private fun group(list: List<TwPicks.Pick>, now: Map<String, Double>, bull: Boolean): Group? {
+        val rs = list.mapNotNull { p -> now[p.symbol]?.takeIf { p.price > 0 && it > 0 }?.let { p to (it / p.price - 1) * 100 } }
+        if (rs.isEmpty()) return null
+        val sorted = rs.sortedByDescending { it.second }
+        return Group(rs.size, rs.map { it.second }.average(), rs.count { if (bull) it.second > 0 else it.second < 0 },
+            sorted.take(3).map { it.first.name to it.second }, sorted.takeLast(3).reversed().map { it.first.name to it.second })
     }
 
     const val TOP = 25
@@ -206,6 +253,13 @@ object DailyReport {
             val etfLosers = etfLiquid.sortedBy { pct(it.first) }.take(10).map(::mv)
             val etfActives = etfLiquid.sortedByDescending { it.first.value ?: 0.0 }.take(10).map(::mv)
 
+            // ---- 前一份報表的推薦，到本日收盤的實際表現
+            val nowPx = all.associate { (q, _) -> q.symbol to q.price }
+            val prevRep = dates.firstOrNull { it < date }?.let { load(it) }
+            val perf0 = prevRep?.let { pr ->
+                Perf(pr.date, group(pr.bulls, nowPx, true), group(pr.bears, nowPx, false), group(pr.etfBulls, nowPx, true), group(pr.etfBears, nowPx, false), 0.0)
+            }
+
             withContext(Dispatchers.Main) { stage = "取得指數與類股…" }
             val (ix, ox, sectors) = withContext(Dispatchers.IO) {
                 Triple(
@@ -232,6 +286,7 @@ object DailyReport {
 
             // ---- 市場氣氛：指數漲跌、漲跌家數比、看漲／看跌檔數
             val twPct = if (twPrev > 0) (twii / twPrev - 1) * 100 else 0.0
+            val perf = perf0?.copy(market = if (prevRep != null && prevRep.twii > 0 && twii > 0) (twii / prevRep.twii - 1) * 100 else 0.0)
             val breadth = if (up + down > 0) (up - down).toDouble() / (up + down) else 0.0
             val pickTilt = if (picks.isNotEmpty()) (picks.count { it.score > 0.6 } - picks.count { it.score < -0.6 }).toDouble() / picks.size else 0.0
             val m = twPct / 1.0 + breadth * 2 + pickTilt * 2
@@ -258,11 +313,16 @@ object DailyReport {
                 (if (etfPicks.isNotEmpty()) "分析 ${etfPicks.size} 檔 ETF" +
                     (etfBulls.take(3).takeIf { it.isNotEmpty() }?.let { l -> "，看漲前三：" + l.joinToString("、") { it.name } } ?: "") +
                     (etfBears.take(3).takeIf { it.isNotEmpty() }?.let { l -> "，看跌前三：" + l.joinToString("、") { it.name } } ?: "") + "。" else "")
+            perf?.bull?.let { b ->
+                sum += "前次（" + perf.fromDate.substring(5).replace("-", "/") + "）看漲名單平均 " + "%+.2f".format(b.avg) + "%、上漲比例 " + "%.0f".format(b.winRate) + "%" +
+                    (perf.bear?.let { x -> "；看跌名單平均 " + "%+.2f".format(x.avg) + "%、下跌比例 " + "%.0f".format(x.winRate) + "%" } ?: "") +
+                    "（同期加權 " + "%+.2f".format(perf.market) + "%）。"
+            }
             sum += "市場氣氛：" + when (mood) { 2 -> "強勢偏多"; 1 -> "偏多"; -1 -> "偏空"; -2 -> "弱勢偏空"; else -> "中性震盪" } + "。"
 
             val r = Report(date, System.currentTimeMillis(), twii, twii - twPrev, twPct, ixs.takeLast(60), otcIdx, otcPct,
                 up, down, flat, limitUp, limitDown, tseValue, otcValue, hist, sec, gainers, losers, actives, bulls, bears, picks.size, mood, sum,
-                etfUp, etfDown, etfFlat, etfValue, etfGainers, etfLosers, etfActives, etfBulls, etfBears, etfPicks.size)
+                etfUp, etfDown, etfFlat, etfValue, etfGainers, etfLosers, etfActives, etfBulls, etfBears, etfPicks.size, perf)
             withContext(Dispatchers.IO) {
                 runCatching { File(dir, "$date.json").writeText(r.toJson().toString()) }
                 // 保留 120 份
