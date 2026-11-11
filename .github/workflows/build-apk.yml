@@ -52,6 +52,14 @@ jobs:
           name: ClaudeETF-v1.${{ env.MINOR }}.${{ env.PATCH }}
           path: ${{ steps.apk.outputs.name }}
 
+      # 更新說明：取 commit 訊息並去掉署名行（Co-Authored-By、Claude-Session）
+      - name: Release notes
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          printf '%s\n' "$MSG" | grep -vE '^(Co-Authored-By|Claude-Session):' > notes.md
+          printf '\n---\n版本 1.%s.%s（建置 #%s）\n下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。App 內「我的 › 關於 › 檢查更新」可線上更新。\n' "${{ env.MINOR }}" "${{ env.PATCH }}" "${{ github.run_number }}" >> notes.md
+
       # 發布到 Releases，手機直接下載安裝；App 內線上更新也從這裡取得
       - uses: softprops/action-gh-release@v2
         with:
@@ -59,11 +67,5 @@ jobs:
           name: ClaudeETF v1.${{ env.MINOR }}.${{ env.PATCH }}
           prerelease: false
           make_latest: true
-          body: |
-            ${{ github.event.head_commit.message }}
-
-            ---
-            版本 1.${{ env.MINOR }}.${{ env.PATCH }}（建置 #${{ github.run_number }}）
-            commit: ${{ github.sha }}
-            下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。App 內「我的 › 關於 › 檢查更新」可線上更新。
+          body_path: notes.md
           files: ${{ steps.apk.outputs.name }}
