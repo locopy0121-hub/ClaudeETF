@@ -561,6 +561,18 @@ fun EntryAdviceCard(q0: Quote, onKline: () -> Unit = {}, onBand: () -> Unit = {}
         }
         if (a == null) { Label("正在整合 K 線、投資分析、光譜、分析師、籌碼與波動資料…", Modifier.padding(top = 8.dp)); return@Card }
         EntryAdviceBody(a)
+        // K 棒策略的明確進場時機（普通股／ETF 分流引擎）
+        com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol]?.let { k ->
+            if (k.signals.isNotEmpty()) {
+                Text("進場時機（" + (if (k.etf) "ETF" else "普通股") + " K 棒策略）", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                k.signals.take(3).forEach { sg ->
+                    val c = if (sg.bullish) Trend.fg(1.0) else Trend.fg(-1.0)
+                    Text("• " + sg.strategy.cn + "（" + sg.entryTimingType.cn + "，" + sg.status.cn + "，信心 " + sg.confidenceScore + "）",
+                        color = c, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+                    Text(sg.entryTimingDescription, color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+            }
+        }
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("K 線詳情 ›", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable(onClick = onKline).padding(horizontal = 10.dp, vertical = 6.dp))
             Text("股價光譜 ›", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable(onClick = onBand).padding(horizontal = 10.dp, vertical = 6.dp))

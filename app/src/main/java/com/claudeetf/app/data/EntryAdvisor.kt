@@ -97,17 +97,31 @@ object EntryAdvisor {
         if (k == null && inv == null) return null
         val src = ArrayList<Source>()
         // ---- K 線（日、週）
+        val etf = inv?.etf != null || k?.etf == true
         k?.let {
-            src += Source("K 線（日）", "技術", clampS(it.score / 1.2), 16.0, it.dir.label + " · " + it.entry.label + "（強度 " + it.strength + "）")
+            // ETF 均值回歸、短線形態雜訊多：日 K 權重較低；普通股較高
+            src += Source("K 線（日）", "技術", clampS(it.score / 1.2), if (etf) 12.0 else 16.0, it.dir.label + " · " + it.entry.label + "（強度 " + it.strength + "）")
+            // K 棒策略訊號（普通股：SFP、BOS／FVG、箱型突破、均線吞噬；ETF：母子線、上升三法、恐慌止跌、缺口回補）
+            val act = it.signals.filter { s -> s.age <= 2 }
+            if (act.isNotEmpty()) {
+                val v = act.sumOf { s ->
+                    val w = s.confidenceScore / 100.0 * (if (s.status == KBarSignalEngine.Status.WAITING) 0.4 else 1.0) * (if (s.age == 0) 1.0 else 0.7)
+                    if (s.bullish) w * 1.6 else -w * 1.6
+                }
+                src += Source("K 棒策略", "技術", clampS(v), 10.0,
+                    (if (etf) "ETF 引擎：" else "普通股引擎：") + act.joinToString("、") { s -> s.strategy.cn + (if (s.bullish) "（多" else "（空") + "，" + s.status.cn + "）" })
+            }
         }
         kw?.let {
             src += Source("K 線（週）", "技術", clampS(it.score / 1.2), 12.0, it.dir.label + "（中期，強度 " + it.strength + "）")
         }
         // ---- 投資分析指數各因子（風險因子改由「波動」計算，避免重複）
-        val fw = mapOf(
+        val fwBase = mapOf(
             "趨勢" to 11.0, "動能" to 7.0, "估值" to 11.0, "位置" to 5.0, "籌碼" to 10.0, "市場" to 8.0, "分析師" to 10.0,
             "股價光譜" to 13.0, "配息" to 8.0, "折溢價" to 6.0, "流動性" to 3.0, "規模費用" to 3.0,
         )
+        // ETF：光譜（均值回歸）與大盤權重提高，動能降低
+        val fw = if (etf) fwBase + mapOf("股價光譜" to 16.0, "市場" to 11.0, "動能" to 5.0) else fwBase
         val groupOf = mapOf("趨勢" to "技術", "動能" to "技術", "位置" to "價位", "股價光譜" to "價位", "估值" to "基本面", "分析師" to "基本面",
             "籌碼" to "籌碼", "市場" to "大盤", "配息" to "ETF", "折溢價" to "ETF", "流動性" to "ETF", "規模費用" to "ETF")
         inv?.factors?.forEach { f ->
@@ -223,6 +237,7 @@ object EntryAdvisor {
             2 -> "建議進場"
             1 -> "可分批進場"
             0 -> when {
+                k?.entry?.label == "等突破觸發" -> "等突破觸發"
                 (tech ?: 0.0) >= 0.4 && (value ?: 0.0) < 0 -> "等回測再進"
                 bullRev && total < 0 -> "觀察止跌"
                 else -> "觀望"

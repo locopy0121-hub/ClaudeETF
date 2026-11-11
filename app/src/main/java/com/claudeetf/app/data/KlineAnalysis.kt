@@ -127,6 +127,10 @@ object KlineAnalysis {
         val forward: Int,
         val reasons: List<String>,
         val entry: Entry,
+        /** K 棒策略訊號（普通股／ETF 分流） */
+        val signals: List<KBarSignalEngine.TradeSignal> = emptyList(),
+        /** 依 ETF 或普通股引擎 */
+        val etf: Boolean = false,
     )
 
     /** 進場建議：level 2 建議進場 … -2 不宜進場 */
@@ -367,6 +371,45 @@ object KlineAnalysis {
 
     private fun r2(v: Double) = com.claudeetf.app.util.Fmt.num(v, 2)
 
+    /**
+     * 以 K 棒策略訊號修正進場建議：
+     *   近 1 日成立（或已觸發）的做多訊號、信心 ≥ 70 → 提高一級（強烈偏空時最多到「等待止跌確認」）；
+     *   等待觸發的訊號（限價回踩、盤中突破）→ 標示觸發價位，不提前進場；
+     *   偏空訊號 → 可進場等級降為觀望，持股者減碼。
+     * ETF：均值回歸特性，強烈偏空但 RSI 超賣或出現恐慌止跌時不給「不宜進場」，改為分批等待止跌。
+     */
+    fun refineEntry(r: Result, sigs: List<KBarSignalEngine.TradeSignal>, etf: Boolean): Entry {
+        val e = r.entry
+        val now = sigs.filter { it.age <= 1 && it.status != KBarSignalEngine.Status.WAITING && it.confidenceScore >= 70 }
+        val bull = now.filter { it.bullish }.maxByOrNull { it.confidenceScore }
+        val bear = now.filter { !it.bullish }.maxByOrNull { it.confidenceScore }
+        val wait = sigs.filter { it.bullish && it.status == KBarSignalEngine.Status.WAITING }.maxByOrNull { it.confidenceScore }
+        fun tag(s: KBarSignalEngine.TradeSignal) = "【" + s.strategy.cn + "｜" + s.entryTimingType.cn + "】" + s.entryTimingDescription
+        if (bull != null && (bear == null || bull.confidenceScore > bear.confidenceScore + 5)) {
+            val lv = when {
+                r.dir == Dir.STRONG_BEAR && !(etf && bull.strategy == KBarSignalEngine.StrategyType.PANIC_EXHAUSTION) -> maxOf(e.level, -1)
+                e.level >= 1 && bull.confidenceScore >= 80 && r.dir.bullish -> 2
+                else -> minOf(2, maxOf(e.level + 1, if (etf) 1 else 0))
+            }
+            val label = when (lv) { 2 -> "建議進場"; 1 -> "可分批進場"; 0 -> "等回測再進"; else -> "等待止跌確認" }
+            return Entry(label, lv, tag(bull) + " 停損 " + fmt(bull.stopLossPrice) + "。" + e.reason, if (lv >= 1) "續抱，可依訊號加碼" else e.holderTip)
+        }
+        if (bear != null) {
+            val lv = minOf(e.level, if (r.dir.bullish) 0 else -1)
+            val label = when (lv) { 0 -> "觀望"; -1 -> "暫不進場"; else -> "不宜進場" }
+            return Entry(label, lv, tag(bear) + " " + e.reason, "減碼，跌破 " + fmt(bear.stopLossPrice.coerceAtMost(r.ctx.support)) + " 防守")
+        }
+        if (etf && e.level <= -2) {
+            val rsi = KBarSignalEngine.rsi(r.candles.map { it.c })
+            if (rsi < 32) return Entry("等待止跌確認", -1, "ETF 已超賣（RSI " + "%.0f".format(rsi) + "），不追殺；等止跌 K 棒或缺口回補再分批。" + e.reason, "暫不加碼，勿殺低")
+        }
+        if (wait != null && e.level in -1..1) {
+            val label = if (wait.entryTimingType == KBarSignalEngine.EntryTimingType.INTRADAY_PRICE_BREAKOUT) "等突破觸發" else "等回測再進"
+            return Entry(if (e.level >= 1) e.label else label, maxOf(e.level, 0), tag(wait) + " " + e.reason, e.holderTip)
+        }
+        return e
+    }
+
     private fun plan(cur: Candle, dir: Dir, latest: List<Hit>, x: Ctx): Plan? {
         val p = cur.c
         val atr = x.atr.takeIf { it > 0 } ?: return null
@@ -474,13 +517,17 @@ object KlineAnalysis {
                 }
             }
             analyze(cs, if (weekly) "週 K" else "日 K", if (weekly) 4 else 5)?.let { res ->
+                val etf = InvestAnalysis.isEtf(q)
                 // 台股：操作計畫的價位依證交所升降單位對齊
-                if (q.market != Market.TW || res.plan == null) res else {
-                    val etf = q.isEtf || q.symbol.startsWith("00")
+                val r0 = if (q.market != Market.TW || res.plan == null) res else {
                     fun s(v: Double) = com.claudeetf.app.util.TwSession.snap(v, etf)
                     val p = res.plan
                     res.copy(plan = p.copy(entryMin = s(p.entryMin), entryMax = s(p.entryMax), stop = s(p.stop), tp1 = s(p.tp1), tp2 = s(p.tp2)))
                 }
+                // K 棒策略訊號：普通股與 ETF 用不同的策略組合，並據以調整進場建議
+                val tick: (Double) -> Double = if (q.market == Market.TW) { p -> com.claudeetf.app.util.TwSession.tick(p, etf) } else { _ -> 0.01 }
+                val sigs = runCatching { KBarSignalEngine.analyze(q.symbol, cs, etf, tick) }.getOrDefault(emptyList())
+                r0.copy(signals = sigs, etf = etf, entry = refineEntry(r0, sigs, etf))
             }
         }
         if (cache.size > 200) cache.clear()

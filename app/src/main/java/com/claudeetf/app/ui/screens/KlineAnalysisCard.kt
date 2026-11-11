@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.claudeetf.app.data.AppState
 import com.claudeetf.app.data.KlineAnalysis
+import com.claudeetf.app.data.KBarSignalEngine
 import com.claudeetf.app.data.Market
 import com.claudeetf.app.data.Quote
 import com.claudeetf.app.ui.Card
@@ -195,6 +196,7 @@ fun KlineAnalysisCard(q0: Quote) {
             }
             EntryTag(r.entry, big = true)
         }
+        SignalSection(r)
         // 強度條：左空右多
         Box(Modifier.fillMaxWidth().padding(top = 6.dp).height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Bg)) {
             Box(Modifier.fillMaxHeight().fillMaxWidth(r.strength / 100f).clip(RoundedCornerShape(4.dp)).background(dc.copy(alpha = 0.85f)))
@@ -415,6 +417,48 @@ private fun KCondBox(q: Quote, r: KlineAnalysis.Result) {
                 }
                 Text(if (e.met) "達成" else "未達成", color = if (e.met) C.OnPrimary else C.Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (e.met) C.Primary else C.Card).padding(horizontal = 8.dp, vertical = 3.dp))
+            }
+        }
+    }
+}
+
+
+/** K 棒策略訊號：普通股（SFP、BOS／FVG、箱型突破、均線吞噬）／ETF（母子線、上升三法、恐慌止跌、缺口回補） */
+@Composable
+private fun SignalSection(r: KlineAnalysis.Result) {
+    var open by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("K 棒策略訊號", Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(if (r.etf) "ETF 引擎" else "普通股引擎", color = C.Primary, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(C.Primary.copy(alpha = 0.15f)).padding(horizontal = 6.dp, vertical = 2.dp))
+        }
+        Label(if (r.etf) "偵測：母子線壓縮突破、上升三法中繼、恐慌大跌末端止跌、竭盡缺口回補" else "偵測：流動性掃蕩（SFP）、突破＋缺口回踩、箱型爆量突破、關鍵均線吞噬")
+        if (r.signals.isEmpty()) { Label("近期沒有符合條件的策略訊號。", Modifier.padding(top = 4.dp)); return@Column }
+        r.signals.forEach { s ->
+            val c = if (s.bullish) Trend.up else Trend.down
+            val isOpen = open == s.id
+            Column(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(8.dp)).background(C.Card).clickable { open = if (isOpen) null else s.id }.padding(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(s.direction.cn, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(c).padding(horizontal = 5.dp, vertical = 1.dp))
+                    Text(" " + s.strategy.cn, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text(s.status.cn, color = if (s.status == KBarSignalEngine.Status.WAITING) Color(0xFFF2B544) else C.Text2, fontSize = 11.sp)
+                    Text("  信心 ${s.confidenceScore}", color = c, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(s.entryTimingType.cn, color = C.Primary, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(C.Primary.copy(alpha = 0.12f)).padding(horizontal = 5.dp, vertical = 1.dp))
+                    Text("  進場 " + Fmt.price(s.entryPrice) + " · 停損 " + Fmt.price(s.stopLossPrice) + " · 目標 " + Fmt.price(s.takeProfitTargets.tp1) +
+                        (s.takeProfitTargets.tp2?.let { "／" + Fmt.price(it) } ?: "") + " · 風報比 1:" + Fmt.num(s.riskRewardRatio, 1),
+                        color = C.Text2, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
+                Text(s.entryTimingDescription, color = C.Text, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 4.dp))
+                if (isOpen) {
+                    Text("型態：" + s.pattern, color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 4.dp))
+                    Text("時機說明：" + s.entryTimingType.description, color = C.Muted, fontSize = 11.sp, lineHeight = 16.sp)
+                    s.trailing?.let { Text(it, color = C.Muted, fontSize = 11.sp) }
+                } else Label("點一下看型態說明")
             }
         }
     }
