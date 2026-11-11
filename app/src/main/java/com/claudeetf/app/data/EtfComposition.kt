@@ -40,6 +40,8 @@ object EtfComposition {
         val changes: List<Change>?, val prevAsOf: String?, val tw: Boolean,
         /** 基金規模（元，Yahoo 淨資產，可能延遲）；用於估算持股市值 */
         val aum: Double? = null,
+        /** 持股資料來源 */
+        val source: String = "",
     ) {
         /** 已揭露的權重合計 */
         val disclosed: Double get() = rows.sumOf { it.weight }
@@ -148,7 +150,7 @@ object EtfComposition {
         val industries = if (tw) rows.groupBy { it.industry }.map { (k, l) -> k to l.sumOf { it.weight } }.sortedByDescending { it.second }
         else h.sectors
         val (changes, prev) = if (tw && h.asOf != null) diff(q.symbol, h.asOf, rows) else null to null
-        Result(rows, industries, h.asOf, changes, prev, tw, aum).also { cache[q.symbol] = today() to it }
+        Result(rows, industries, h.asOf, changes, prev, tw, aum, h.source).also { cache[q.symbol] = today() to it }
     }
 
     /** 存今天的快照，並與前一個資料日比較 */

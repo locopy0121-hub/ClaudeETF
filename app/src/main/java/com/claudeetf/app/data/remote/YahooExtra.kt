@@ -273,7 +273,7 @@ object YahooExtra {
 
     /** shares：持有股數（MoneyDJ 有提供時） */
     data class Holding(val symbol: String, val name: String, val weightPct: Double, val shares: Double? = null)
-    data class EtfHoldings(val holdings: List<Holding>, val sectors: List<Pair<String, Double>>, val asOf: String?)
+    data class EtfHoldings(val holdings: List<Holding>, val sectors: List<Pair<String, Double>>, val asOf: String?, val source: String = "")
 
     private val sectorNames = mapOf(
         "technology" to "科技", "financial_services" to "金融", "healthcare" to "醫療保健",
@@ -301,7 +301,7 @@ object YahooExtra {
             }
         }
         if (list.isEmpty() && sectors.isEmpty()) return null
-        return EtfHoldings(list, sectors.sortedByDescending { it.second }, null)
+        return EtfHoldings(list, sectors.sortedByDescending { it.second }, null, "Yahoo Finance")
     }
 
     data class Ownership(val breakdown: List<Pair<String, String>>, val top: List<Triple<String, String, String>>)

@@ -1341,6 +1341,7 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
                     Label(if (r.aum != null) "Yahoo 淨資產" else "暫無資料")
                 }
             }
+            Label("持股來源：" + r.source.ifBlank { "MoneyDJ" } + (r.asOf?.let { "（$it）" } ?: ""), Modifier.padding(top = 8.dp))
             if (r.disclosed < 98) Label("此 ETF 的資料來源只揭露前 ${r.rows.size} 項持股（合計 ${Fmt.num(r.disclosed, 1)}%），其餘部位未公開；圖中「其他」含未揭露部位。",
                 Modifier.padding(top = 8.dp))
             if (r.rows.any { it.estimated }) Label("標「≈」的持股市值與張數是以「權重 × 基金規模 ÷ 收盤價」估算，僅供參考。", Modifier.padding(top = 4.dp))
@@ -1509,7 +1510,7 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
     }
     item {
         Label(
-            "資料來源：" + (if (r.tw) "MoneyDJ 持股明細、證交所／櫃買收盤與產業別、" else "") + "Yahoo Finance。" +
+            "資料來源：持股 " + r.source.ifBlank { if (r.tw) "MoneyDJ" else "Yahoo Finance" } + (if (r.tw) "；股價與產業別 證交所／櫃買" else "") + "。" +
                 (if (r.tw) "成分只有公司全名時，以證交所／櫃買公司基本資料比對代號。點個股可開啟該股頁面。持股市值＝持有股數 × 最近收盤價；操作日報依 App 記錄的每日持股比較，主動式 ETF 請以投信公告為準。" else ""),
             Modifier.padding(top = 6.dp),
         )

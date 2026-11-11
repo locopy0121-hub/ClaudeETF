@@ -137,12 +137,25 @@ object MoneyDjHoldings {
 
     private fun clean(s: String) = tagRe.replace(s, "").replace("&nbsp;", " ").replace("&amp;", "&").trim()
 
+    private fun asOfDate(s: String?): java.time.LocalDate? = s?.let { parseTwDate(it) }
+
+    /**
+     * 兩個頁面都抓：
+     *  Basic0007 ＝ 最新資料日的前十大（含代號與持有股數，每日更新）
+     *  Basic0007B ＝ 全部持股（多為月報／季報，日期較舊，部分只有公司全名）
+     * 全部持股的日期不比前十大舊、且筆數較多時用全部持股；否則用最新的前十大。
+     */
     fun fetch(code: String): YahooExtra.EtfHoldings? {
-        // 先抓「全部持股」頁（Basic0007B），失敗再用前幾大持股頁
         val ua = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 14) Mobile")
-        val html = runCatching { Http.get("https://www.moneydj.com/ETF/X/Basic/Basic0007B.xdjhtm?etfid=${code.uppercase()}.TW", ua, timeoutMs = 20_000) }
-            .getOrNull()?.takeIf { it.contains("投資比例") }
-            ?: Http.get("https://www.moneydj.com/ETF/X/Basic/Basic0007.xdjhtm?etfid=${code.uppercase()}.TW", ua, timeoutMs = 20_000)
+        val top = runCatching { parse(Http.get("https://www.moneydj.com/ETF/X/Basic/Basic0007.xdjhtm?etfid=${code.uppercase()}.TW", ua, timeoutMs = 20_000)) }.getOrNull()
+        val all = runCatching { parse(Http.get("https://www.moneydj.com/ETF/X/Basic/Basic0007B.xdjhtm?etfid=${code.uppercase()}.TW", ua, timeoutMs = 20_000)) }.getOrNull()
+        if (top == null) return all
+        if (all == null) return top
+        val dt = asOfDate(top.asOf); val da = asOfDate(all.asOf)
+        return if (all.holdings.size > top.holdings.size && (dt == null || da == null || !da.isBefore(dt))) all else top
+    }
+
+    private fun parse(html: String): YahooExtra.EtfHoldings? {
         val list = ArrayList<YahooExtra.Holding>()
         for (m in rowRe.findAll(html)) {
             val raw = cellRe.findAll(m.groupValues[1]).map { it.groupValues[1] }.toList()
@@ -163,6 +176,45 @@ object MoneyDjHoldings {
         }
         if (list.isEmpty()) return null
         val asOf = dateRe.find(html)?.groupValues?.get(1)
-        return YahooExtra.EtfHoldings(list.distinctBy { it.name }.sortedByDescending { it.weightPct }, emptyList(), asOf)
+        return YahooExtra.EtfHoldings(list.distinctBy { it.name }.sortedByDescending { it.weightPct }, emptyList(), asOf, "MoneyDJ")
+    }
+}
+
+/**
+ * 主動式 ETF 每日完整持股（PCF）：zdsetf.com 彙整各投信官網每日公告的投資組合（含代號、股數、權重、市值）。
+ * GET https://zdsetf.com/api/etfs/{代號}/snapshot
+ * 欄位名稱各檔略有不同，依序容錯：日期 snapshot_date／as_of_date／date；清單 holdings／positions／stocks；
+ * 代號 stock_code／code／ticker；名稱 stock_name／name；權重 weight_pct／weight／weight_percent；股數 shares／share。
+ */
+object ActiveEtfPcf {
+    fun fetch(code: String): YahooExtra.EtfHoldings? {
+        val body = Http.get(
+            "https://zdsetf.com/api/etfs/${code.uppercase()}/snapshot",
+            mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36", "Accept" to "application/json"),
+            timeoutMs = 20_000,
+        ).trim()
+        if (!body.startsWith("{")) return null
+        val o = org.json.JSONObject(body)
+        val date = listOf("snapshot_date", "as_of_date", "date").firstNotNullOfOrNull { k -> o.optString(k).takeIf { it.isNotBlank() && it != "null" } }
+        val arr = listOf("holdings", "positions", "stocks").firstNotNullOfOrNull { o.optJSONArray(it) } ?: return null
+        fun num(x: org.json.JSONObject, vararg keys: String): Double? = keys.firstNotNullOfOrNull { k ->
+            if (!x.has(k) || x.isNull(k)) null else x.optString(k).replace(",", "").replace("%", "").trim().toDoubleOrNull()
+        }
+        val list = ArrayList<YahooExtra.Holding>()
+        for (i in 0 until arr.length()) {
+            val x = arr.optJSONObject(i) ?: continue
+            val sym = listOf("stock_code", "code", "ticker").firstNotNullOfOrNull { k -> x.optString(k).trim().takeIf { it.isNotBlank() && it != "null" } } ?: ""
+            val name = listOf("stock_name", "name").firstNotNullOfOrNull { k -> x.optString(k).trim().takeIf { it.isNotBlank() && it != "null" } } ?: sym
+            val w = num(x, "weight_pct", "weight", "weight_percent") ?: continue
+            if (name.isBlank()) continue
+            // 純數字代號才是台股（期貨、現金等保留名稱，歸「其他部位」）
+            val tw = sym.takeIf { it.matches(Regex("[0-9]{4,6}[A-Z]?")) } ?: ""
+            list += YahooExtra.Holding(tw, if (tw.isEmpty() && sym.isNotEmpty() && sym != name) "$name（$sym）" else name, w, num(x, "shares", "share")?.takeIf { it > 0 })
+        }
+        if (list.isEmpty()) return null
+        // 權重若是小數（合計約 1），換成百分比
+        val total = list.sumOf { it.weightPct }
+        val fixed = if (total in 0.5..1.5) list.map { it.copy(weightPct = it.weightPct * 100) } else list
+        return YahooExtra.EtfHoldings(fixed.sortedByDescending { it.weightPct }, emptyList(), date?.replace("-", "/"), "投信每日 PCF（zdsetf 彙整）")
     }
 }

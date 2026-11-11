@@ -470,6 +470,9 @@ object StockInfoRepo {
 
     suspend fun holdings(q: Quote): YahooExtra.EtfHoldings = withContext(Dispatchers.IO) {
         val tw = q.market == Market.TW
+        // 主動式 ETF（代號結尾 A）：先抓投信每日公告的完整持股
+        val fromPcf = if (tw && q.symbol.uppercase().endsWith("A")) runCatching { com.claudeetf.app.data.remote.ActiveEtfPcf.fetch(q.symbol) }.getOrNull() else null
+        if (fromPcf != null && fromPcf.holdings.size >= 5) return@withContext fromPcf
         val fromDj = if (tw) runCatching { MoneyDjHoldings.fetch(q.symbol) }.getOrNull() else null
         val fromYahoo = runCatching { YahooExtra.etfHoldings(yahooSymbol(q)) }.getOrNull()
         when {
