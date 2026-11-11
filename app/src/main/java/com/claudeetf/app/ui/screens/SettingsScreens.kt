@@ -248,6 +248,7 @@ private fun AddAlertCard(initialSymbol: String = "", onDone: () -> Unit) {
 
 // ============================== 我的・設定 ==============================
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(nav: NavController, section: String? = null) {
     val context = LocalContext.current
@@ -256,6 +257,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
     val version = remember { BuildConfigInfo.versionName(context) }
     if (section == null) { SettingsMenu(nav, version); return }
     val title = SETTINGS_SECTIONS.flatMap { it.second }.firstOrNull { it.key == section }?.title ?: "我的"
+    var holdOpen by rememberSaveable { mutableStateOf<String?>(if (AppState.holdView == 1) "wall" else "card") }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar(title, onBack = { nav.popBackStack() })
@@ -455,8 +457,18 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 }
             }
             if (section == "hold") {
-                item { HoldStyleSettings() }
-                item { WallStyleSettings() }
+                // 兩種模式的設定卡片收合切換（一次展開一張）；行情牆展開時預覽固定在頂部
+                item {
+                    HoldModeHeader("清單模式（持股卡片）", "排版、項目位置、字級、行距與動畫", holdOpen == "card") { holdOpen = if (holdOpen == "card") null else "card" }
+                }
+                if (holdOpen == "card") item { HoldStyleSettings() }
+                item {
+                    HoldModeHeader("行情牆模式", "每列 ${AppState.wallStyle.cols} 格 · 顯示 ${AppState.wallStyle.items.count { it.show }} 項", holdOpen == "wall") { holdOpen = if (holdOpen == "wall") null else "wall" }
+                }
+                if (holdOpen == "wall") {
+                    stickyHeader { Box(Modifier.fillMaxWidth().background(C.Bg).padding(vertical = 6.dp)) { WallPreview() } }
+                    item { WallStyleSettings(showPreview = false) }
+                }
             }
             if (section == "look") {
                 item { AppIconPicker() }
@@ -2004,5 +2016,19 @@ private fun StockPageSettings() {
         OptToggle("行情價下方顯示即時 K 棒訊號（盤中）", AppState.showLiveSignal) { AppState.updateShowLiveSignal(it) }
         if (AppState.showLiveSignal) OptToggle("收盤後顯示最終進場標籤（關閉則自動隱藏）", AppState.showFinalSignal) { AppState.updateShowFinalSignal(it) }
         OptToggle("走勢圖標示我的買賣點", AppState.showTradeMarks) { AppState.updateShowTradeMarks(it) }
+    }
+}
+
+
+/** 持股卡片樣式頁：模式卡片的收合標題 */
+@Composable
+private fun HoldModeHeader(title: String, summary: String, open: Boolean, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (open) C.Primary.copy(alpha = 0.12f) else C.Card)
+        .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(summary, color = C.Muted, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        Text(if (open) "收合 ▲" else "展開 ▼", color = C.Primary, fontSize = 12.sp)
     }
 }

@@ -83,6 +83,7 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, onClick: 
     val ret = q?.price?.takeIf { it > 0 && h.avgCost > 0 }?.let { (it / h.avgCost - 1) * 100 }
     val total = AppState.holdings.sumOf { AppState.marketValueTwd(it) }.takeIf { it > 0 }
 
+    fun sg(v: Double, d: Int) = (if (v > 0) "+" else if (v < 0) "−" else "") + if (d > 0) Fmt.numTrunc(abs(v), d) else Fmt.num(abs(v))
     fun text(i: WallItem): String? {
         fun p(label: String) = if (i.label) "$label " else ""
         return when (i.id) {
@@ -90,13 +91,13 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, onClick: 
             "code" -> h.symbol
             "price" -> q?.price?.takeIf { it > 0 }?.let { Fmt.price(it) } ?: "—"
             "arrow" -> if (chg > 0) "▲" else if (chg < 0) "▼" else "－"
-            "chg" -> Fmt.signed(chg, if (abs(chg) < 10) 2 else 1)
+            "chg" -> sg(chg, if (abs(chg) < 10) 2 else 1)
             "pct" -> Fmt.num(abs(pct), 2) + "%"
             "band" -> com.claudeetf.app.data.InvestAnalysis.results[h.symbol]?.band?.zoneName?.let { p("光譜") + it }
             "mv" -> p("市值") + mask(Fmt.num(AppState.marketValueTwd(h)))
-            "day" -> p("今日") + mask(Fmt.signed(chg * h.shares * fx))
+            "day" -> p("今日") + mask(sg(chg * h.shares * fx, 0))
             "ret" -> ret?.let { p("報酬") + Fmt.signedPct(it) }
-            "pl" -> q?.price?.takeIf { it > 0 }?.let { p("損益") + mask(Fmt.signed(AppState.marketValueTwd(h) - AppState.costTwd(h))) }
+            "pl" -> q?.price?.takeIf { it > 0 }?.let { p("損益") + mask(sg(AppState.marketValueTwd(h) - AppState.costTwd(h), 0)) }
             "shares" -> Fmt.shares(h.shares) + " 股"
             "avg" -> p("均") + Fmt.price(h.avgCost)
             "cost" -> p("成本") + mask(Fmt.num(AppState.costTwd(h)))
@@ -129,8 +130,15 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, onClick: 
             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = textAlignOf(i.align))
     }
     @Composable fun Line(line: List<WallItem>) {
+        // 單一項目：整行依對齊；多個項目：依對齊分成左、中、右三組，各組依內容寬度排列，空間不足時左組省略
+        if (line.size == 1) { Box(Modifier.fillMaxWidth(), contentAlignment = alignOf(line[0].align)) { Item(line[0]) }; return }
+        val groups = (0..2).map { a -> line.filter { it.align == a } }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            line.forEach { i -> Box(Modifier.weight(1f), contentAlignment = alignOf(i.align)) { Item(i) } }
+            groups.forEachIndexed { a, g ->
+                if (a > 0) Spacer(Modifier.weight(1f))
+                if (g.isNotEmpty()) Row(if (a == 0) Modifier.weight(3f, fill = false) else Modifier,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) { g.forEach { Item(it) } }
+            }
         }
     }
     val headLines = lines(vis.filter { it.head })
@@ -217,9 +225,19 @@ private val ALIGN_NAMES = listOf("左", "中", "右")
 private val COLOR_OPTS = listOf(0 to "預設", 1 to "依漲跌", 2 to "白", 3 to "灰", 4 to "金", 5 to "主色")
 private val LABELED = setOf("band", "mv", "day", "ret", "pl", "avg", "cost", "weight", "vol")
 
+/** 行情牆即時預覽（設定頁置頂用） */
+@Composable
+fun WallPreview(modifier: Modifier = Modifier) {
+    val st = AppState.wallStyle
+    val samples = AppState.holdings.take(st.cols * 2).ifEmpty { listOf(Holding("0050", 1000.0, 85.0), Holding("0056", 1000.0, 36.0)) }
+    Box(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
+        QuoteWall(samples, st) {}
+    }
+}
+
 /** 設定頁：行情牆樣式（即時預覽＋百葉窗分區） */
 @Composable
-fun WallStyleSettings() {
+fun WallStyleSettings(showPreview: Boolean = true) {
     val st = AppState.wallStyle
     fun set(f: (WallStyle) -> WallStyle) = AppState.updateWallStyle(f(AppState.wallStyle))
     var open by remember { mutableStateOf<String?>("items") }
@@ -228,11 +246,7 @@ fun WallStyleSettings() {
     Card(padding = 14.dp) {
         Text("行情牆模式", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         Label("持股頁「行情牆」的格子：每個項目都能選擇顯示、位置、同行、對齊、字級、粗細與顏色；內距與行距可設負值，字高調整行高。點分區標題展開或收合。")
-        // 即時預覽（一直顯示）
-        val samples = AppState.holdings.take(st.cols * 2).ifEmpty { listOf(Holding("0050", 1000.0, 85.0), Holding("0056", 1000.0, 36.0)) }
-        Box(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg).padding(8.dp)) {
-            QuoteWall(samples, st) {}
-        }
+        if (showPreview) WallPreview(Modifier.padding(top = 10.dp))
 
         Blind("preset", "預設組合", "標準、精簡、完整資訊、大字看盤", open, ::toggle) {
             WChips(null, listOf(0 to "標準", 1 to "精簡", 2 to "完整資訊", 3 to "大字看盤"), -1) { k -> AppState.updateWallStyle(WallStyle.preset(k)); editing = null }
