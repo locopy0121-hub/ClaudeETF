@@ -456,6 +456,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
             }
             if (section == "hold") {
                 item { HoldStyleSettings() }
+                item { WallStyleSettings() }
             }
             if (section == "look") {
                 item { AppIconPicker() }
@@ -1158,7 +1159,7 @@ internal val SETTINGS_SECTIONS = listOf(
 private val SETTINGS_KEYWORDS = mapOf(
     "look" to "主題 深色 淺色 配色 紅漲綠跌 綠漲紅跌 字體 App圖示 icon 圖示",
     "watch" to "行情 自選 卡片 樣式 字級 欄位 進場標籤 動畫",
-    "hold" to "持股 卡片 樣式 欄位 市值 損益 行距 內距",
+    "hold" to "持股 卡片 樣式 欄位 市值 損益 行距 內距 行情牆 字高 字級",
     "widget" to "小工具 桌面 widget 透明 字級",
     "pages" to "首頁 卡片 排序 跑馬燈 指數 時段",
     "stock" to "個股頁 進場 徽章 角色 OS 泡泡 動畫 先投 預計投入 金額 買賣點 K棒訊號 投資分析指數 位置 大小",

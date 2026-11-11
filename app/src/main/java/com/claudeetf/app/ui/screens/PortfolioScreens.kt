@@ -73,7 +73,8 @@ import kotlin.math.roundToLong
 @Composable
 fun PortfolioScreen(nav: NavController) {
     var inTwd by remember { mutableStateOf(true) }
-    var heat by remember { mutableStateOf(false) }
+    val view = AppState.holdView
+    val heat = view == 2
     var actionMsg by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { runCatching { com.claudeetf.app.data.CorporateActions.scan() } }
     var accFilter by remember { mutableIntStateOf(-1) } // -1 = 全部帳戶
@@ -226,7 +227,17 @@ fun PortfolioScreen(nav: NavController) {
                     }
                 }
             }
-            item { Segmented(listOf("清單", "熱度圖"), if (heat) 1 else 0, { heat = it == 1 }) }
+            item { Segmented(listOf("清單", "行情牆", "熱度圖"), view, { AppState.updateHoldView(it) }) }
+            if (view == 1) {
+                item {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).clickable { nav.navigate(Routes.settings("hold")) }
+                        .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("行情牆設定", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
+                        Label("每列 ${AppState.wallStyle.cols} 格 · 字級 ${AppState.wallStyle.priceSize} ›")
+                    }
+                }
+                item { QuoteWall(tw + us) { nav.navigate(Routes.stock(it)) } }
+            }
             if (heat) {
                 item { HeatOptions() }
                 item {
@@ -262,7 +273,7 @@ fun PortfolioScreen(nav: NavController) {
                     )
                 }
             }
-            if (!heat) item {
+            if (view != 2) item {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Label("排序")
                     listOf("市值", "今日損益", "今日漲跌", "報酬率", "代號").forEachIndexed { i, n ->
@@ -273,8 +284,8 @@ fun PortfolioScreen(nav: NavController) {
                     }
                 }
             }
-            if (!heat) item { GroupHeader(Market.TW, tw.size, "NT$" + mask(Fmt.num(tw.sumOf { AppState.marketValueTwd(it) }))) }
-            if (!heat) {
+            if (view == 0) item { GroupHeader(Market.TW, tw.size, "NT$" + mask(Fmt.num(tw.sumOf { AppState.marketValueTwd(it) }))) }
+            if (view == 0) {
                 items(tw, key = { "tw-" + it.symbol }) { h -> HoldingRow(h, true) { nav.navigate(Routes.stock(h.symbol)) } }
                 item { GroupHeader(Market.US, us.size, "US$" + mask(Fmt.num(usUsd, 2))) }
                 items(us, key = { "us-" + it.symbol }) { h -> HoldingRow(h, inTwd) { nav.navigate(Routes.stock(h.symbol)) } }

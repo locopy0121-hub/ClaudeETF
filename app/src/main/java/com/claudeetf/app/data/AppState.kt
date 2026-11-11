@@ -236,6 +236,11 @@ object AppState {
 
     /** 持股排序（0 市值、1 今日損益、2 今日漲跌、3 報酬率、4 代號） */
     var holdingSort by mutableIntStateOf(0)
+    /** 持股頁檢視：0 清單、1 行情牆、2 熱度圖 */
+    var holdView by mutableIntStateOf(0)
+    fun updateHoldView(v: Int) { holdView = v; save() }
+    var wallStyle by mutableStateOf(WallStyle())
+    fun updateWallStyle(w: WallStyle) { wallStyle = w; save() }
     fun updateHoldingSort(i: Int) { holdingSort = i; save() }
     /** 新聞來源（RssNews.builtIn 的 id，自訂來源為 c:名稱） */
     val newsSources = mutableStateListOf("yahoo", "google")
@@ -539,6 +544,8 @@ object AppState {
         limitAxis = p.getBoolean("limitAxis", true)
         usExtendedChart = p.getBoolean("usExtendedChart", true)
         holdingSort = p.getInt("holdingSort", 0)
+        holdView = p.getInt("holdView", 0)
+        wallStyle = WallStyle.fromJson(p.getString("wallStyle", null))
         futProduct = p.getString("futProduct", "TXF") ?: "TXF"
         futSource = p.getString("futSource", "auto") ?: "auto"
         showTradeMarks = p.getBoolean("showTradeMarks", true)
@@ -857,6 +864,8 @@ object AppState {
             .putBoolean("limitAxis", limitAxis)
             .putBoolean("usExtendedChart", usExtendedChart)
             .putInt("holdingSort", holdingSort)
+            .putInt("holdView", holdView)
+            .putString("wallStyle", wallStyle.toJson())
             .putString("futProduct", futProduct)
             .putString("futSource", futSource)
             .putBoolean("showTradeMarks", showTradeMarks)
