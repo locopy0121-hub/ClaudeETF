@@ -3,6 +3,7 @@ package com.claudeetf.app.data
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.ln
@@ -48,6 +49,23 @@ object EntryAdvisor {
 
     val results = androidx.compose.runtime.mutableStateMapOf<String, Advice>()
 
+    /** 大盤背景：指數收盤序列（相對強弱用）、VIX 恐慌指數、當日類股漲跌 */
+    data class Macro(val twii: List<Double>, val spx: List<Double>, val vix: List<Double>, val sectors: Map<String, Double>, val at: Long)
+    @Volatile private var macro: Macro? = null
+    private val macroLock = kotlinx.coroutines.sync.Mutex()
+
+    suspend fun macro(): Macro? = macroLock.withLock {
+        macro?.takeIf { System.currentTimeMillis() - it.at < 30 * 60_000L }?.let { return@withLock it }
+        withContext(Dispatchers.IO) {
+            fun cl(sym: String, range: String) = runCatching { com.claudeetf.app.data.remote.YahooExtra.history(sym, range) }.getOrNull()
+                ?.closes?.map { it.toDouble() }?.filter { !it.isNaN() && it > 0 } ?: emptyList()
+            val m = Macro(cl("^TWII", "6mo"), cl("^GSPC", "6mo"), cl("^VIX", "3mo"),
+                runCatching { com.claudeetf.app.data.remote.TwOpenData.sectorIndices().toMap() }.getOrDefault(emptyMap()), System.currentTimeMillis())
+            if (m.twii.isNotEmpty() || m.vix.isNotEmpty()) macro = m
+            macro
+        }
+    }
+
     private val gate = Semaphore(3)
     private val weekly = java.util.concurrent.ConcurrentHashMap<String, KlineAnalysis.Result>()
     private val clampS = { v: Double -> v.coerceIn(-2.0, 2.0) }
@@ -65,7 +83,8 @@ object EntryAdvisor {
         val inv = invest(q, if (full) 10 * 60_000L else 60 * 60_000L)
         // 週 K：個股頁載入後記住，清單沿用（同一檔在清單與個股頁的結論一致）
         val kw = if (full) runCatching { KlineAnalysis.load(q, true, 60 * 60_000L) }.getOrNull()?.also { weekly[q.symbol] = it } else weekly[q.symbol]
-        val a = withContext(Dispatchers.Default) { compute(q, k, kw, inv) } ?: return results[q.symbol]
+        val mac = runCatching { macro() }.getOrNull()
+        val a = withContext(Dispatchers.Default) { compute(q, k, kw, inv, mac) } ?: return results[q.symbol]
         withContext(Dispatchers.Main) { results[q.symbol] = a }
         return a
     }
@@ -93,7 +112,7 @@ object EntryAdvisor {
         return Vola(atr, cur * 100, regime, label)
     }
 
-    fun compute(q: Quote, k: KlineAnalysis.Result?, kw: KlineAnalysis.Result?, inv: InvestAnalysis.Result?): Advice? {
+    fun compute(q: Quote, k: KlineAnalysis.Result?, kw: KlineAnalysis.Result?, inv: InvestAnalysis.Result?, mac: Macro? = null): Advice? {
         if (k == null && inv == null) return null
         val src = ArrayList<Source>()
         // ---- K 線（日、週）
@@ -128,8 +147,50 @@ object EntryAdvisor {
             val w = fw[f.name] ?: return@forEach
             src += Source(f.name, groupOf[f.name] ?: "其他", factorScore(f.score), w, f.note)
         }
-        // ---- 波動
         val cs = k?.candles ?: emptyList()
+        // ---- 相對強弱：近 20／60 日報酬減去大盤（台股對加權指數、美股對 S&P 500）
+        mac?.let { m ->
+            val idx = if (q.market == Market.TW) m.twii else m.spx
+            fun ret(l: List<Double>, n: Int) = if (l.size > n) l.last() / l[l.size - 1 - n] - 1 else null
+            val c = cs.map { it.c }
+            val r20 = ret(c, 20); val i20 = ret(idx, 20); val r60 = ret(c, 60); val i60 = ret(idx, 60)
+            if (r20 != null && i20 != null) {
+                val rs20 = (r20 - i20) * 100; val rs60 = if (r60 != null && i60 != null) (r60 - i60) * 100 else null
+                val v = rs20 / 6.0 + (rs60 ?: 0.0) / 15.0
+                src += Source("相對強弱", "大盤", clampS(v), 7.0,
+                    "近 20 日" + (if (rs20 >= 0) "強於" else "弱於") + (if (q.market == Market.TW) "加權指數 " else "S&P 500 ") + "%.1f".format(abs(rs20)) + " 個百分點" +
+                        (rs60?.let { "，近 60 日 " + "%+.1f".format(it) + " 個百分點" } ?: ""))
+            }
+            // 類股當日表現（台股，依 ISIN 產業別對應證交所類股指數）
+            if (q.market == Market.TW && m.sectors.isNotEmpty()) {
+                val ind = StockDirectory.metaOf(q.symbol)?.industry?.removeSuffix("業")?.takeIf { it.isNotBlank() }
+                val hit = ind?.let { n -> m.sectors.entries.firstOrNull { it.key == n || it.key.contains(n) || n.contains(it.key) } }
+                if (hit != null) {
+                    val rank = m.sectors.values.sortedDescending().indexOf(hit.value) + 1
+                    src += Source("類股", "大盤", clampS(hit.value / 1.5), 4.0,
+                        hit.key + "類股今日 " + "%+.2f".format(hit.value) + "%（${m.sectors.size} 類中第 $rank）")
+                }
+            }
+            // VIX 恐慌指數：極度恐慌時逆勢分批（ETF 加分較多），恐慌升溫扣分，過度樂觀小扣
+            if (m.vix.size >= 6) {
+                val v = m.vix.last(); val v5 = m.vix[m.vix.size - 6]
+                val rising = v > v5 * 1.15
+                val s = when {
+                    v >= 35 -> if (etf) 1.0 else 0.4
+                    v >= 25 -> if (rising) -0.8 else -0.2
+                    v < 14 -> -0.3
+                    else -> 0.2
+                }
+                src += Source("VIX 恐慌指數", "大盤", s, 5.0,
+                    "VIX " + "%.1f".format(v) + "（5 日前 " + "%.1f".format(v5) + "）" + when {
+                        v >= 35 -> "：極度恐慌，長線可逆勢分批"
+                        v >= 25 -> if (rising) "：恐慌升溫，先保守" else "：偏高但未擴大"
+                        v < 14 -> "：市場過度樂觀，留意追高"
+                        else -> "：正常"
+                    })
+            }
+        }
+        // ---- 波動
         val vola = volatility(cs)
         vola?.let { v ->
             val down = (k?.ctx?.trend ?: 0) < 0
