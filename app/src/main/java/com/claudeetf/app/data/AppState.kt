@@ -408,6 +408,8 @@ object AppState {
     val quotes = mutableStateListOf<Quote>().apply { addAll(SampleData.quotes) }
     val holdings = mutableStateListOf<Holding>()
     val trades = mutableStateListOf<Trade>()
+    /** 現金收支紀錄（新到舊） */
+    val cashFlows = mutableStateListOf<CashFlow>()
     val alerts = mutableStateListOf<AlertRule>()
     val accounts = mutableStateListOf<Account>()
     val dcaPlans = mutableStateListOf<DcaPlan>()
@@ -625,6 +627,8 @@ object AppState {
 
         trades.clear()
         p.getString("trades", null)?.let { trades.addAll(parseTrades(it)) }
+        cashFlows.clear()
+        p.getString("cashFlows", null)?.let { cashFlows.addAll(parseCashFlows(it)) }
 
         accounts.clear()
         p.getString("accounts", null)?.let { json ->
@@ -799,6 +803,7 @@ object AppState {
             .putD("cash", cashTwd)
             .putString("holdings", holdingsJson())
             .putString("trades", tradesJson())
+            .putString("cashFlows", cashFlowsJson())
             .putString("alertsV2", alertsJson())
             .putString("alertHistory", JSONArray().apply { alertHistory.take(60).forEach { put(JSONObject().put("t", it.time).put("x", it.text)) } }.toString())
             .apply { if (secretOk) remove("fugleKey") else putString("fugleKey", fugleKey) }
@@ -1195,7 +1200,7 @@ object AppState {
             trades.addAll(candidate.sortedByDescending { Ledger.sortKey(it) })
         }
         holdings.clear(); holdings.addAll(res.holdings)
-        cashTwd = res.cash
+        cashTwd = res.cash + cashFlows.sumOf { it.amount }
         realizedTwdYtd = res.realizedYtd
         dividendTwYtd = res.divTwYtd
         dividendUsGrossYtd = res.divUsGrossYtd
@@ -1236,6 +1241,38 @@ object AppState {
     }
 
     fun deleteTrade(id: Long): String? = applyLedger(trades.filter { it.id != id })
+
+    // ---------- 現金收支 ----------
+
+    /** 現金收支的淨額合計（收入 − 支出） */
+    val cashFlowNet: Double get() = cashFlows.sumOf { it.amount }
+
+    fun saveCashFlow(f: CashFlow) {
+        val item = if (f.id == 0L) f.copy(id = (cashFlows.maxOfOrNull { it.id } ?: 0L) + 1) else f
+        val list = cashFlows.filter { it.id != item.id } + item
+        cashFlows.clear()
+        cashFlows.addAll(list.sortedWith(compareByDescending<CashFlow> { it.date }.thenByDescending { it.id }))
+        pnlDirty = true
+        applyLedger(trades.toList())
+    }
+
+    fun deleteCashFlow(id: Long) {
+        cashFlows.removeAll { it.id == id }
+        pnlDirty = true
+        applyLedger(trades.toList())
+    }
+
+    private fun cashFlowsJson(): String = JSONArray().apply {
+        cashFlows.forEach { put(JSONObject().put("id", it.id).put("d", it.date).put("a", it.amount).put("c", it.category).put("n", it.note)) }
+    }.toString()
+
+    private fun parseCashFlows(json: String): List<CashFlow> = runCatching {
+        val a = JSONArray(json)
+        (0 until a.length()).map { i ->
+            val o = a.getJSONObject(i)
+            CashFlow(o.getLong("id"), o.getString("d"), o.getDouble("a"), o.optString("c"), o.optString("n"))
+        }
+    }.getOrDefault(emptyList())
 
     fun trade(id: Long): Trade? = trades.firstOrNull { it.id == id }
 

@@ -15,6 +15,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +38,8 @@ import com.claudeetf.app.util.Fmt
 
 @Composable
 fun TradesScreen(nav: NavController) {
+    var mode by rememberSaveable { mutableIntStateOf(0) }
+    var cashEdit by remember { mutableStateOf<com.claudeetf.app.data.CashFlow?>(null) }
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableIntStateOf(0) }
     var tag by remember { mutableStateOf<String?>(null) }
@@ -56,10 +59,15 @@ fun TradesScreen(nav: NavController) {
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("交易紀錄", onBack = { nav.popBackStack() }) {
             Text("年度報表", color = C.Primary, fontSize = 14.sp, modifier = Modifier.clickable { nav.navigate(Routes.REPORT) }.padding(horizontal = 8.dp, vertical = 12.dp))
-            IconButton(onClick = { nav.navigate(Routes.trade()) }) {
-                Icon(Icons.Filled.Add, contentDescription = "新增交易", tint = C.Text)
+            IconButton(onClick = { if (mode == 1) cashEdit = com.claudeetf.app.data.CashFlow(0L, "", 0.0, "") else nav.navigate(Routes.trade()) }) {
+                Icon(Icons.Filled.Add, contentDescription = if (mode == 1) "新增現金收支" else "新增交易", tint = C.Text)
             }
         }
+        Box(Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
+            Segmented(listOf("股票交易", "現金收支"), mode, { mode = it })
+        }
+        cashEdit?.let { f -> CashFlowDialog(f) { cashEdit = null } }
+        if (mode == 1) { CashFlowPane { cashEdit = it }; return@Column }
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),

@@ -62,7 +62,8 @@ fun AssetAuditDialog(nav: NavController, onClose: () -> Unit) {
         val g = t.gross
         if (AppState.marketOf(t.symbol) == Market.US) g * 0.7 * t.fx else g - t.fee
     }
-    val base = AppState.cashTwd - sells - divs + buys
+    val flows = AppState.cashFlowNet
+    val base = AppState.cashTwd - sells - divs + buys - flows
 
     // 可疑交易
     val suspicious = ts.filter { it.type == TradeType.BUY || it.type == TradeType.SELL }.mapNotNull { t ->
@@ -122,6 +123,7 @@ fun AssetAuditDialog(nav: NavController, onClose: () -> Unit) {
                 KeyValue("－ 買進", "NT$" + Fmt.num(buys))
                 KeyValue("＋ 賣出", "NT$" + Fmt.num(sells))
                 KeyValue("＋ 股息（淨額）", "NT$" + Fmt.num(divs))
+                if (AppState.cashFlows.isNotEmpty()) KeyValue("± 現金收支（淨額）", (if (flows >= 0) "+" else "−") + "NT$" + Fmt.num(kotlin.math.abs(flows)))
                 KeyValue("＝ 現金", "NT$" + Fmt.num(AppState.cashTwd), if (AppState.cashTwd < 0) C.Red else C.Text)
                 if (AppState.cashTwd < 0) Label("現金為負：買進金額大於「初始現金＋賣出＋股息」。若沒有記錄入金，可到 我的 › 帳本 調整初始現金；若有上方⚠交易，先修正那筆。")
             }

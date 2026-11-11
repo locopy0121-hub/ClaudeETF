@@ -84,6 +84,18 @@ data class Trade(
     val tags: List<String> = emptyList(),
 )
 
+/**
+ * 現金收支（不屬於股票交易的現金進出）：入金、出金、薪資、生活支出等。
+ * amount 正數為收入、負數為支出（台幣）；會直接加減到帳本的現金。
+ */
+data class CashFlow(
+    val id: Long,
+    val date: String,
+    val amount: Double,
+    val category: String,
+    val note: String = "",
+)
+
 /** 目標價與停損價（對應自動建立的提醒編號） */
 data class PriceMark(val target: Double?, val stop: Double?, val targetAlert: Int = 0, val stopAlert: Int = 0)
 
