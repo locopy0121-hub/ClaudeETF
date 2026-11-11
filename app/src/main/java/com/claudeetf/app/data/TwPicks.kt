@@ -108,6 +108,55 @@ object TwPicks {
         job = scope.launch { runCatching { run() }.onFailure { error = "分析失敗：" + (it.message ?: it.javaClass.simpleName) }; running = false }
     }
 
+    /** ETF 分析檔數（成交值前 N 檔，排除槓桿 L／反向 R） */
+    const val UNIVERSE_ETF = 80
+    @Volatile var etfAll: List<Pick> = emptyList(); private set
+    @Volatile private var etfAt = 0L
+
+    /**
+     * 台股 ETF 分析（盤後報表用）：上市櫃 ETF 依成交值取前 80 檔（成交 ≥ 200 張），
+     * 以 ETF 引擎（母子線、上升三法、恐慌止跌、缺口回補）＋光譜、動能綜合評分。
+     */
+    suspend fun analyzeEtfs(force: Boolean = false): List<Pick> {
+        if (!force && etfAll.isNotEmpty() && !staleAt(etfAt)) return etfAll
+        val universe = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            val tse = runCatching { TwseApi.dayAll() }.getOrDefault(emptyMap())
+            val otc = runCatching { TpexApi.dayAll() }.getOrDefault(emptyMap())
+            (tse.values.map { it to false } + otc.values.map { it to true }).filter { (q, _) ->
+                q.symbol.startsWith("00") && !q.symbol.endsWith("L") && !q.symbol.endsWith("R") && q.price > 0 && (q.volume ?: 0.0) >= 200_000
+            }.sortedByDescending { (q, _) -> q.value ?: (q.price * (q.volume ?: 0.0)) }.take(UNIVERSE_ETF)
+        }
+        if (universe.isEmpty()) return etfAll
+        kotlinx.coroutines.withContext(Dispatchers.Main) { done = 0; total = universe.size }
+        val gate = Semaphore(4)
+        val cnt = AtomicInteger(0)
+        val picks = kotlinx.coroutines.coroutineScope {
+            universe.map { (rq, isOtc) ->
+                async(Dispatchers.IO) {
+                    gate.withPermit {
+                        val q = Quote(rq.symbol, rq.name ?: rq.symbol, Market.TW, rq.price, rq.prevClose, isEtf = true,
+                            source = if (isOtc) QuoteSource.TPEX else QuoteSource.TWSE)
+                        val p = runCatching { score(q, isOtc) }.getOrNull()
+                        done = cnt.incrementAndGet()
+                        p
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+        if (picks.isNotEmpty()) { etfAll = picks; etfAt = System.currentTimeMillis() }
+        return etfAll
+    }
+
+    private fun staleAt(t: Long): Boolean {
+        if (t == 0L) return true
+        val z = java.time.ZoneId.of("Asia/Taipei")
+        val n = java.time.ZonedDateTime.now(z)
+        val l = java.time.Instant.ofEpochMilli(t).atZone(z)
+        if (n.toLocalDate() != l.toLocalDate()) return true
+        val cut = n.toLocalDate().atTime(14, 35).atZone(z)
+        return n.isAfter(cut) && l.isBefore(cut)
+    }
+
     /** 等待分析完成並回傳全部結果（盤後報表用）；需要時才重算 */
     suspend fun analyzeAll(force: Boolean = false): List<Pick> {
         if (running) { while (running) kotlinx.coroutines.delay(500) }
@@ -174,7 +223,7 @@ object TwPicks {
     private suspend fun score(q: Quote, otc: Boolean): Pick? {
         val r = KlineAnalysis.load(q, weekly = false, maxAgeMs = 6 * 3_600_000L) ?: return null
         val cs = r.candles
-        if (cs.size < 70) return null
+        if (cs.size < 45) return null
         val closes = cs.map { it.c }
         val last = closes.last()
         val ma60 = closes.takeLast(60).average()

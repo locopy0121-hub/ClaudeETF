@@ -50,7 +50,12 @@ object DailyReport {
         val analyzed: Int,
         val mood: Int,
         val summary: List<String>,
+        // ---- ETF
+        val etfUp: Int = 0, val etfDown: Int = 0, val etfFlat: Int = 0, val etfValue: Double = 0.0,
+        val etfGainers: List<Mover> = emptyList(), val etfLosers: List<Mover> = emptyList(), val etfActives: List<Mover> = emptyList(),
+        val etfBulls: List<TwPicks.Pick> = emptyList(), val etfBears: List<TwPicks.Pick> = emptyList(), val etfAnalyzed: Int = 0,
     ) {
+        val hasEtf: Boolean get() = etfUp + etfDown + etfFlat > 0
         val moodLabel: String get() = when (mood) { 2 -> "強勢偏多"; 1 -> "偏多"; -1 -> "偏空"; -2 -> "弱勢偏空"; else -> "中性震盪" }
 
         fun toJson(): JSONObject = JSONObject().put("d", date).put("at", at)
@@ -65,6 +70,13 @@ object DailyReport {
             .put("b", JSONArray().apply { bulls.forEach { put(it.toJson()) } })
             .put("x", JSONArray().apply { bears.forEach { put(it.toJson()) } })
             .put("n", analyzed).put("m", mood).put("sum", JSONArray(summary))
+            .put("eu", etfUp).put("ed", etfDown).put("ef", etfFlat).put("ev", etfValue)
+            .put("eg", JSONArray().apply { etfGainers.forEach { put(it.toJson()) } })
+            .put("el", JSONArray().apply { etfLosers.forEach { put(it.toJson()) } })
+            .put("ea", JSONArray().apply { etfActives.forEach { put(it.toJson()) } })
+            .put("eb", JSONArray().apply { etfBulls.forEach { put(it.toJson()) } })
+            .put("ex", JSONArray().apply { etfBears.forEach { put(it.toJson()) } })
+            .put("en", etfAnalyzed)
 
         companion object {
             fun of(o: JSONObject): Report {
@@ -80,12 +92,15 @@ object DailyReport {
                     movers("g"), movers("l"), movers("a"), picks("b"), picks("x"),
                     o.optInt("n"), o.optInt("m"),
                     o.optJSONArray("sum")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
+                    o.optInt("eu"), o.optInt("ed"), o.optInt("ef"), o.optDouble("ev", 0.0),
+                    movers("eg"), movers("el"), movers("ea"), picks("eb"), picks("ex"), o.optInt("en"),
                 )
             }
         }
     }
 
     const val TOP = 25
+    const val TOP_ETF = 15
     val HIST_LABELS = listOf("≤-9", "-9", "-6", "-3", "-1", "0", "+1", "+3", "+6", "+9", "≥9")
 
     var latest by mutableStateOf<Report?>(null); private set
@@ -180,6 +195,17 @@ object DailyReport {
             val losers = common.sortedBy { pct(it.first) }.take(10).map(::mv)
             val actives = common.sortedByDescending { it.first.value ?: 0.0 }.take(10).map(::mv)
 
+            // ---- ETF（代號 00 開頭）
+            val etfs = traded.filter { (q, _) -> q.symbol.startsWith("00") }
+            val etfUp = etfs.count { pct(it.first) > 0.0001 }
+            val etfDown = etfs.count { pct(it.first) < -0.0001 }
+            val etfFlat = etfs.size - etfUp - etfDown
+            val etfValue = etfs.sumOf { it.first.value ?: 0.0 } / 1e8
+            val etfLiquid = etfs.filter { (q, _) -> (q.volume ?: 0.0) >= 200_000 }
+            val etfGainers = etfLiquid.sortedByDescending { pct(it.first) }.take(10).map(::mv)
+            val etfLosers = etfLiquid.sortedBy { pct(it.first) }.take(10).map(::mv)
+            val etfActives = etfLiquid.sortedByDescending { it.first.value ?: 0.0 }.take(10).map(::mv)
+
             withContext(Dispatchers.Main) { stage = "取得指數與類股…" }
             val (ix, ox, sectors) = withContext(Dispatchers.IO) {
                 Triple(
@@ -199,6 +225,10 @@ object DailyReport {
             val picks = TwPicks.analyzeAll(force = false)
             val bulls = picks.filter { it.score > 0.3 }.sortedByDescending { it.score }.take(TOP)
             val bears = picks.filter { it.score < -0.3 }.sortedBy { it.score }.take(TOP)
+            withContext(Dispatchers.Main) { stage = "分析 ETF（成交值前 ${TwPicks.UNIVERSE_ETF} 檔）…" }
+            val etfPicks = runCatching { TwPicks.analyzeEtfs() }.getOrDefault(emptyList())
+            val etfBulls = etfPicks.filter { it.score > 0.3 }.sortedByDescending { it.score }.take(TOP_ETF)
+            val etfBears = etfPicks.filter { it.score < -0.3 }.sortedBy { it.score }.take(TOP_ETF)
 
             // ---- 市場氣氛：指數漲跌、漲跌家數比、看漲／看跌檔數
             val twPct = if (twPrev > 0) (twii / twPrev - 1) * 100 else 0.0
@@ -222,10 +252,17 @@ object DailyReport {
             if (picks.isNotEmpty()) sum += "分析 ${picks.size} 檔：偏多 ${picks.count { it.score > 0.6 }} 檔、偏空 ${picks.count { it.score < -0.6 }} 檔。" +
                 (bulls.take(3).takeIf { it.isNotEmpty() }?.let { l -> "看漲前三：" + l.joinToString("、") { it.name } + "。" } ?: "") +
                 (bears.take(3).takeIf { it.isNotEmpty() }?.let { l -> "看跌前三：" + l.joinToString("、") { it.name } + "。" } ?: "")
+            if (etfs.isNotEmpty()) sum += "ETF：上漲 $etfUp 檔、下跌 $etfDown 檔、平盤 $etfFlat 檔，成交值 " + "%,.0f".format(etfValue) + " 億（占上市櫃 " +
+                "%.1f".format(if (tseValue + otcValue > 0) etfValue / (tseValue + otcValue) * 100 else 0.0) + "%）" +
+                (etfActives.take(3).takeIf { it.isNotEmpty() }?.let { l -> "；成交最熱：" + l.joinToString("、") { it.name } } ?: "") + "。" +
+                (if (etfPicks.isNotEmpty()) "分析 ${etfPicks.size} 檔 ETF" +
+                    (etfBulls.take(3).takeIf { it.isNotEmpty() }?.let { l -> "，看漲前三：" + l.joinToString("、") { it.name } } ?: "") +
+                    (etfBears.take(3).takeIf { it.isNotEmpty() }?.let { l -> "，看跌前三：" + l.joinToString("、") { it.name } } ?: "") + "。" else "")
             sum += "市場氣氛：" + when (mood) { 2 -> "強勢偏多"; 1 -> "偏多"; -1 -> "偏空"; -2 -> "弱勢偏空"; else -> "中性震盪" } + "。"
 
             val r = Report(date, System.currentTimeMillis(), twii, twii - twPrev, twPct, ixs.takeLast(60), otcIdx, otcPct,
-                up, down, flat, limitUp, limitDown, tseValue, otcValue, hist, sec, gainers, losers, actives, bulls, bears, picks.size, mood, sum)
+                up, down, flat, limitUp, limitDown, tseValue, otcValue, hist, sec, gainers, losers, actives, bulls, bears, picks.size, mood, sum,
+                etfUp, etfDown, etfFlat, etfValue, etfGainers, etfLosers, etfActives, etfBulls, etfBears, etfPicks.size)
             withContext(Dispatchers.IO) {
                 runCatching { File(dir, "$date.json").writeText(r.toJson().toString()) }
                 // 保留 120 份

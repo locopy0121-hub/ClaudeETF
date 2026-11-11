@@ -189,11 +189,11 @@ object ReportExport {
             }
         }
         // ---- 看漲／看跌 25
-        fun picks(title: String, list: List<TwPicks.Pick>, bull: Boolean) {
+        fun picks(title: String, list: List<TwPicks.Pick>, bull: Boolean, sub: String = "依日 K 形態與量價、60 日均線、20 日動能、進場等級、一年股價光譜綜合評分") {
             val tone = up(if (bull) 1.0 else -1.0)
             out += Block(130f) { y ->
                 drawText(title, x0, y + 56f, paint(34f, tone, bold = true))
-                drawText("依日 K 形態與量價、60 日均線、20 日動能、進場等級、一年股價光譜綜合評分", x0, y + 100f, paint(22f, MUTED))
+                drawText(sub, x0, y + 100f, paint(22f, MUTED))
             }
             if (list.isEmpty()) out += Block(70f) { y -> drawText("沒有符合條件的個股", x0, y + 44f, paint(26f, MUTED)) }
             val mx = list.maxOfOrNull { abs(it.score) }?.takeIf { it > 0 } ?: 1.0
@@ -223,6 +223,32 @@ object ReportExport {
         }
         picks("看漲・趨勢向上（${r.bulls.size} 檔）", r.bulls, true)
         picks("看跌・避開（${r.bears.size} 檔）", r.bears, false)
+        // ---- ETF
+        if (r.hasEtf) {
+            out += Block(300f + 10 * 50f) { y ->
+                drawText("ETF 市場", x0, y + 56f, paint(34f, TEXT, bold = true))
+                drawText("上漲 ${r.etfUp} · 平盤 ${r.etfFlat} · 下跌 ${r.etfDown} 檔 · 成交值 " + "%,.0f".format(r.etfValue) + " 億（占上市櫃 " +
+                    "%.1f".format(if (r.tseValue + r.otcValue > 0) r.etfValue / (r.tseValue + r.otcValue) * 100 else 0.0) + "%）", x0, y + 100f, paint(24f, TEXT2))
+                val tot = (r.etfUp + r.etfDown + r.etfFlat).coerceAtLeast(1)
+                var bx = x0
+                listOf(r.etfUp to up(1.0), r.etfFlat to MUTED, r.etfDown to up(-1.0)).forEach { (n, c) ->
+                    val w = inner * n / tot; drawRect(bx, y + 124f, bx + w, y + 148f, fill(c)); bx += w
+                }
+                val cw = inner / 3
+                listOf("漲幅" to r.etfGainers, "跌幅" to r.etfLosers, "成交值" to r.etfActives).forEachIndexed { k, (t, l) ->
+                    val cx = x0 + k * cw
+                    drawText(t, cx, y + 200f, paint(26f, MUTED, bold = true))
+                    l.take(10).forEachIndexed { i, m ->
+                        val yy = y + 244f + i * 50f
+                        drawText(fit(m.name, paint(24f, TEXT), cw - 120f), cx, yy, paint(24f, TEXT))
+                        val v = if (k == 2) "%,.0f".format(m.valueYi) + "億" else "%+.1f".format(m.pct) + "%"
+                        drawText(v, cx + cw - 16f, yy, paint(22f, if (k == 2) TEXT2 else up(m.pct), mono = true, align = Paint.Align.RIGHT))
+                    }
+                }
+            }
+            picks("ETF 看漲（${r.etfBulls.size} 檔）", r.etfBulls, true, "ETF 引擎（母子線、上升三法、恐慌止跌、缺口回補）＋均線、動能、一年光譜；不含槓桿與反向")
+            picks("ETF 看跌（${r.etfBears.size} 檔）", r.etfBears, false, "ETF 引擎（母子線、上升三法、恐慌止跌、缺口回補）＋均線、動能、一年光譜；不含槓桿與反向")
+        }
         out += Block(90f, card = false) { y ->
             drawText("資料：證交所、櫃買中心收盤行情與類股指數、Yahoo 指數走勢。依公開資料計算，僅供參考，非投資建議。", M, y + 50f, paint(22f, MUTED))
         }

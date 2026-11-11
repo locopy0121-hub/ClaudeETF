@@ -75,6 +75,8 @@ fun DailyReportHomeCard(nav: NavController) {
                 Label("上漲 ${r.up} · 下跌 ${r.down} · 漲停 ${r.limitUp} · 跌停 ${r.limitDown} · 成交 " + "%,.0f".format(r.tseValue + r.otcValue) + " 億")
                 if (r.bulls.isNotEmpty()) Text("看漲：" + r.bulls.take(5).joinToString("、") { it.name }, color = Trend.fg(1.0), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (r.bears.isNotEmpty()) Text("看跌：" + r.bears.take(5).joinToString("、") { it.name }, color = Trend.fg(-1.0), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (r.etfBulls.isNotEmpty()) Text("ETF 看漲：" + r.etfBulls.take(4).joinToString("、") { it.name }, color = Trend.fg(1.0), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (r.hasEtf) Label("ETF 上漲 ${r.etfUp} · 下跌 ${r.etfDown} · 成交 " + "%,.0f".format(r.etfValue) + " 億")
             }
         }
     }
@@ -99,6 +101,8 @@ fun DailyReportScreen(nav: NavController) {
     val r = remember(sel, DailyReport.latest) { sel?.let { DailyReport.load(it) } ?: DailyReport.latest }
     var pickSide by remember { mutableIntStateOf(0) }
     var moverTab by remember { mutableIntStateOf(0) }
+    var etfMover by remember { mutableIntStateOf(0) }
+    var etfSide by remember { mutableIntStateOf(0) }
     var showAll by remember { mutableStateOf(false) }
     var autoOn by remember { mutableStateOf(DailyReport.autoOn) }
     var notifyOn by remember { mutableStateOf(DailyReport.notifyOn) }
@@ -136,7 +140,8 @@ fun DailyReportScreen(nav: NavController) {
                             menu = false
                             shareText(ctx, "台股盤後報表 " + r.date.replace("-", "/") + "\n" + r.summary.joinToString("\n") +
                                 "\n\n看漲 25：" + r.bulls.joinToString("、") { it.symbol + " " + it.name } +
-                                "\n看跌 25：" + r.bears.joinToString("、") { it.symbol + " " + it.name } + "\n（僅供參考，非投資建議）", "分享盤後報表")
+                                "\n看跌 25：" + r.bears.joinToString("、") { it.symbol + " " + it.name } + "\nETF 看漲：" + r.etfBulls.joinToString("、") { it.symbol + " " + it.name } +
+                                "\nETF 看跌：" + r.etfBears.joinToString("、") { it.symbol + " " + it.name } + "\n（僅供參考，非投資建議）", "分享盤後報表")
                         },
                     ).forEach { (t, f) ->
                         androidx.compose.material3.DropdownMenuItem(text = { Text(t, color = C.Text, fontSize = 14.sp) }, onClick = f)
@@ -270,6 +275,50 @@ fun DailyReportScreen(nav: NavController) {
                             val otcN = list.count { it.otc }
                             Label("上市 ${list.size - otcN} 檔、上櫃 $otcN 檔 · 平均近 20 日 " + "%+.1f".format(list.map { it.mom20 }.average()) + "%")
                             list.forEachIndexed { i, p -> ReportPickRow(i + 1, p, pickSide == 0) { open(p.symbol) } }
+                        }
+                    }
+                }
+                // ---- ETF
+                if (r.hasEtf) item {
+                    Card(padding = 14.dp) {
+                        Text("ETF 市場", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Label("上市櫃 ETF（代號 00 開頭）· 成交值 " + "%,.0f".format(r.etfValue) + " 億（占上市櫃 " +
+                            "%.1f".format(if (r.tseValue + r.otcValue > 0) r.etfValue / (r.tseValue + r.otcValue) * 100 else 0.0) + "%）")
+                        val tot = (r.etfUp + r.etfDown + r.etfFlat).coerceAtLeast(1)
+                        Row(Modifier.fillMaxWidth().padding(top = 6.dp).height(12.dp).clip(RoundedCornerShape(4.dp))) {
+                            if (r.etfUp > 0) Box(Modifier.weight(r.etfUp.toFloat() / tot).fillMaxHeight().background(Trend.fg(1.0)))
+                            if (r.etfFlat > 0) Box(Modifier.weight(r.etfFlat.toFloat() / tot).fillMaxHeight().background(C.Muted))
+                            if (r.etfDown > 0) Box(Modifier.weight(r.etfDown.toFloat() / tot).fillMaxHeight().background(Trend.fg(-1.0)))
+                        }
+                        Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                            Text("上漲 ${r.etfUp}", Modifier.weight(1f), color = Trend.fg(1.0), fontSize = 12.sp)
+                            Text("平盤 ${r.etfFlat}", Modifier.weight(1f), color = C.Muted, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                            Text("下跌 ${r.etfDown}", Modifier.weight(1f), color = Trend.fg(-1.0), fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                        }
+                        Text("ETF 排行（成交 ≥ 200 張）", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+                        Segmented(listOf("漲幅", "跌幅", "成交值"), etfMover, { etfMover = it })
+                        (when (etfMover) { 0 -> r.etfGainers; 1 -> r.etfLosers; else -> r.etfActives }).forEachIndexed { i, m ->
+                            Row(Modifier.fillMaxWidth().clickable { open(m.symbol) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("${i + 1}", Modifier.width(22.dp), color = C.Muted, fontSize = 12.sp)
+                                Column(Modifier.weight(1f)) {
+                                    Text(m.name, color = C.Text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Label(m.symbol + " · " + (if (m.otc) "櫃" else "市") + " · " + "%,.1f".format(m.valueYi) + " 億")
+                                }
+                                Column(horizontalAlignment = Alignment.End) { NumText(Fmt.price(m.price), 13.sp); ChangePill(m.pct) }
+                            }
+                        }
+                    }
+                }
+                if (r.hasEtf) item {
+                    Card(padding = 14.dp) {
+                        Text("ETF 綜合分析排行（各 ${DailyReport.TOP_ETF} 檔）", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Label("ETF 引擎：母子線壓縮突破、上升三法、恐慌止跌、缺口回補，加上 60 日均線、20 日動能與一年光譜；取成交值前 ${TwPicks.UNIVERSE_ETF} 檔（不含槓桿、反向）。")
+                        Segmented(listOf("看漲 ${r.etfBulls.size}", "看跌 ${r.etfBears.size}"), etfSide, { etfSide = it })
+                        val list = if (etfSide == 0) r.etfBulls else r.etfBears
+                        if (list.isEmpty()) Label(if (r.etfAnalyzed == 0) "這份報表產生時 ETF 尚未分析，按右上角 ↻ 重新產生。" else "沒有符合條件的 ETF。", Modifier.padding(top = 8.dp))
+                        else {
+                            ScoreBars(list, etfSide == 0, Modifier.fillMaxWidth().padding(top = 8.dp))
+                            list.forEachIndexed { i, p -> ReportPickRow(i + 1, p, etfSide == 0) { open(p.symbol) } }
                         }
                     }
                 }
