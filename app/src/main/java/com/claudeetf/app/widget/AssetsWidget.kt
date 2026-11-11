@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
-/** 桌面小工具：版面與樣式由 App「我的 › 桌面小工具」控制（WidgetStyle） */
+/** 桌面小工具：版面與樣式由 App「設置 › 桌面小工具」控制（WidgetStyle） */
 class AssetsWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         AppState.init(context.applicationContext)

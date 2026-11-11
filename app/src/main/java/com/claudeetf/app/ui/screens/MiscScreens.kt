@@ -57,7 +57,7 @@ fun WelcomeScreen(nav: NavController) {
             Card(padding = 16.dp) {
                 Text("1　你的資料", color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Label("App 預設放了一組示意持股，方便先看看各畫面。")
-                Choice("先用示意資料看看", "之後可在「我的 › 帳本」清除", fresh == false) { fresh = false }
+                Choice("先用示意資料看看", "之後可在「設置 › 帳本」清除", fresh == false) { fresh = false }
                 Choice("清除示意資料，從零開始", "持股、交易與損益歸零，自選清單保留", fresh == true) { fresh = true }
             }
         }
@@ -67,7 +67,7 @@ fun WelcomeScreen(nav: NavController) {
                 Label("填入富果 Fugle API 金鑰，盤中就能看即時報價與五檔；不填則使用證交所收盤資料。美股與指數用 Yahoo Finance，不需金鑰。")
                 OutlinedTextField(
                     key, { key = it; AppState.updateFugleKey(it) }, singleLine = true,
-                    label = { Text("富果 API 金鑰（可稍後在「我的」設定）") },
+                    label = { Text("富果 API 金鑰（可稍後在「設置」設定）") },
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(), colors = fieldColors(),
                 )
@@ -80,7 +80,7 @@ fun WelcomeScreen(nav: NavController) {
                     if (fresh == true) AppState.clearSampleData()
                     finish(Routes.trade())
                 }
-                Choice("匯入券商對帳單 CSV", "到「我的 › 備份與匯入」選擇檔案", false) {
+                Choice("匯入券商對帳單 CSV", "到「設置 › 備份與匯入」選擇檔案", false) {
                     if (fresh == true) AppState.clearSampleData()
                     finish(Routes.settings("backup"))
                 }

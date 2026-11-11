@@ -130,8 +130,8 @@ object AlertEngine {
             val key = "BK-${today.year}-$week"
             if (!AppState.summarySent(key)) {
                 AppState.markSummarySent(key)
-                val text = if (AppState.lastBackupAt == 0L) "還沒有備份過資料。到「我的 › 備份與匯入」匯出到 Google 雲端硬碟，換手機也不怕資料遺失。"
-                else "距離上次備份已超過 7 天，建議到「我的 › 備份與匯入」再匯出一次。"
+                val text = if (AppState.lastBackupAt == 0L) "還沒有備份過資料。到「設置 › 備份與匯入」匯出到 Google 雲端硬碟，換手機也不怕資料遺失。"
+                else "距離上次備份已超過 7 天，建議到「設置 › 備份與匯入」再匯出一次。"
                 notify(context, 904, "記得備份資料", text)
                 AppState.logNotice("備份提醒：" + text)
             }

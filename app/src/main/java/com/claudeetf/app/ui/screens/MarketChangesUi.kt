@@ -166,8 +166,9 @@ fun LazyListScope.marketChangesEntry(nav: NavController) {
 }
 
 /** 市場 › 台股：分析推薦排行（看漲／看跌各十檔） */
-fun LazyListScope.twPicksSection(side: Int, onSide: (Int) -> Unit, open: (String) -> Unit) {
-    item { SectionTitle("分析推薦排行", "成交值前 ${TwPicks.UNIVERSE} 檔 · 日 K＋動能＋光譜") }
+fun LazyListScope.twPicksSection(side: Int, onSide: (Int) -> Unit, board: Int, onBoard: (Int) -> Unit, open: (String) -> Unit) {
+    item { SectionTitle("分析推薦排行", (if (board == 0) "上市成交值前 ${TwPicks.UNIVERSE_TSE} 檔" else "上櫃成交值前 ${TwPicks.UNIVERSE_OTC} 檔") + " · 日 K＋動能＋光譜") }
+    item { Segmented(listOf("上市", "上櫃"), board, onBoard) }
     item { Segmented(listOf("看漲・值得投資", "看跌・避坑"), side, onSide) }
     item {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -187,9 +188,9 @@ fun LazyListScope.twPicksSection(side: Int, onSide: (Int) -> Unit, open: (String
             Box(Modifier.fillMaxWidth(TwPicks.done.toFloat() / TwPicks.total).fillMaxHeight().background(C.Primary))
         }
     }
-    val list = if (side == 0) TwPicks.bulls else TwPicks.bears
-    if (list.isEmpty() && !TwPicks.running && TwPicks.at > 0) item { Label(if (side == 0) "目前沒有明顯看漲的個股。" else "目前沒有明顯看跌的個股。") }
-    list.forEachIndexed { i, p -> item(key = "pick" + side + p.symbol) { PickRow(i + 1, p, side == 0) { open(p.symbol) } } }
+    val list = TwPicks.list(otc = board == 1, bull = side == 0)
+    if (list.isEmpty() && !TwPicks.running && TwPicks.at > 0) item { Label((if (board == 0) "上市" else "上櫃") + (if (side == 0) "目前沒有明顯看漲的個股。" else "目前沒有明顯看跌的個股。")) }
+    list.forEachIndexed { i, p -> item(key = "pick" + board + side + p.symbol) { PickRow(i + 1, p, side == 0) { open(p.symbol) } } }
     item { Label("依公開行情計算的參考排序（K 線形態、量價、支撐壓力、均線趨勢、近 20 日動能、一年股價光譜），不是投資建議，請自行判斷風險。") }
 }
 

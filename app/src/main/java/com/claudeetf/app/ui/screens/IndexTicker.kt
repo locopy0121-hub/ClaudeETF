@@ -36,7 +36,7 @@ val TICKER_CHOICES = linkedMapOf(
 /**
  * 持股、自選行情頁頂部的指數跑馬燈（一行）：
  * TW 即時／盤後 加權指數 39,701.64 ▼ -1,873.06 (-4.50%)　US 即時／盤後 道瓊 …
- * 內容超過一行時自動左右捲動；點指數開啟指數頁。可在「我的 › 首頁卡片與指數跑馬燈」開關與選擇指數。
+ * 內容超過一行時自動左右捲動；點指數開啟指數頁。可在「設置 › 首頁卡片與指數跑馬燈」開關與選擇指數。
  */
 /** 時段排程：現在是否在設定的顯示時段內（「HH:mm-HH:mm」，結束早於開始代表跨午夜） */
 fun tickerInSchedule(now: java.time.LocalDateTime = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Taipei"))): Boolean {
@@ -63,7 +63,7 @@ private fun inWindow(w: String, t: java.time.LocalTime, afterMidnightOnly: Boole
 
 /**
  * inList：放在可捲動清單裡（隨頁面捲動）時為 true；固定置頂時為 false。
- * 依「我的 › 首頁卡片與指數跑馬燈」的設定決定是否顯示與位置。
+ * 依「設置 › 首頁卡片與指數跑馬燈」的設定決定是否顯示與位置。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

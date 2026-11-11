@@ -25,7 +25,7 @@ object RssNews {
     )
 
     /**
-     * 新聞來源（我的 › 新聞來源 可多選）。
+     * 新聞來源（設置 › 新聞來源 可多選）。
      * market：一般財經新聞 RSS；stock：個股專屬 RSS（沒有時用 market 過濾代號與名稱）
      */
     data class Source(
@@ -168,7 +168,7 @@ object RssNews {
         if (link.contains("news.google.com")) {
             val real = Regex("data-n-au=\"(https?://[^\"]+)\"").find(html)?.groupValues?.get(1)
                 ?: Regex("<a[^>]+href=\"(https?://(?!news\\.google|www\\.google|support\\.google|accounts\\.google|[a-z0-9.]*gstatic|policies\\.google|play\\.google)[^\"]+)\"").find(html)?.groupValues?.get(1)
-                ?: throw IllegalStateException("Google 新聞只提供標題連結，無法取得原文；可在 我的 › 新聞來源 改勾其他媒體")
+                ?: throw IllegalStateException("Google 新聞只提供標題連結，無法取得原文；可在 設置 › 新聞來源 改勾其他媒體")
             html = Http.get(plainOnce(real), mapOf("User-Agent" to UA, "Accept" to "text/html"), timeoutMs = 20_000)
         }
         // Yahoo 文章本文在 caas-body；其他網站取 <article> 或整頁

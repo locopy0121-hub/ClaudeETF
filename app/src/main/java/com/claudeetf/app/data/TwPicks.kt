@@ -42,11 +42,18 @@ object TwPicks {
         }
     }
 
-    /** 分析檔數（成交值前 N 名） */
-    const val UNIVERSE = 150
+    /** 分析檔數：上市、上櫃各取成交值前 N 名 */
+    const val UNIVERSE_TSE = 120
+    const val UNIVERSE_OTC = 100
 
+    /** 上市 */
     var bulls by mutableStateOf<List<Pick>>(emptyList()); private set
     var bears by mutableStateOf<List<Pick>>(emptyList()); private set
+    /** 上櫃 */
+    var bullsOtc by mutableStateOf<List<Pick>>(emptyList()); private set
+    var bearsOtc by mutableStateOf<List<Pick>>(emptyList()); private set
+
+    fun list(otc: Boolean, bull: Boolean) = if (otc) (if (bull) bullsOtc else bearsOtc) else (if (bull) bulls else bears)
     var at by mutableLongStateOf(0L); private set
     var dataDate by mutableStateOf(""); private set
     var running by mutableStateOf(false); private set
@@ -66,6 +73,10 @@ object TwPicks {
             at = o.optLong("at"); dataDate = o.optString("dd")
             bulls = o.optJSONArray("b")?.let { a -> (0 until a.length()).map { Pick.of(a.getJSONObject(it)) } } ?: emptyList()
             bears = o.optJSONArray("x")?.let { a -> (0 until a.length()).map { Pick.of(a.getJSONObject(it)) } } ?: emptyList()
+            bullsOtc = o.optJSONArray("bo")?.let { a -> (0 until a.length()).map { Pick.of(a.getJSONObject(it)) } } ?: emptyList()
+            bearsOtc = o.optJSONArray("xo")?.let { a -> (0 until a.length()).map { Pick.of(a.getJSONObject(it)) } } ?: emptyList()
+            // 舊版（上市櫃混排）資料：重新分析
+            if (!o.has("bo")) at = 0L
         }
     }
 
@@ -92,11 +103,11 @@ object TwPicks {
         val (universe, date) = kotlinx.coroutines.withContext(Dispatchers.IO) {
             val tse = runCatching { TwseApi.dayAll() }.getOrDefault(emptyMap())
             val otc = runCatching { TpexApi.dayAll() }.getOrDefault(emptyMap())
-            val all = tse.values.map { it to false } + otc.values.map { it to true }
             val d = (tse.values.firstOrNull()?.date ?: otc.values.firstOrNull()?.date)?.toString() ?: ""
-            all.filter { (q, _) ->
+            fun top(m: Collection<com.claudeetf.app.data.remote.RemoteQuote>, n: Int) = m.filter { q ->
                 Regex("^[1-9]\\d{3}$").matches(q.symbol) && q.price >= 10 && (q.volume ?: 0.0) >= 1_000_000
-            }.sortedByDescending { (q, _) -> q.value ?: (q.price * (q.volume ?: 0.0)) }.take(UNIVERSE) to d
+            }.sortedByDescending { q -> q.value ?: (q.price * (q.volume ?: 0.0)) }.take(n)
+            (top(tse.values, UNIVERSE_TSE).map { it to false } + top(otc.values, UNIVERSE_OTC).map { it to true }) to d
         }
         if (universe.isEmpty()) { error = "取不到台股收盤資料，請稍後再試"; return }
         total = universe.size
@@ -116,13 +127,17 @@ object TwPicks {
             }.awaitAll().filterNotNull()
         }
         if (picks.isEmpty()) { error = "分析結果為空（K 線資料暫時無法取得）"; return }
-        bulls = picks.filter { it.score > 0.6 }.sortedByDescending { it.score }.take(10)
-        bears = picks.filter { it.score < -0.6 }.sortedBy { it.score }.take(10)
+        fun bull(l: List<Pick>) = l.filter { it.score > 0.6 }.sortedByDescending { it.score }.take(10)
+        fun bear(l: List<Pick>) = l.filter { it.score < -0.6 }.sortedBy { it.score }.take(10)
+        val (o, t) = picks.partition { it.otc }
+        bulls = bull(t); bears = bear(t); bullsOtc = bull(o); bearsOtc = bear(o)
         at = System.currentTimeMillis(); dataDate = date
         runCatching {
             file?.writeText(JSONObject().put("at", at).put("dd", dataDate)
                 .put("b", JSONArray().apply { bulls.forEach { put(it.toJson()) } })
-                .put("x", JSONArray().apply { bears.forEach { put(it.toJson()) } }).toString())
+                .put("x", JSONArray().apply { bears.forEach { put(it.toJson()) } })
+                .put("bo", JSONArray().apply { bullsOtc.forEach { put(it.toJson()) } })
+                .put("xo", JSONArray().apply { bearsOtc.forEach { put(it.toJson()) } }).toString())
         }
     }
 

@@ -50,6 +50,7 @@ fun MarketScreen(nav: NavController) {
     var tab by remember { mutableIntStateOf(0) }
     var moverTab by remember { mutableIntStateOf(0) }
     var pickSide by remember { mutableIntStateOf(0) }
+    var pickBoard by remember { mutableIntStateOf(0) }
     var reload by remember { mutableIntStateOf(0) }
     val s = rememberUsSession()
     val scope = rememberCoroutineScope()
@@ -145,7 +146,7 @@ fun MarketScreen(nav: NavController) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { ix -> IndexCard(ix, Modifier.weight(1f)) { nav.navigate(Routes.index(ix.symbol)) } } }
                 }
                 marketChangesEntry(nav)
-                twPicksSection(pickSide, { pickSide = it }, ::open)
+                twPicksSection(pickSide, { pickSide = it }, pickBoard, { pickBoard = it }, ::open)
             }
             if (tab != 2) boardSection(board, tab == 0, moverTab, { moverTab = it }, ::open)
             item {

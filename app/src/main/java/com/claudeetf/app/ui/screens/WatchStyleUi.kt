@@ -489,7 +489,7 @@ private fun infoLine(q: Quote, id: String, st: WatchStyle): (@Composable RowScop
 
 // ============================== 設定 ==============================
 
-/** 我的 › 顯示 › 自選個股顯示格式：點預覽中的項目即可調整 */
+/** 設置 › 顯示 › 自選個股顯示格式：點預覽中的項目即可調整 */
 @Composable
 fun WatchStyleSettings() {
     val st = AppState.watchStyle

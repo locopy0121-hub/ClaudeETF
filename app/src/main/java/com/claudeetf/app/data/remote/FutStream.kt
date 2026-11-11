@@ -51,7 +51,7 @@ object FutStream {
     /** 目前卡片資料來自期交所日行情 */
     var fromTaifex by mutableStateOf(false)
 
-    /** 依「我的 › 行情資料來源 › 期貨」決定實際來源：fugle、taifex 或 off */
+    /** 依「設置 › 行情資料來源 › 期貨」決定實際來源：fugle、taifex 或 off */
     fun effectiveSource(): String = when (com.claudeetf.app.data.AppState.futSource) {
         "fugle" -> "fugle"
         "taifex" -> "taifex"
@@ -161,7 +161,7 @@ object FutStream {
                             live = false
                             if (isPlanError(msg)) {
                                 fugleUnsupported = true
-                                status = "富果方案不支援期貨" + if (com.claudeetf.app.data.AppState.futSource == "auto") "，改用期交所資料" else "（可到 我的 › 行情資料來源 改用期交所）"
+                                status = "富果方案不支援期貨" + if (com.claudeetf.app.data.AppState.futSource == "auto") "，改用期交所資料" else "（可到 設置 › 行情資料來源 改用期交所）"
                                 users = 0; ws?.close(1000, "unsupported"); ws = null
                             } else status = "富果期貨：$msg"
                         }

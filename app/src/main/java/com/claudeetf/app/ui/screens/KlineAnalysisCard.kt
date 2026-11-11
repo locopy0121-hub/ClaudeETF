@@ -230,7 +230,7 @@ fun KlineAnalysisCard(q0: Quote) {
             r.reasons.forEach { Text("・$it", color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp) }
         }
 
-        // ---- K 棒分析條件（我的 › K 棒分析條件）----
+        // ---- K 棒分析條件（設置 › K 棒分析條件）----
         if (!weekly) KCondBox(q, r)
 
         // ---- 進場訊號提醒 ----
@@ -389,7 +389,7 @@ private fun KCondBox(q: Quote, r: KlineAnalysis.Result) {
             val met = list.count { it.met }
             if (list.isNotEmpty()) Text(if (met > 0) "達成 $met／${list.size}" else "未達成", color = if (met > 0) C.Primary else C.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
-        if (on.isEmpty()) Label("尚未開啟任何條件，到「我的 › K 棒分析條件」設定（例如國安基金進場、RSI 超賣）。")
+        if (on.isEmpty()) Label("尚未開啟任何條件，到「設置 › K 棒分析條件」設定（例如國安基金進場、RSI 超賣）。")
         else if (wantIdx && idx == null && stock.isEmpty()) Label("計算中…")
         list.forEach { e ->
             Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -141,7 +141,7 @@ fun ChatScreen(nav: NavController) {
         if (!ChatPrefs.enabled) {
             Column(Modifier.fillMaxWidth().padding(24.dp)) {
                 Text("群聊尚未開啟", color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Label("到「我的 › 群聊」打開群聊功能並設定顯示名稱。")
+                Label("到「設置 › 群聊」打開群聊功能並設定顯示名稱。")
             }
             return@Column
         }
@@ -413,7 +413,7 @@ private fun openFile(ctx: android.content.Context, path: String) {
     }
 }
 
-/** 我的 › 群聊：開關、名稱、代號、群聊 ID */
+/** 設置 › 群聊：開關、名稱、代號、群聊 ID */
 @Composable
 fun ChatSettingsCard(nav: NavController) {
     val ctx = LocalContext.current

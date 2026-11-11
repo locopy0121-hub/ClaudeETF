@@ -74,7 +74,7 @@ private fun UpdatedDialog() {
     )
 }
 
-/** 我的 › 關於：版本紀錄（最近 15 版） */
+/** 設置 › 關於：版本紀錄（最近 15 版） */
 @Composable
 fun ReleaseHistoryCard() {
     var open by remember { mutableStateOf(false) }
@@ -200,7 +200,7 @@ private fun <T> Choice(title: String, opts: List<Pair<T, String>>, sel: T, set: 
     }
 }
 
-/** 我的 › 關於：線上更新（狀態、下載進度、自動檢查頻率、通知與安裝方式） */
+/** 設置 › 關於：線上更新（狀態、下載進度、自動檢查頻率、通知與安裝方式） */
 @Composable
 fun UpdateCard() {
     val ctx = LocalContext.current
@@ -248,7 +248,7 @@ fun UpdateCard() {
         if (AppState.autoUpdateCheck) {
             Choice("回到 App 時檢查", listOf(0 to "每次", 15 to "15 分鐘", 60 to "1 小時", 360 to "6 小時", 1440 to "每天"), fg) { fg = it; AppUpdater.setFgGapMin(ctx, it) }
             Choice("背景檢查（App 沒開時）", listOf(0 to "關閉", 1 to "1 小時", 3 to "3 小時", 6 to "6 小時", 12 to "12 小時", 24 to "每天"), bg) { bg = it; AppUpdater.setBgGapHours(ctx, it) }
-            OptRow("發現新版時跳出更新視窗", "關閉則只在本頁與「我的」顯示有新版", popup) { popup = it; AppUpdater.setPopupNew(ctx, it) }
+            OptRow("發現新版時跳出更新視窗", "關閉則只在本頁與「設置」顯示有新版", popup) { popup = it; AppUpdater.setPopupNew(ctx, it) }
             OptRow("發現新版時發送通知", "背景檢查到新版或已下載完成時通知（每版一次）", notify) { notify = it; AppUpdater.setNotifyNew(ctx, it) }
         }
 

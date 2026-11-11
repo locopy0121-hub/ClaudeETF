@@ -72,7 +72,7 @@ fun CostScreen(nav: NavController) {
         tips += "有 ${Fmt.num(minHits * 100.0 / twCount, 0)}% 的台股交易被收最低手續費。單筆金額低於約 NT$${Fmt.num(breakEven)} 時，手續費率實際偏高，可考慮合併下單或改用定期定額。"
     }
     AppState.accountsFor(Market.TW).filter { it.discount >= 0.999 }.forEach {
-        tips += "「${it.name}」尚未設定手續費折扣，多數券商電子下單有折扣，可到「我的 › 帳戶與手續費」設定，記帳時就會自動套用。"
+        tips += "「${it.name}」尚未設定手續費折扣，多數券商電子下單有折扣，可到「設置 › 帳戶與手續費」設定，記帳時就會自動套用。"
     }
     if (stockSellTax > 0 && all.total > 0 && stockSellTax / all.total > 0.4) {
         tips += "股票的證交稅（0.3%）占你交易成本的 ${Fmt.num(stockSellTax / all.total * 100, 0)}%。ETF 證交稅只有 0.1%，頻繁進出時差距明顯。"

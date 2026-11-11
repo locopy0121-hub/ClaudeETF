@@ -229,13 +229,6 @@ fun PortfolioScreen(nav: NavController) {
             }
             item { Segmented(listOf("清單", "行情牆", "熱度圖"), view, { AppState.updateHoldView(it) }) }
             if (view == 1) {
-                item {
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).clickable { nav.navigate(Routes.settings("hold")) }
-                        .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("行情牆設定", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
-                        Label("每列 ${AppState.wallStyle.cols} 格 · ${AppState.wallStyle.items.count { it.show }} 項 ›")
-                    }
-                }
                 item { QuoteWall(tw + us) { nav.navigate(Routes.stock(it)) } }
             }
             if (heat) {
@@ -392,7 +385,7 @@ fun LivePriceBox(q: com.claudeetf.app.data.Quote, isUs: Boolean, scale: Float = 
 }
 
 /**
- * 持股卡片：依「我的 › 持股卡片樣式」（HoldStyle v2）排版。
+ * 持股卡片：依「設置 › 持股卡片樣式」（HoldStyle v2）排版。
  * 左／中／右三欄，項目可放任一欄、各自對齊、可與上一項同一行；欄寬自動或百分比。
  * 與自選行情的格式互不影響。
  */

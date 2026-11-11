@@ -256,7 +256,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
     var fxText by remember { mutableStateOf(AppState.usdTwd.toString()) }
     val version = remember { BuildConfigInfo.versionName(context) }
     if (section == null) { SettingsMenu(nav, version); return }
-    val title = SETTINGS_SECTIONS.flatMap { it.second }.firstOrNull { it.key == section }?.title ?: "我的"
+    val title = SETTINGS_SECTIONS.flatMap { it.second }.firstOrNull { it.key == section }?.title ?: "設置"
     var holdOpen by rememberSaveable { mutableStateOf<String?>(if (AppState.holdView == 1) "wall" else "card") }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
@@ -1149,7 +1149,7 @@ private fun AddAccountRow() {
 
 internal data class SettingsEntry(val key: String, val icon: String, val title: String)
 
-/** 「我的」頁分組：每一項點進去是獨立子頁，不再整頁展開拉長 */
+/** 「設置」頁分組：每一項點進去是獨立子頁，不再整頁展開拉長 */
 internal val SETTINGS_SECTIONS = listOf(
     "外觀與顯示" to listOf(
         SettingsEntry("look", "🎨", "主題、配色與 App 圖示"),
@@ -1233,7 +1233,7 @@ private fun SettingsMenu(nav: NavController, version: String) {
         else -> ""
     }
     Column(Modifier.fillMaxSize().background(C.Bg)) {
-        TopBar("我的")
+        TopBar("設置")
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),

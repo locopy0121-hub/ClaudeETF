@@ -125,7 +125,7 @@ fun AssetAuditDialog(nav: NavController, onClose: () -> Unit) {
                 KeyValue("＋ 股息（淨額）", "NT$" + Fmt.num(divs))
                 if (AppState.cashFlows.isNotEmpty()) KeyValue("± 現金收支（淨額）", (if (flows >= 0) "+" else "−") + "NT$" + Fmt.num(kotlin.math.abs(flows)))
                 KeyValue("＝ 現金", "NT$" + Fmt.num(AppState.cashTwd), if (AppState.cashTwd < 0) C.Red else C.Text)
-                if (AppState.cashTwd < 0) Label("現金為負：買進金額大於「初始現金＋賣出＋股息」。若沒有記錄入金，可到 我的 › 帳本 調整初始現金；若有上方⚠交易，先修正那筆。")
+                if (AppState.cashTwd < 0) Label("現金為負：買進金額大於「初始現金＋賣出＋股息」。若沒有記錄入金，可到 設置 › 帳本 調整初始現金；若有上方⚠交易，先修正那筆。")
             }
         },
         confirmButton = { Text("關閉", color = C.Primary, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onClose).padding(12.dp)) },

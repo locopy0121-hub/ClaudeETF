@@ -69,7 +69,7 @@ object HealthCheck {
                 out += Issue(1, "疑似重複交易", t.date + " " + t.type.label + " " + t.symbol + " 共 ${list.size} 筆相同", t.id)
             }
         if (AppState.cashTwd < 0) {
-            out += Issue(1, "現金為負", "目前現金 " + Fmt.num(AppState.cashTwd) + " 元，可能漏記入金或期初現金；可到「我的 › 帳本」調整")
+            out += Issue(1, "現金為負", "目前現金 " + Fmt.num(AppState.cashTwd) + " 元，可能漏記入金或期初現金；可到「設置 › 帳本」調整")
         }
         val weekAgo = System.currentTimeMillis() - 7L * 24 * 3600 * 1000
         AppState.holdings.forEach { h ->

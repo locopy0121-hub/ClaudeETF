@@ -299,7 +299,7 @@ private val tabs = listOf(
     Tab(Routes.WATCH, "行情", Icons.AutoMirrored.Filled.List),
     Tab(Routes.PORTFOLIO, "持股", Icons.Filled.AccountBox),
     Tab(Routes.MARKET, "市場", Icons.Filled.Place),
-    Tab(Routes.SETTINGS, "我的", Icons.Filled.Person),
+    Tab(Routes.SETTINGS, "設置", Icons.Filled.Person),
 )
 
 /** 次層頁面所屬的分頁，用來標示底部導覽 */

@@ -231,7 +231,7 @@ fun IndexCardOptions(cardSymbol: String?) {
             Text("從首頁移除這張卡片", color = C.Red, fontSize = 13.sp,
                 modifier = Modifier.clickable { AppState.removeHomeCard("idx:$cardSymbol") }.padding(vertical = 6.dp))
         }
-        Label("開關套用到首頁所有指數卡片；要加回或新增其他卡片，到 我的 › 首頁卡片與指數跑馬燈")
+        Label("開關套用到首頁所有指數卡片；要加回或新增其他卡片，到 設置 › 首頁卡片與指數跑馬燈")
     }
 }
 
@@ -359,8 +359,8 @@ fun FuturesCard(nav: NavController) {
                         .clickable { AppState.updateFutProduct(code) }.padding(horizontal = 10.dp, vertical = 5.dp))
             }
         }
-        if (src == "off") { Label("期貨資料來源已關閉（我的 › 行情資料來源 › 期貨）"); return@Card }
-        if (src == "fugle" && key.isBlank()) { Label("需要富果金鑰，或到 我的 › 行情資料來源 › 期貨 改用期交所"); return@Card }
+        if (src == "off") { Label("期貨資料來源已關閉（設置 › 行情資料來源 › 期貨）"); return@Card }
+        if (src == "fugle" && key.isBlank()) { Label("需要富果金鑰，或到 設置 › 行情資料來源 › 期貨 改用期交所"); return@Card }
         if (q == null) { Label(fs.status.ifBlank { "載入中…" }); return@Card }
         Row(verticalAlignment = Alignment.Bottom) {
             NumText(Fmt.num(q.price, 2), 24.sp, Trend.fg(q.change), weight = FontWeight.Bold, modifier = Modifier.weight(1f))

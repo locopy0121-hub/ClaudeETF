@@ -127,6 +127,6 @@ fun NewsCard() {
         }
         if ((l?.size ?: 0) > 5) Text(if (showAll) "收合" else "更多 ›", color = C.Primary, fontSize = 12.sp,
             modifier = Modifier.clickable { showAll = !showAll }.padding(vertical = 4.dp))
-        Label(if (cat == "mine") "來源：" + RssNews.enabled().joinToString("、") { it.name } + "（我的 › 新聞來源 設定）" else "來源：Yahoo股市 RSS；點標題在 App 內閱讀")
+        Label(if (cat == "mine") "來源：" + RssNews.enabled().joinToString("、") { it.name } + "（設置 › 新聞來源 設定）" else "來源：Yahoo股市 RSS；點標題在 App 內閱讀")
     }
 }

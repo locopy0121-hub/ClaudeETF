@@ -514,7 +514,7 @@ object AppState {
         homeOrder.addAll(savedOrder + missing)
         homeHidden.clear()
         p.getString("homeHidden", null)?.split(",")?.filter { it.isNotBlank() }?.let { homeHidden.addAll(it) }
-        // 新加入的固定卡片：預設隱藏（不打亂既有首頁），到「我的 › 首頁卡片」勾選
+        // 新加入的固定卡片：預設隱藏（不打亂既有首頁），到「設置 › 首頁卡片」勾選
         missing.filter { it in newHomeCards }.forEach { if (it !in homeHidden) homeHidden.add(it) }
         // 一次性：首頁最上方加入加權指數大卡（可在設定移除）
         if (!p.getBoolean("homeTwiiAdded", false)) {
