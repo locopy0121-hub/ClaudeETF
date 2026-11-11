@@ -159,7 +159,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 delay(3_000L)
-                if (AppState.autoUpdateCheck) runCatching { com.claudeetf.app.data.AppUpdater.check(applicationContext, auto = true) }
+                if (AppState.autoUpdateCheck) runCatching {
+                    com.claudeetf.app.data.AppUpdater.check(applicationContext, auto = true,
+                        minGapMs = com.claudeetf.app.data.AppUpdater.fgGapMin(applicationContext) * 60_000L)
+                }
             }
         }
         // 美股盤中：依「美股更新頻率」獨立輪詢（1～10 秒），或 Finnhub 逐筆串流（即時）

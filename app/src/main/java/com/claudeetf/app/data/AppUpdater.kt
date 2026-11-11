@@ -42,6 +42,46 @@ object AppUpdater {
         private set
     /** 下載進度 0..1；null = 未下載 */
     var progress by mutableStateOf<Float?>(null)
+    /** 下載細節（前景與背景預先下載都會更新）：已下載、總大小（位元組）、速度（位元組／秒） */
+    var dlDone by mutableStateOf(0L)
+    var dlTotal by mutableStateOf(0L)
+    var dlSpeed by mutableStateOf(0.0)
+    /** 正在下載（前景或背景） */
+    var downloading by mutableStateOf(false)
+    @Volatile private var cancelRequested = false
+    private const val CANCELLED = "已取消下載"
+
+    /** 下載進度文字：45% · 8.2／18.4 MB · 2.3 MB/s · 剩約 5 秒 */
+    fun progressText(): String {
+        fun mb(b: Long) = String.format(java.util.Locale.US, "%.1f", b / 1048576.0)
+        val parts = ArrayList<String>()
+        if (dlTotal > 0) parts += "${(dlDone * 100 / dlTotal).coerceIn(0, 100)}%"
+        parts += mb(dlDone) + (if (dlTotal > 0) "／" + mb(dlTotal) else "") + " MB"
+        if (dlSpeed > 1) {
+            parts += (if (dlSpeed >= 1048576) String.format(java.util.Locale.US, "%.1f MB/s", dlSpeed / 1048576) else String.format(java.util.Locale.US, "%.0f KB/s", dlSpeed / 1024))
+            if (dlTotal > dlDone) {
+                val sec = ((dlTotal - dlDone) / dlSpeed).toLong()
+                parts += if (sec >= 60) "剩約 ${sec / 60} 分 ${sec % 60} 秒" else "剩約 $sec 秒"
+            }
+        }
+        return parts.joinToString(" · ")
+    }
+    /** 取消目前的下載 */
+    fun cancelDownload() { cancelRequested = true }
+
+    private fun prefs(c: Context) = c.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE)
+    /** 回到 App 時的檢查間隔（分鐘）：0 每次、15、60、360、1440 */
+    fun fgGapMin(c: Context): Int = prefs(c).getInt("fgGap", 15)
+    fun setFgGapMin(c: Context, v: Int) = prefs(c).edit().putInt("fgGap", v).apply()
+    /** 背景檢查間隔（小時）：0 關閉、1、3、6、12、24 */
+    fun bgGapHours(c: Context): Int = prefs(c).getInt("bgGap", 6)
+    fun setBgGapHours(c: Context, v: Int) = prefs(c).edit().putInt("bgGap", v).apply()
+    /** 發現新版時發系統通知 */
+    fun notifyNew(c: Context): Boolean = prefs(c).getBoolean("notifyNew", true)
+    fun setNotifyNew(c: Context, v: Boolean) = prefs(c).edit().putBoolean("notifyNew", v).apply()
+    /** 回到 App 發現新版時跳出更新視窗 */
+    fun popupNew(c: Context): Boolean = prefs(c).getBoolean("popupNew", true)
+    fun setPopupNew(c: Context, v: Boolean) = prefs(c).edit().putBoolean("popupNew", v).apply()
         private set
     /** 上次檢查時間（毫秒） */
     var lastCheckAt by mutableStateOf(0L)
@@ -286,6 +326,7 @@ object AppUpdater {
     /** 背景通知用：這一版是否已通知過（每版只通知一次） */
     /** 有新版：能預先下載就先下載完再提示「已下載，點擊安裝」；不能（非 Wi-Fi／關閉）就直接提示 */
     private fun afterCheckPopup(context: Context, prefs: android.content.SharedPreferences) {
+        if (!popupNew(context)) { if (hasUpdate(context)) appScope.launch { prefetch(context) }; return }
         if (!hasUpdate(context) || prefs.getString("skipped", "") == latest?.tag) { prompt = false; return }
         appScope.launch {
             prefetch(context)
@@ -297,6 +338,7 @@ object AppUpdater {
     }
 
     fun shouldNotify(context: Context): Boolean {
+        if (!notifyNew(context)) return false
         val r = latest ?: return false
         if (!hasUpdate(context)) return false
         val p = context.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE)
@@ -344,7 +386,7 @@ object AppUpdater {
             refreshReady(context)
             install(context, file)
         } catch (e: Exception) {
-            message = "更新失敗：" + (e.message ?: e.javaClass.simpleName)
+            message = if (e.message == CANCELLED) "已取消下載" else "更新失敗：" + (e.message ?: e.javaClass.simpleName)
         } finally {
             progress = null
         }
@@ -365,23 +407,41 @@ object AppUpdater {
                     val body = resp.body ?: throw IllegalStateException("下載內容為空")
                     val total = body.contentLength().takeIf { it > 0 } ?: r.size
                     expected = total
+                    cancelRequested = false
+                    withContext(Dispatchers.Main) { downloading = true; dlDone = 0L; dlTotal = total; dlSpeed = 0.0 }
+                    try {
                     body.byteStream().use { input ->
                         part.outputStream().use { o ->
                             val buf = ByteArray(64 * 1024)
                             var done = 0L
                             var lastUi = 0L
+                            var lastBytes = 0L
+                            val start = System.currentTimeMillis()
+                            var lastT = start
                             while (true) {
+                                if (cancelRequested) { part.delete(); throw IllegalStateException(CANCELLED) }
                                 val n = input.read(buf); if (n < 0) break
                                 o.write(buf, 0, n); md.update(buf, 0, n); done += n
                                 val t = System.currentTimeMillis()
-                                if (showProgress && total > 0 && t - lastUi > 150) {
+                                if (t - lastUi > 200) {
                                     lastUi = t
-                                    val p = (done.toFloat() / total).coerceIn(0f, 1f)
-                                    withContext(Dispatchers.Main) { progress = p }
+                                    // 速度：最近一段的瞬間速度與平均速度平滑
+                                    val inst = if (t > lastT) (done - lastBytes) * 1000.0 / (t - lastT) else 0.0
+                                    lastBytes = done; lastT = t
+                                    val d = done
+                                    val p = if (total > 0) (d.toFloat() / total).coerceIn(0f, 1f) else null
+                                    withContext(Dispatchers.Main) {
+                                        dlDone = d
+                                        dlSpeed = if (dlSpeed <= 0) inst else dlSpeed * 0.7 + inst * 0.3
+                                        if (showProgress && p != null) progress = p
+                                    }
                                 }
                             }
                             got = done
                         }
+                    }
+                    } finally {
+                        withContext(Dispatchers.Main) { downloading = false; dlDone = got }
                     }
                 }
                 if (expected > 0 && got != expected) { part.delete(); throw IllegalStateException("下載不完整（$got / $expected bytes），請重試") }

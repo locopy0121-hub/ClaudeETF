@@ -85,7 +85,9 @@ object AlertEngine {
     /** 背景發現新版本：發一次系統通知，點了開 App 跳出更新視窗 */
     suspend fun checkAppUpdate(context: Context) {
         if (!AppState.autoUpdateCheck) return
-        com.claudeetf.app.data.AppUpdater.check(context, auto = true, minGapMs = 6 * 3600_000L, popup = false)
+        val gap = com.claudeetf.app.data.AppUpdater.bgGapHours(context)
+        if (gap <= 0) return
+        com.claudeetf.app.data.AppUpdater.check(context, auto = true, minGapMs = gap * 3600_000L, popup = false)
         // 背景先把新版下載好（依設定限 Wi-Fi），通知直接說「已下載，點此安裝」
         val ready = runCatching { com.claudeetf.app.data.AppUpdater.prefetch(context) }.getOrDefault(false)
         if (com.claudeetf.app.data.AppUpdater.shouldNotify(context)) {

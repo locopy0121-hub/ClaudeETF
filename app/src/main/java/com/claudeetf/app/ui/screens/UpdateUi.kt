@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -128,7 +129,7 @@ private fun UpdateDialog(r: AppUpdater.Release, onLater: () -> Unit) {
                 if (isReady) Text("已在背景下載並驗證完成，按「立即安裝」即可更新。", color = C.Primary, fontSize = 13.sp)
                 else if (AppUpdater.prefetching && p == null) Label("背景下載中…")
                 if (p != null) {
-                    Label(if (AppUpdater.prefetching) "等待背景下載完成…" else "下載中 " + (p * 100).toInt() + "%")
+                    Label((if (AppUpdater.prefetching) "背景下載中 " else "下載中 ") + AppUpdater.progressText())
                     Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Bg)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(p).clip(RoundedCornerShape(4.dp)).background(C.Primary))
                     }
@@ -154,7 +155,52 @@ private fun UpdateDialog(r: AppUpdater.Release, onLater: () -> Unit) {
     )
 }
 
-/** 我的 › 關於：檢查更新 */
+/** 下載進度卡：進度條、百分比、已下載／總大小、速度、剩餘時間與取消 */
+@Composable
+fun DownloadProgress() {
+    if (!AppUpdater.downloading && AppUpdater.progress == null) return
+    val total = AppUpdater.dlTotal
+    val frac = if (total > 0) (AppUpdater.dlDone.toFloat() / total).coerceIn(0f, 1f) else null
+    val anim by androidx.compose.animation.core.animateFloatAsState(frac ?: 0f, label = "dl")
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg).padding(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (AppUpdater.prefetching) "背景預先下載中" else "下載中", Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("取消", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { AppUpdater.cancelDownload() }.padding(horizontal = 8.dp, vertical = 4.dp))
+        }
+        Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(10.dp).clip(RoundedCornerShape(5.dp)).background(C.Card)) {
+            if (frac != null) Box(Modifier.fillMaxHeight().fillMaxWidth(anim).clip(RoundedCornerShape(5.dp)).background(C.Primary))
+            else androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxSize(), color = C.Primary, trackColor = C.Card)
+        }
+        Text(AppUpdater.progressText(), color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        Label("下載完成後會驗證檔案（大小與 SHA-256）再交給系統安裝。")
+    }
+}
+
+@Composable
+private fun OptRow(title: String, desc: String? = null, on: Boolean, set: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(title, color = C.Text, fontSize = 14.sp)
+            if (desc != null) Text(desc, color = C.Muted, fontSize = 11.sp, lineHeight = 15.sp)
+        }
+        Switch(on, set)
+    }
+}
+
+@Composable
+private fun <T> Choice(title: String, opts: List<Pair<T, String>>, sel: T, set: (T) -> Unit) {
+    Text(title, color = C.Text, fontSize = 14.sp, modifier = Modifier.padding(top = 10.dp))
+    Row(Modifier.padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        opts.forEach { (v, n) ->
+            val on = v == sel
+            Text(n, color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Primary else C.Bg).clickable { set(v) }
+                    .padding(horizontal = 12.dp, vertical = 7.dp))
+        }
+    }
+}
+
+/** 我的 › 關於：線上更新（狀態、下載進度、自動檢查頻率、通知與安裝方式） */
 @Composable
 fun UpdateCard() {
     val ctx = LocalContext.current
@@ -163,19 +209,27 @@ fun UpdateCard() {
     // 打開「關於」時，距上次檢查超過 1 分鐘就自動重新檢查（不跳視窗）
     LaunchedEffect(Unit) { AppUpdater.check(ctx, auto = true, minGapMs = 60_000L, popup = false) }
     val r = AppUpdater.latest
+    var fg by remember { mutableIntStateOf(AppUpdater.fgGapMin(ctx)) }
+    var bg by remember { mutableIntStateOf(AppUpdater.bgGapHours(ctx)) }
+    var popup by remember { mutableStateOf(AppUpdater.popupNew(ctx)) }
+    var notify by remember { mutableStateOf(AppUpdater.notifyNew(ctx)) }
+    var mode by remember { mutableIntStateOf(AppUpdater.prefetchMode(ctx)) }
+    var auto by remember { mutableStateOf(AppUpdater.autoInstall(ctx)) }
     Card(padding = 14.dp) {
+        // ---- 狀態
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("線上更新", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("線上更新", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 Label("目前 " + AppUpdater.currentVersion(ctx) + (r?.let { " · 最新 " + it.tag.removePrefix("v") } ?: ""))
             }
             Text(
                 if (AppUpdater.checking) "檢查中…" else if (AppUpdater.hasUpdate(ctx)) (if (AppUpdater.ready != null) "安裝 ›" else "更新 ›") else "檢查更新",
-                color = C.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable(enabled = !AppUpdater.checking) {
-                    if (AppUpdater.hasUpdate(ctx)) show = true
-                    else scope.launch { AppUpdater.check(ctx); if (AppUpdater.hasUpdate(ctx)) show = true }
-                }.padding(horizontal = 12.dp, vertical = 8.dp),
+                color = C.OnPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (AppUpdater.hasUpdate(ctx)) C.Primary else C.Primary.copy(alpha = 0.6f))
+                    .clickable(enabled = !AppUpdater.checking) {
+                        if (AppUpdater.hasUpdate(ctx)) show = true
+                        else scope.launch { AppUpdater.check(ctx); if (AppUpdater.hasUpdate(ctx)) show = true }
+                    }.padding(horizontal = 14.dp, vertical = 8.dp),
             )
         }
         Row(Modifier.padding(top = 4.dp)) {
@@ -184,32 +238,33 @@ fun UpdateCard() {
             if (AppUpdater.lastCheckAt > 0) Label("上次檢查 " + java.time.Instant.ofEpochMilli(AppUpdater.lastCheckAt)
                 .atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("M/d HH:mm")))
         }
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("開啟 App 時自動檢查", Modifier.weight(1f), color = C.Text2, fontSize = 13.sp)
-            Switch(AppState.autoUpdateCheck, { AppState.updateAutoUpdateCheck(it) })
+        if (AppUpdater.ready != null && AppUpdater.hasUpdate(ctx)) Text("✓ " + AppUpdater.ready!!.removePrefix("v") + " 已下載並驗證完成，點「安裝 ›」立即更新",
+            color = C.Primary, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+        DownloadProgress()
+
+        // ---- 自動檢查
+        Text("自動檢查", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
+        OptRow("自動檢查更新", "關閉後只在按「檢查更新」時查詢，不在背景下載或通知", AppState.autoUpdateCheck) { AppState.updateAutoUpdateCheck(it) }
+        if (AppState.autoUpdateCheck) {
+            Choice("回到 App 時檢查", listOf(0 to "每次", 15 to "15 分鐘", 60 to "1 小時", 360 to "6 小時", 1440 to "每天"), fg) { fg = it; AppUpdater.setFgGapMin(ctx, it) }
+            Choice("背景檢查（App 沒開時）", listOf(0 to "關閉", 1 to "1 小時", 3 to "3 小時", 6 to "6 小時", 12 to "12 小時", 24 to "每天"), bg) { bg = it; AppUpdater.setBgGapHours(ctx, it) }
+            OptRow("發現新版時跳出更新視窗", "關閉則只在本頁與「我的」顯示有新版", popup) { popup = it; AppUpdater.setPopupNew(ctx, it) }
+            OptRow("發現新版時發送通知", "背景檢查到新版或已下載完成時通知（每版一次）", notify) { notify = it; AppUpdater.setNotifyNew(ctx, it) }
         }
-        // 預先下載：偵測到新版就先下載好，等使用者點安裝
-        var mode by remember { mutableStateOf(AppUpdater.prefetchMode(ctx)) }
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("新版本預先下載", Modifier.weight(1f), color = C.Text2, fontSize = 13.sp)
-            listOf(0 to "僅 Wi-Fi", 1 to "任何網路", 2 to "關閉").forEach { (v, n) ->
-                val on = mode == v
-                Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                    modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
-                        .clickable { mode = v; AppUpdater.setPrefetchMode(ctx, v) }.padding(horizontal = 10.dp, vertical = 4.dp))
-            }
-        }
-        var auto by remember { mutableStateOf(AppUpdater.autoInstall(ctx)) }
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("下載完成直接安裝", color = C.Text2, fontSize = 13.sp)
-                Text("跳過 App 的提示視窗，直接出現系統的「更新」確認，只需按一次", color = C.Muted, fontSize = 11.sp)
-            }
-            Switch(auto, { auto = it; AppUpdater.setAutoInstall(ctx, it) })
-        }
-        if (AppUpdater.ready != null && AppUpdater.hasUpdate(ctx)) Text("✓ " + AppUpdater.ready!!.removePrefix("v") + " 已下載完成，點「更新 ›」立即安裝", color = C.Primary, fontSize = 12.sp)
-        else if (AppUpdater.prefetching) Label("背景下載新版中…")
-        Label("從 GitHub Releases 下載最新版並驗證，交給系統安裝程式覆蓋更新。回到 App 時自動檢查（15 分鐘一次），背景每 6 小時檢查；偵測到新版會先在背景下載好，再提示你點擊安裝。")
+
+        // ---- 下載與安裝
+        Text("下載與安裝", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
+        Choice("新版本預先下載", listOf(0 to "僅 Wi-Fi", 1 to "任何網路", 2 to "關閉"), mode) { mode = it; AppUpdater.setPrefetchMode(ctx, it) }
+        OptRow("下載完成直接安裝", "跳過 App 的提示視窗，直接出現系統的「更新」確認，只需按一次", auto) { auto = it; AppUpdater.setAutoInstall(ctx, it) }
+
+        val fgText = when (fg) { 0 -> "每次回到 App"; 15 -> "回到 App 時每 15 分鐘"; 60 -> "回到 App 時每小時"; 360 -> "回到 App 時每 6 小時"; else -> "回到 App 時每天" }
+        Label(
+            if (!AppState.autoUpdateCheck) "目前：只在手動按「檢查更新」時查詢。"
+            else "目前：$fgText 檢查一次" + (if (bg > 0) "，App 沒開時每 $bg 小時背景檢查" else "，不在背景檢查") +
+                "；" + listOf("有 Wi-Fi 時先預先下載", "偵測到新版就先預先下載", "不預先下載，按更新時才下載")[mode.coerceIn(0, 2)] + "。",
+            Modifier.padding(top = 10.dp),
+        )
+        Label("來源：GitHub Releases；下載後驗證大小與 SHA-256 才交給系統安裝程式覆蓋更新。")
     }
     if (show && r != null) UpdateDialog(r, onLater = { show = false })
 }
