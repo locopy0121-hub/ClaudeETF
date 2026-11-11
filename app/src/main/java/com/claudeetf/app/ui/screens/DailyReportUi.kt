@@ -102,18 +102,47 @@ fun DailyReportScreen(nav: NavController) {
     var showAll by remember { mutableStateOf(false) }
     var autoOn by remember { mutableStateOf(DailyReport.autoOn) }
     var notifyOn by remember { mutableStateOf(DailyReport.notifyOn) }
+    var exporting by remember { mutableStateOf<String?>(null) }
     fun open(sym: String) = scope.launch {
         if (!AppState.isWatched(sym)) MarketData.addAndFetch(sym)
         nav.navigate(Routes.stock(sym))
     }
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("每日盤後報表", onBack = { nav.popBackStack() }) {
-            if (r != null) IconButton(onClick = {
-                val text = "台股盤後報表 " + r.date.replace("-", "/") + "\n" + r.summary.joinToString("\n") +
-                    "\n\n看漲 25：" + r.bulls.joinToString("、") { it.symbol + " " + it.name } +
-                    "\n看跌 25：" + r.bears.joinToString("、") { it.symbol + " " + it.name } + "\n（僅供參考，非投資建議）"
-                shareText(ctx, text, "分享盤後報表")
-            }) { Icon(Icons.Filled.Share, contentDescription = "分享", tint = C.Text) }
+            if (r != null) Box {
+                var menu by remember { mutableStateOf(false) }
+                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Share, contentDescription = "輸出與分享", tint = C.Text) }
+                fun export(pdf: Boolean, save: Boolean) {
+                    menu = false
+                    scope.launch {
+                        exporting = if (pdf) "產生 PDF…" else "產生圖片…"
+                        val f = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { com.claudeetf.app.util.ReportExport.file(ctx, r, pdf) } }
+                            .onFailure { exporting = "輸出失敗：" + (it.message ?: "") }.getOrNull()
+                        if (f != null) {
+                            if (save) {
+                                val path = runCatching { com.claudeetf.app.util.ReportExport.saveToDownloads(ctx, f) }.getOrNull()
+                                exporting = path?.let { "已儲存到 $it" } ?: "此 Android 版本無法直接存到下載，請改用分享"
+                            } else { exporting = null; com.claudeetf.app.util.ReportExport.share(ctx, f) }
+                        }
+                    }
+                }
+                androidx.compose.material3.DropdownMenu(menu, { menu = false }, containerColor = C.Card) {
+                    listOf(
+                        "分享圖片（PNG 長圖）" to { export(false, false) },
+                        "分享 PDF（A4 分頁）" to { export(true, false) },
+                        "儲存圖片到手機" to { export(false, true) },
+                        "儲存 PDF 到手機" to { export(true, true) },
+                        "分享文字摘要" to {
+                            menu = false
+                            shareText(ctx, "台股盤後報表 " + r.date.replace("-", "/") + "\n" + r.summary.joinToString("\n") +
+                                "\n\n看漲 25：" + r.bulls.joinToString("、") { it.symbol + " " + it.name } +
+                                "\n看跌 25：" + r.bears.joinToString("、") { it.symbol + " " + it.name } + "\n（僅供參考，非投資建議）", "分享盤後報表")
+                        },
+                    ).forEach { (t, f) ->
+                        androidx.compose.material3.DropdownMenuItem(text = { Text(t, color = C.Text, fontSize = 14.sp) }, onClick = f)
+                    }
+                }
+            }
             IconButton(onClick = { scope.launch { DailyReport.generate(force = true); sel = DailyReport.dates.firstOrNull() } }, enabled = !DailyReport.generating) {
                 Icon(Icons.Filled.Refresh, contentDescription = "重新產生", tint = if (DailyReport.generating) C.Muted else C.Text)
             }
@@ -136,6 +165,12 @@ fun DailyReportScreen(nav: NavController) {
                 }
             } }
             DailyReport.error?.let { e -> item { Text(e, color = C.Red, fontSize = 13.sp) } }
+            exporting?.let { m -> item {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Card).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(m, Modifier.weight(1f), color = C.Text2, fontSize = 13.sp)
+                    Text("✕", color = C.Muted, fontSize = 14.sp, modifier = Modifier.clickable { exporting = null }.padding(4.dp))
+                }
+            } }
             if (r == null) {
                 item {
                     Card(padding = 14.dp) {
