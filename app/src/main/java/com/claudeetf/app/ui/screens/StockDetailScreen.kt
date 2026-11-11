@@ -323,6 +323,7 @@ private fun EtfTagRow(q: Quote) {
             d?.board?.let { EtfChip(it, C.Text2) }
             d?.sector?.let { EtfChip(it, androidx.compose.ui.graphics.Color(0xFF5B8DEF)) { peers = true } }
             d?.industry?.let { EtfChip(it, androidx.compose.ui.graphics.Color(0xFF26A69A)) { peers = true } }
+            DailyRankChip(q.symbol)
             if (band != null) EtfChip("光譜 " + band.zoneName, zoneColor(band.zone)) { }
         }
         if (peers && d?.sector != null) {
@@ -354,6 +355,7 @@ private fun EtfTagRow(q: Quote) {
             }) { info = t.text }
         }
         val y = T.annualYield(q.symbol, q.price)
+        DailyRankChip(q.symbol)
         band?.let { b -> EtfChip("光譜 " + b.zoneName, zoneColor(b.zone)) { info = "__band" } }
         EtfChip(
             (freq ?: "配息…") + (y?.let { " · 年化 " + Fmt.num(it, 1) + "%" } ?: ""),

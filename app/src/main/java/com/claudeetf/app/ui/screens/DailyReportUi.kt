@@ -2,11 +2,13 @@ package com.claudeetf.app.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -552,4 +554,31 @@ private fun TrendCard(upTo: String) {
         val ev = rs.filter { it.hasEtf }
         if (ev.size >= 2) KeyValue("ETF 成交占比", ev.takeLast(5).joinToString("、") { "%.0f".format(if (it.tseValue + it.otcValue > 0) it.etfValue / (it.tseValue + it.otcValue) * 100 else 0.0) + "%" })
     }
+}
+
+
+/** 個股標籤列：最新盤後報表的排行（例如「看漲 14」）；點一下看完整解析 */
+@Composable
+fun DailyRankChip(symbol: String) {
+    val rk = DailyReport.rankOf(symbol) ?: return
+    var info by remember { mutableStateOf(false) }
+    val c = Trend.fg(if (rk.bull) 1.0 else -1.0)
+    Text((if (rk.bull) "看漲 " else "看跌 ") + rk.rank, color = c, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(c.copy(alpha = 0.15f))
+            .border(1.dp, c.copy(alpha = 0.6f), RoundedCornerShape(8.dp)).clickable { info = true }.padding(horizontal = 10.dp, vertical = 5.dp))
+    if (info) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { info = false }, containerColor = C.Card,
+        title = { Text("盤後報表排行", color = C.Text, fontSize = 16.sp) },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                Text(dateShort(rk.date) + " " + (if (rk.etf) "ETF " else "個股") + (if (rk.bull) "看漲" else "看跌") + "名單第 ${rk.rank} 名（共 ${rk.total} 檔）",
+                    color = c, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("綜合分數 " + "%+.1f".format(rk.pick.score) + " · 當日收盤 " + Fmt.price(rk.pick.price) + "（" + "%+.2f".format(rk.pick.pct) + "%）",
+                    color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                Text(com.claudeetf.app.util.ReportExport.pickDetail(rk.pick), color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 8.dp))
+                Label("排行來自每日盤後報表（首頁 › 每日盤後報表），僅供參考。", Modifier.padding(top = 8.dp))
+            }
+        },
+        confirmButton = { Text("關閉", color = C.Primary, modifier = Modifier.clickable { info = false }.padding(10.dp)) },
+    )
 }

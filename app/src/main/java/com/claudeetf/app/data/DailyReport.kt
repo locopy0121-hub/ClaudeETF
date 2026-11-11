@@ -163,6 +163,18 @@ object DailyReport {
         return out.sortedWith(compareBy({ !it.held }, { it.bull }, { it.rank }))
     }
 
+    /** 某檔在最新一份報表的名次（看漲／看跌、個股或 ETF 名單） */
+    data class Rank(val bull: Boolean, val rank: Int, val total: Int, val etf: Boolean, val pick: TwPicks.Pick, val date: String)
+
+    fun rankOf(symbol: String, r: Report? = latest): Rank? {
+        r ?: return null
+        listOf(Triple(true, false, r.bulls), Triple(false, false, r.bears), Triple(true, true, r.etfBulls), Triple(false, true, r.etfBears)).forEach { (bull, etf, l) ->
+            val i = l.indexOfFirst { it.symbol == symbol }
+            if (i >= 0) return Rank(bull, i + 1, l.size, etf, l[i], r.date)
+        }
+        return null
+    }
+
     const val TOP = 25
     const val TOP_ETF = 15
     val HIST_LABELS = listOf("≤-9", "-9", "-6", "-3", "-1", "0", "+1", "+3", "+6", "+9", "≥9")
