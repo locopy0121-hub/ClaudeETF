@@ -32,10 +32,14 @@ data class WallItem(
     val bg: Int = 0,
     val ba: Int = 25,
     val lc: Int = 0,
+    /** 懸浮：不佔版面，自由放在格內（fx、fy＝水平、垂直位置 %） */
+    val fl: Boolean = false,
+    val fx: Int = 100,
+    val fy: Int = 30,
 ) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("s", show).put("h", head).put("i", inline).put("a", align)
         .put("z", size).put("b", bold).put("c", color).put("m", mono).put("l", label)
-        .put("mx", mx).put("my", my).put("px", px).put("py", py).put("lg", lg).put("lh", lh).put("bg", bg).put("ba", ba).put("lc", lc)
+        .put("mx", mx).put("my", my).put("px", px).put("py", py).put("lg", lg).put("lh", lh).put("bg", bg).put("ba", ba).put("lc", lc).put("fl", fl).put("fx", fx).put("fy", fy)
 
     companion object {
         fun fromJson(o: JSONObject, d: WallItem) = WallItem(
@@ -44,6 +48,7 @@ data class WallItem(
             o.optInt("mx", d.mx).coerceIn(-8, 24), o.optInt("my", d.my).coerceIn(-12, 24), o.optInt("px", d.px).coerceIn(-10, 20), o.optInt("py", d.py).coerceIn(-10, 16),
             o.optInt("lg", d.lg).coerceIn(-12, 16), o.optInt("lh", d.lh).let { if (it == 0) 0 else it.coerceIn(70, 170) },
             o.optInt("bg", d.bg).coerceIn(0, 7), o.optInt("ba", d.ba).coerceIn(10, 100), o.optInt("lc", d.lc).coerceIn(0, 5),
+            o.optBoolean("fl", d.fl), o.optInt("fx", d.fx).coerceIn(0, 100), o.optInt("fy", d.fy).coerceIn(0, 100),
         )
     }
 }
@@ -66,6 +71,8 @@ data class WallStyle(
     val header: Boolean = true,
     /** 外框依漲跌上色 */
     val border: Boolean = true,
+    /** 漲停、跌停時整格反白（底色依漲跌、文字白色） */
+    val limitFill: Boolean = true,
     /** 項目（依順序排列） */
     val items: List<WallItem> = DEFAULT_ITEMS,
 ) {
@@ -73,7 +80,7 @@ data class WallStyle(
     fun withItem(it2: WallItem) = copy(items = items.map { if (it.id == it2.id) it2 else it })
 
     fun toJson(): String = JSONObject().put("v", 2).put("c", cols).put("p", pad).put("g", gap).put("lg", lineGap).put("lh", lineHeight)
-        .put("h", header).put("b", border).put("items", JSONArray().apply { items.forEach { put(it.toJson()) } }).toString()
+        .put("h", header).put("b", border).put("lf", limitFill).put("items", JSONArray().apply { items.forEach { put(it.toJson()) } }).toString()
 
     companion object {
         /** 項目代號 → 名稱 */
@@ -141,7 +148,7 @@ data class WallStyle(
             val base = WallStyle(
                 o.optInt("c", d.cols).coerceIn(1, 4), o.optInt("p", d.pad).coerceIn(-10, 24), o.optInt("g", d.gap).coerceIn(0, 16),
                 o.optInt("lg", d.lineGap).coerceIn(-12, 16), o.optInt("lh", d.lineHeight).coerceIn(70, 170),
-                o.optBoolean("h", d.header), o.optBoolean("b", d.border),
+                o.optBoolean("h", d.header), o.optBoolean("b", d.border), o.optBoolean("lf", d.limitFill),
             )
             val arr = o.optJSONArray("items")
             if (arr == null) {

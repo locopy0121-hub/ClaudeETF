@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.layout.Layout
@@ -88,14 +90,17 @@ private fun textAlignOf(a: Int) = when (a) { 1 -> TextAlign.Center; 2 -> TextAli
 
 /** 行情牆的一格 */
 @Composable
-fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int = 0, onClick: () -> Unit) {
     val q = AppState.quote(h.symbol)
     val chg = q?.change ?: 0.0
     val pct = q?.changePct ?: 0.0
-    val trend = Trend.fg(chg)
+    val trend = if (demo != 0) Trend.fg(demo.toDouble()) else Trend.fg(chg)
     val lh = st.lineHeight / 100f
     val pad = (10 + st.pad).coerceAtLeast(0).dp
     val vis = st.items.filter { it.show }
+    val limit = if (st.limitFill && q != null && AppState.marketOf(h.symbol) == com.claudeetf.app.data.Market.TW)
+        com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00")) else null
+    val inv = limit != null || (demo != 0 && st.limitFill)
     // 進場建議、光譜需要分析結果（背景載入，快取共用）
     val entry = if (vis.any { it.id == "entry" } && q != null) entryResultFor(q) else null
     if (vis.any { it.id == "band" } && q != null) LaunchedEffect(q.symbol) {
@@ -150,11 +155,11 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, onClick: 
         1 -> trend; 2 -> level(i); 3 -> C.Muted; 4 -> GOLD; 5 -> C.Primary; 6 -> Color.White; 7 -> C.Bg
         else -> null
     }?.copy(alpha = i.ba / 100f)
-    fun color(i: WallItem): Color = when (i.color) {
+    fun color(i: WallItem): Color = if (inv && i.bg == 0) (if (i.id == "code") Color.White.copy(alpha = 0.7f) else Color.White) else when (i.color) {
         1 -> trend; 2 -> C.Text; 3 -> C.Muted; 4 -> GOLD; 5 -> C.Primary; 6 -> level(i)
         else -> bgColor(i)?.takeIf { it.alpha >= 0.6f }?.let { onColor(it) } ?: natural(i)
     }
-    fun labelColor(i: WallItem, main: Color): Color = when (i.lc) {
+    fun labelColor(i: WallItem, main: Color): Color = if (inv && i.bg == 0) Color.White.copy(alpha = 0.75f) else when (i.lc) {
         1 -> C.Muted; 2 -> C.Text; 3 -> GOLD; 4 -> C.Primary; 5 -> trend
         else -> main
     }
@@ -201,27 +206,37 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, onClick: 
             }
         }
     }
-    val headLines = lines(vis.filter { it.head })
-    val bodyLines = lines(vis.filter { !it.head })
-    Column(
-        modifier.clip(RoundedCornerShape(6.dp)).background(C.Card)
-            .then(if (st.border) Modifier.border(1.dp, trend.copy(alpha = 0.55f), RoundedCornerShape(6.dp)) else Modifier)
+    val flow = vis.filter { !it.fl }
+    val headLines = lines(flow.filter { it.head })
+    val bodyLines = lines(flow.filter { !it.head })
+    // 漲停、跌停：整格依漲跌上色反白（標題列較亮、內容較深）
+    val headBg = if (inv) lerp(trend, Color.Black, 0.12f) else if (st.header) C.Bg.copy(alpha = 0.7f) else Color.Transparent
+    val bodyBg = if (inv) lerp(trend, Color.Black, 0.45f) else C.Card
+    Box(
+        modifier.clip(RoundedCornerShape(6.dp)).background(bodyBg)
+            .then(if (st.border || inv) Modifier.border(1.dp, if (inv) lerp(trend, Color.White, 0.25f) else trend.copy(alpha = 0.55f), RoundedCornerShape(6.dp)) else Modifier)
             .clickable(onClick = onClick),
     ) {
-        if (headLines.isNotEmpty()) Lines(st.lineGap.coerceAtMost(0), extra = headLines.map { it.first().lg },
-            modifier = Modifier.fillMaxWidth().background(if (st.header) C.Bg.copy(alpha = 0.7f) else Color.Transparent)
-                .padding(horizontal = pad, vertical = (pad.value * 0.6f).dp)) { headLines.forEach { Line(it) } }
-        if (bodyLines.isNotEmpty()) Lines(st.lineGap, Modifier.fillMaxWidth().padding(horizontal = pad, vertical = pad), extra = bodyLines.map { it.first().lg }) { bodyLines.forEach { Line(it) } }
+        Column(Modifier.fillMaxWidth()) {
+            if (headLines.isNotEmpty()) Lines(st.lineGap.coerceAtMost(0), extra = headLines.map { it.first().lg },
+                modifier = Modifier.fillMaxWidth().background(headBg)
+                    .padding(horizontal = pad, vertical = (pad.value * 0.6f).dp)) { headLines.forEach { Line(it) } }
+            if (bodyLines.isNotEmpty()) Lines(st.lineGap, Modifier.fillMaxWidth().padding(horizontal = pad, vertical = pad), extra = bodyLines.map { it.first().lg }) { bodyLines.forEach { Line(it) } }
+        }
+        // 懸浮項目：限制在格內，依水平／垂直位置百分比擺放
+        vis.filter { it.fl }.forEach { i ->
+            Box(Modifier.matchParentSize().padding((pad.value * 0.5f).dp), contentAlignment = BiasAlignment(i.fx / 50f - 1f, i.fy / 50f - 1f)) { Item(i) }
+        }
     }
 }
 
 /** 行情牆：依欄數排成網格 */
 @Composable
-fun QuoteWall(list: List<Holding>, st: WallStyle = AppState.wallStyle, onOpen: (String) -> Unit) {
+fun QuoteWall(list: List<Holding>, st: WallStyle = AppState.wallStyle, demo: Int = 0, onOpen: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(st.gap.dp)) {
         list.chunked(st.cols).forEach { row ->
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(st.gap.dp)) {
-                row.forEach { h -> WallTile(h, st, Modifier.weight(1f).fillMaxHeight()) { onOpen(h.symbol) } }
+                row.forEach { h -> WallTile(h, st, Modifier.weight(1f).fillMaxHeight(), demo) { onOpen(h.symbol) } }
                 repeat(st.cols - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
@@ -297,8 +312,16 @@ private val LABELED = setOf("band", "mv", "day", "ret", "pl", "avg", "cost", "we
 fun WallPreview(modifier: Modifier = Modifier) {
     val st = AppState.wallStyle
     val samples = AppState.holdings.take(st.cols * 2).ifEmpty { listOf(Holding("0050", 1000.0, 85.0), Holding("0056", 1000.0, 36.0)) }
-    Box(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
-        QuoteWall(samples, st) {}
+    var demo by remember { mutableStateOf(0) }
+    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
+        QuoteWall(samples, st, demo) {}
+        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("預覽", color = C.Muted, fontSize = 11.sp)
+            listOf(0 to "一般", 1 to "漲停", -1 to "跌停").forEach { (v, n) ->
+                Text(n, color = if (demo == v) C.OnPrimary else C.Text2, fontSize = 11.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                    .background(if (demo == v) C.Primary else C.Bg).clickable { demo = v }.padding(horizontal = 9.dp, vertical = 3.dp))
+            }
+        }
     }
 }
 
@@ -328,6 +351,7 @@ fun WallStyleSettings(showPreview: Boolean = true) {
             WStep("字高（行高倍率）", st.lineHeight, 70, 170, 5, "%") { v -> set { it.copy(lineHeight = v) } }
             WToggle("標題列底色", st.header) { v -> set { it.copy(header = v) } }
             WToggle("外框依漲跌上色", st.border) { v -> set { it.copy(border = v) } }
+            WToggle("漲停／跌停整格反白（台股）", st.limitFill) { v -> set { it.copy(limitFill = v) } }
         }
 
         val shown = st.items.count { it.show }
@@ -342,7 +366,7 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                     Row(Modifier.fillMaxWidth().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f).clickable { editing = if (isEd) null else i.id }.padding(vertical = 8.dp)) {
                             Text(name + if (isEd) "  ▲" else "  ▼", color = if (i.show) C.Text else C.Muted, fontSize = 14.sp)
-                            Text((if (i.head) "標題列" else "內容") + (if (i.inline) " · 同行" else "") + " · " + ALIGN_NAMES[i.align] + " · ${i.size}sp" + (if (i.bold) " · 粗" else "") + (if (i.bg != 0) " · 底色" else "") +
+                            Text((if (i.fl) "懸浮 ${i.fx}%,${i.fy}%" else if (i.head) "標題列" else "內容") + (if (i.inline) " · 同行" else "") + " · " + ALIGN_NAMES[i.align] + " · ${i.size}sp" + (if (i.bold) " · 粗" else "") + (if (i.bg != 0) " · 底色" else "") +
                                 (if (i.mx != 0 || i.my != 0 || i.px != 0 || i.py != 0 || i.lg != 0 || i.lh != 0) " · 間距自訂" else ""),
                                 color = C.Muted, fontSize = 11.sp)
                         }
@@ -357,8 +381,13 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                     AnimatedVisibility(isEd, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                         Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 10.dp)) {
                             fun upd(f: (WallItem) -> WallItem) = set { it.withItem(f(it.item(i.id))) }
-                            WChips("位置", listOf(1 to "標題列", 0 to "內容區"), if (i.head) 1 else 0) { v -> upd { it.copy(head = v == 1) } }
-                            WToggle("與上一項同一行", i.inline) { v -> upd { it.copy(inline = v) } }
+                            WChips("位置", listOf(1 to "標題列", 0 to "內容區", 2 to "懸浮（自由位置）"), if (i.fl) 2 else if (i.head) 1 else 0) { v ->
+                                upd { it.copy(fl = v == 2, head = if (v == 2) it.head else v == 1) } }
+                            if (i.fl) {
+                                Label("懸浮項目不佔版面、置於最上層，只能在格子範圍內移動。")
+                                WStep("水平位置（左→右）", i.fx, 0, 100, 5, "%") { v -> upd { it.copy(fx = v) } }
+                                WStep("垂直位置（上→下）", i.fy, 0, 100, 5, "%") { v -> upd { it.copy(fy = v) } }
+                            } else WToggle("與上一項同一行", i.inline) { v -> upd { it.copy(inline = v) } }
                             WChips("對齊", listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), i.align) { v -> upd { it.copy(align = v) } }
                             WStep("字級", i.size, 8, 60, 1, " sp") { v -> upd { it.copy(size = v) } }
                             WToggle("粗體", i.bold) { v -> upd { it.copy(bold = v) } }
@@ -370,7 +399,7 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                             WStep("外距・上下", i.my, -12, 24, 1, " dp") { v -> upd { it.copy(my = v) } }
                             WStep("內距・左右", i.px, -10, 20, 1, " dp") { v -> upd { it.copy(px = v) } }
                             WStep("內距・上下", i.py, -10, 16, 1, " dp") { v -> upd { it.copy(py = v) } }
-                            if (!i.inline) WStep("行距・與上一行", i.lg, -12, 16, 1, " dp") { v -> upd { it.copy(lg = v) } }
+                            if (!i.inline && !i.fl) WStep("行距・與上一行", i.lg, -12, 16, 1, " dp") { v -> upd { it.copy(lg = v) } }
                             WStep("字高（行高倍率）", i.lh, 0, 170, 5, "%", show = { if (it == 0) "跟隨" else "$it%" }) { v ->
                                 upd { it.copy(lh = if (v in 1..69) (if (v > it.lh) 70 else 0) else v) } }
 
@@ -385,7 +414,7 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                             Text("此項目恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp).clickable {
                                 val d = WallStyle.DEFAULT_ITEMS.first { it.id == i.id }
                                 upd { it.copy(head = d.head, inline = d.inline, align = d.align, size = d.size, bold = d.bold, color = d.color, mono = d.mono, label = d.label,
-                                    mx = d.mx, my = d.my, px = d.px, py = d.py, lg = d.lg, lh = d.lh, bg = d.bg, ba = d.ba, lc = d.lc) } }.padding(vertical = 4.dp))
+                                    fl = d.fl, fx = d.fx, fy = d.fy, mx = d.mx, my = d.my, px = d.px, py = d.py, lg = d.lg, lh = d.lh, bg = d.bg, ba = d.ba, lc = d.lc) } }.padding(vertical = 4.dp))
                             if (i.id == "entry") Label("進場建議依 K 線分析（與個股頁相同），未分析過的個股會在背景分析後顯示。")
                         }
                     }
