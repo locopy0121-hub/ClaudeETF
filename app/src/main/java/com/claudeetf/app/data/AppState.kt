@@ -247,6 +247,14 @@ object AppState {
     fun updateInvestBudget(v: Double) { investBudget = v.coerceAtLeast(0.0); save() }
     fun updateShowScoreBadge(on: Boolean) { showScoreBadge = on; save() }
 
+    /** 個股頁右上角的進場動畫徽章：開關、樣式（0–4）、懸浮置頂 */
+    var entryFloatOn by mutableStateOf(true)
+    var entryFloatStyle by mutableStateOf(0)
+    var entryFloatPin by mutableStateOf(true)
+    fun updateEntryFloat(on: Boolean = entryFloatOn, style: Int = entryFloatStyle, pin: Boolean = entryFloatPin) {
+        entryFloatOn = on; entryFloatStyle = style.coerceIn(0, 4); entryFloatPin = pin; save()
+    }
+
     /** 行情價下方的即時 K 棒訊號（盤中） */
     var showLiveSignal by mutableStateOf(true)
     /** 收盤後仍顯示「收盤定案」的最終進場標籤；關閉則收盤後自動隱藏 */
@@ -510,6 +518,9 @@ object AppState {
         futSource = p.getString("futSource", "auto") ?: "auto"
         showTradeMarks = p.getBoolean("showTradeMarks", true)
         showScoreBadge = p.getBoolean("showScoreBadge", true)
+        entryFloatOn = p.getBoolean("entryFloatOn", true)
+        entryFloatStyle = p.getInt("entryFloatStyle", 0)
+        entryFloatPin = p.getBoolean("entryFloatPin", true)
         showLiveSignal = p.getBoolean("showLiveSignal", true)
         usRefreshMs = p.getLong("usRefreshMs", 5_000L)
         autoUpdateCheck = p.getBoolean("autoUpdateCheck", true)
@@ -820,6 +831,9 @@ object AppState {
             .putString("futSource", futSource)
             .putBoolean("showTradeMarks", showTradeMarks)
             .putBoolean("showScoreBadge", showScoreBadge)
+            .putBoolean("entryFloatOn", entryFloatOn)
+            .putInt("entryFloatStyle", entryFloatStyle)
+            .putBoolean("entryFloatPin", entryFloatPin)
             .putBoolean("showLiveSignal", showLiveSignal)
             .putLong("usRefreshMs", usRefreshMs)
             .putBoolean("autoUpdateCheck", autoUpdateCheck)

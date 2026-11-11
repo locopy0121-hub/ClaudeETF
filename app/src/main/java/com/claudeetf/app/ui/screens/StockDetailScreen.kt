@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.input.pointer.pointerInput
@@ -207,8 +208,10 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                 Icon(Icons.Filled.Add, contentDescription = "記一筆交易", tint = C.Text)
             }
         }
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        Box(Modifier.weight(1f)) {
         LazyColumn(
-            Modifier.weight(1f).pointerInput(tab) {
+            Modifier.fillMaxSize().pointerInput(tab) {
                 if (tab != Tab.OVERVIEW) return@pointerInput
                 var acc = 0f
                 detectHorizontalDragGestures(
@@ -221,6 +224,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                     onHorizontalDrag = { change, dx -> acc += dx; change.consume() },
                 )
             },
+            state = listState,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -283,6 +287,15 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                 Tab.CO -> companyTab(q, fund)
                 Tab.TAPE -> tapeTab(q)
             }
+        }
+        // 進場動畫徽章：右上角；懸浮置頂時捲動也一直顯示，否則隨頁首捲走
+        if (AppState.entryFloatOn) {
+            val first = listState.firstVisibleItemIndex
+            val off = listState.firstVisibleItemScrollOffset
+            if (AppState.entryFloatPin || first == 0) EntryFloatBadge(q,
+                Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 14.dp)
+                    .graphicsLayer { if (!AppState.entryFloatPin) translationY = -off.toFloat() }) { tabIdx = 0; ovSub = 3 }
+        }
         }
     }
 }

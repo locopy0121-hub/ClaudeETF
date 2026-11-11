@@ -515,6 +515,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 item { SettingRow("美股時間", "台灣時間・自動夏冬令") }
             }
             if (section == "pages") {
+                item { EntryFloatSettings() }
                 item {
                     Card(padding = 14.dp) {
                         Text("指數跑馬燈", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
@@ -1818,5 +1819,44 @@ private fun KStep(p: com.claudeetf.app.data.KlineConditions.Param, v: Double, se
             textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         Text("＋", color = if (v < p.max) C.Primary else C.Border, fontSize = 18.sp,
             modifier = Modifier.clickable(enabled = v < p.max) { set(r((v + p.step).coerceAtMost(p.max))) }.padding(horizontal = 12.dp))
+    }
+}
+
+
+/** 個股頁進場動畫徽章：開關、懸浮置頂、5 款樣式預覽 */
+@Composable
+private fun EntryFloatSettings() {
+    var sample by remember { mutableIntStateOf(2) }
+    Card(padding = 14.dp) {
+        Text("進場動畫徽章", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Label("顯示在個股頁右上角：動畫圖示表示 K 線進場建議，下方為綜合結論與「先投 N%」（長線投資指數比例 × 短線進場建議）；有設定每檔預計投入金額時換算成金額。點徽章開啟 K 線分析。")
+        OptToggle("顯示進場動畫徽章", AppState.entryFloatOn) { AppState.updateEntryFloat(on = it) }
+        OptToggle("懸浮置頂（捲動時一直顯示）", AppState.entryFloatPin) { AppState.updateEntryFloat(pin = it) }
+        Text("樣式（點選套用）", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            ENTRY_FLOAT_STYLES.forEachIndexed { i, n ->
+                val sel = i == AppState.entryFloatStyle
+                Column(Modifier.clip(RoundedCornerShape(10.dp)).border(if (sel) 2.dp else 1.dp, if (sel) C.Primary else C.Border, RoundedCornerShape(10.dp))
+                    .clickable { AppState.updateEntryFloat(style = i) }.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    EntryAnimIcon(i, sample, 60, Modifier.size(40.dp))
+                    Text(n, color = if (sel) C.Primary else C.Text2, fontSize = 10.sp, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
+                }
+            }
+        }
+        Text("預覽狀態", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        ChipRow(listOf(2 to "建議進場", 1 to "可分批", 0 to "觀望", -1 to "暫不進場"), sample) { sample = it }
+        val (word, now) = when (sample) { 2 -> "進場" to 60; 1 -> "分批" to 30; 0 -> "觀望" to 18; else -> "等止跌" to 9 }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg).padding(12.dp),
+            verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Text("主動中信台灣收益", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text("7.96 ▲ +0.31", color = com.claudeetf.app.ui.theme.Trend.up, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Label("個股頁示意")
+            }
+            EntryFloatView(AppState.entryFloatStyle, sample, word, now, 60,
+                if (AppState.investBudget > 0) AppState.investBudget * now / 100 else null)
+        }
+        Label(if (AppState.investBudget > 0) "每檔預計投入 NT$" + Fmt.num(AppState.investBudget) + "，徽章會換算成金額。"
+            else "尚未設定每檔預計投入金額：到個股頁「概覽 › 分析」的投資分析卡片設定後，徽章會顯示換算金額。", Modifier.padding(top = 6.dp))
     }
 }
