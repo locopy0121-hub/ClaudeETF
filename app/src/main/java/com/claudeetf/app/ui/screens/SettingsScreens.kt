@@ -1829,20 +1829,28 @@ private fun EntryFloatSettings() {
     var sample by remember { mutableIntStateOf(2) }
     Card(padding = 14.dp) {
         Text("進場動畫徽章", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Label("顯示在個股頁右上角：動畫圖示表示 K 線進場建議，下方為綜合結論與「先投 N%」（長線投資指數比例 × 短線進場建議）；有設定每檔預計投入金額時換算成金額。點徽章開啟 K 線分析。")
+        Label("顯示在個股頁右上角：動畫圖示或角色表示 K 線進場建議（角色在可進場時動作活潑，觀望放慢，偏空幾乎停住），下方為綜合結論與「先投 N%」（長線投資指數比例 × 短線進場建議）；有設定每檔預計投入金額時換算成金額。點徽章開啟 K 線分析。")
         OptToggle("顯示進場動畫徽章", AppState.entryFloatOn) { AppState.updateEntryFloat(on = it) }
         OptToggle("懸浮置頂（捲動時一直顯示）", AppState.entryFloatPin) { AppState.updateEntryFloat(pin = it) }
-        Text("樣式（點選套用）", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            ENTRY_FLOAT_STYLES.forEachIndexed { i, n ->
-                val sel = i == AppState.entryFloatStyle
-                Column(Modifier.clip(RoundedCornerShape(10.dp)).border(if (sel) 2.dp else 1.dp, if (sel) C.Primary else C.Border, RoundedCornerShape(10.dp))
-                    .clickable { AppState.updateEntryFloat(style = i) }.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    EntryAnimIcon(i, sample, 60, Modifier.size(40.dp))
-                    Text(n, color = if (sel) C.Primary else C.Text2, fontSize = 10.sp, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
+        @Composable fun StyleGrid(title: String, idx: List<Int>, iconDp: Int) {
+            Text(title, color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+            idx.chunked(4).forEach { line ->
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    line.forEach { i ->
+                        val sel = i == AppState.entryFloatStyle
+                        Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).border(if (sel) 2.dp else 1.dp, if (sel) C.Primary else C.Border, RoundedCornerShape(10.dp))
+                            .background(if (sel) C.Primary.copy(alpha = 0.08f) else androidx.compose.ui.graphics.Color.Transparent)
+                            .clickable { AppState.updateEntryFloat(style = i) }.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            EntryAnimIcon(i, sample, 60, Modifier.size(iconDp.dp))
+                            Text(ENTRY_FLOAT_STYLES[i], color = if (sel) C.Primary else C.Text2, fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
+                        }
+                    }
+                    repeat(4 - line.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
+        StyleGrid("動畫圖示（點選套用）", ENTRY_ICON_STYLES.indices.toList(), 40)
+        StyleGrid("動畫角色（點選套用）", (ENTRY_ICON_STYLES.size until ENTRY_FLOAT_STYLES.size).toList(), 56)
         Text("預覽狀態", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
         ChipRow(listOf(2 to "建議進場", 1 to "可分批", 0 to "觀望", -1 to "暫不進場"), sample) { sample = it }
         val (word, now) = when (sample) { 2 -> "進場" to 60; 1 -> "分批" to 30; 0 -> "觀望" to 18; else -> "等止跌" to 9 }

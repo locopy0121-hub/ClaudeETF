@@ -252,7 +252,7 @@ object AppState {
     var entryFloatStyle by mutableStateOf(0)
     var entryFloatPin by mutableStateOf(true)
     fun updateEntryFloat(on: Boolean = entryFloatOn, style: Int = entryFloatStyle, pin: Boolean = entryFloatPin) {
-        entryFloatOn = on; entryFloatStyle = style.coerceIn(0, 4); entryFloatPin = pin; save()
+        entryFloatOn = on; entryFloatStyle = style.coerceIn(0, 15); entryFloatPin = pin; save()
     }
 
     /** 行情價下方的即時 K 棒訊號（盤中） */

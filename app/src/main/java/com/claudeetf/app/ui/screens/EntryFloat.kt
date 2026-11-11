@@ -37,8 +37,10 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** 進場動畫徽章的 5 種樣式 */
-val ENTRY_FLOAT_STYLES = listOf("脈衝光環", "雷達掃描", "能量柱", "躍升箭頭", "霓虹進度環")
+/** 進場動畫徽章的樣式：前 5 種為動畫圖示，之後為動畫角色（MascotData） */
+val ENTRY_ICON_STYLES = listOf("脈衝光環", "雷達掃描", "能量柱", "躍升箭頭", "霓虹進度環")
+val ENTRY_FLOAT_STYLES: List<String> get() = ENTRY_ICON_STYLES + MascotData.names
+fun isMascotStyle(style: Int) = style >= ENTRY_ICON_STYLES.size
 
 /**
  * 個股頁右上角的進場動畫徽章：上方為動畫圖示，下方為綜合結論與「先投 N%」，
@@ -60,7 +62,7 @@ fun EntryFloatBadge(q: Quote, modifier: Modifier = Modifier, onOpen: () -> Unit)
 @Composable
 fun EntryFloatView(
     style: Int, level: Int, word: String, now: Int?, ratio: Int?, amount: Double?,
-    modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, iconSize: Dp = 46.dp,
+    modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, iconSize: Dp = if (isMascotStyle(style)) 64.dp else 46.dp,
 ) {
     val c = entryColor(level)
     Column(
@@ -83,6 +85,7 @@ fun EntryFloatView(
 /** 動畫圖示：依樣式繪製，level > 0 時動畫較強烈 */
 @Composable
 fun EntryAnimIcon(style: Int, level: Int, pct: Int, modifier: Modifier) {
+    if (isMascotStyle(style)) { MascotView(style - ENTRY_ICON_STYLES.size, level, modifier); return }
     val c = entryColor(level)
     val strong = level > 0
     val tr = rememberInfiniteTransition(label = "ef")
