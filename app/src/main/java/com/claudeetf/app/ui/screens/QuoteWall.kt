@@ -26,6 +26,9 @@ import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -255,12 +258,30 @@ fun QuoteWall(list: List<Holding>, st: WallStyle = AppState.wallStyle, demo: Int
 private fun WStep(label: String, v: Int, min: Int, max: Int, step: Int, unit: String, show: (Int) -> String = { "$it$unit" }, set: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
-        Text("－", color = if (v > min) C.Primary else C.Border, fontSize = 18.sp,
-            modifier = Modifier.clickable(enabled = v > min) { set((v - step).coerceAtLeast(min)) }.padding(horizontal = 12.dp))
+        RepeatBtn("－", v > min) { set((v - step).coerceAtLeast(min)) }
         Text(show(v), Modifier.width(64.dp), color = C.Text, fontSize = 13.sp, textAlign = TextAlign.Center)
-        Text("＋", color = if (v < max) C.Primary else C.Border, fontSize = 18.sp,
-            modifier = Modifier.clickable(enabled = v < max) { set((v + step).coerceAtMost(max)) }.padding(horizontal = 12.dp))
+        RepeatBtn("＋", v < max) { set((v + step).coerceAtMost(max)) }
     }
+}
+
+/** 點一下調一格；按住不放連續調整（先停 0.4 秒，之後每 0.06 秒一格） */
+@Composable
+private fun RepeatBtn(t: String, enabled: Boolean, onStep: () -> Unit) {
+    val cur by rememberUpdatedState(onStep)
+    val en by rememberUpdatedState(enabled)
+    Text(t, color = if (enabled) C.Primary else C.Border, fontSize = 18.sp,
+        modifier = Modifier.pointerInput(Unit) {
+            detectTapGestures(onPress = {
+                if (!en) return@detectTapGestures
+                kotlinx.coroutines.coroutineScope {
+                    val job = launch {
+                        cur(); kotlinx.coroutines.delay(400)
+                        while (en) { cur(); kotlinx.coroutines.delay(60) }
+                    }
+                    tryAwaitRelease(); job.cancel()
+                }
+            })
+        }.padding(horizontal = 12.dp, vertical = 4.dp))
 }
 
 @Composable
@@ -389,9 +410,9 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                             WChips("位置", listOf(1 to "標題列", 0 to "內容區", 2 to "懸浮（自由位置）"), if (i.fl) 2 else if (i.head) 1 else 0) { v ->
                                 upd { it.copy(fl = v == 2, head = if (v == 2) it.head else v == 1) } }
                             if (i.fl) {
-                                Label("懸浮項目不佔版面、置於最上層，只能在格子範圍內移動。")
-                                WStep("水平位置（左→右）", i.fx, 0, 100, 5, "%") { v -> upd { it.copy(fx = v) } }
-                                WStep("垂直位置（上→下）", i.fy, 0, 100, 5, "%") { v -> upd { it.copy(fy = v) } }
+                                Label("懸浮項目不佔版面、置於最上層，只能在格子範圍內移動。水平 0% 最左、100% 最右；垂直 0% 最上、100% 最下。每次 1%，按住 ＋／－ 可連續調整。")
+                                WStep("水平位置", i.fx, 0, 100, 1, "%") { v -> upd { it.copy(fx = v) } }
+                                WStep("垂直位置", i.fy, 0, 100, 1, "%") { v -> upd { it.copy(fy = v) } }
                             } else WToggle("與上一項同一行", i.inline) { v -> upd { it.copy(inline = v) } }
                             WChips("對齊", listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), i.align) { v -> upd { it.copy(align = v) } }
                             WStep("字級", i.size, 8, 60, 1, " sp") { v -> upd { it.copy(size = v) } }
