@@ -7,6 +7,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -90,6 +94,49 @@ fun osLine(style: Int, level: Int, now: Int?): String {
 /** 依背景亮度選字色，淺色背景用深字 */
 private fun onColor(c: Color) = if (c.luminance() > 0.45f) Color(0xFF1B1F2A) else Color.White
 
+/** 角落對應的對齊方式 */
+fun entryFloatAlign(corner: Int): Alignment = when (corner) { 1 -> Alignment.TopStart; 2 -> Alignment.BottomEnd; 3 -> Alignment.BottomStart; else -> Alignment.TopEnd }
+
+/**
+ * 依設定放置徽章：角落＋位移＋大小；長按後可直接拖曳，放開即存成新位置。
+ * scrollY：未懸浮置頂時隨頁面捲走的位移（px）。
+ */
+@Composable
+fun BoxScope.PlacedEntryFloat(scrollY: Float = 0f, preview: Float = 1f, content: @Composable (Modifier) -> Unit) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var drag by remember { mutableStateOf(Offset.Zero) }
+    val corner = AppState.entryFloatCorner
+    val left = corner == 1 || corner == 3
+    val top = corner == 0 || corner == 1
+    val sc = AppState.entryFloatScale / 100f * preview
+    val m = Modifier.align(entryFloatAlign(corner))
+        .padding(start = if (left) 10.dp else 0.dp, end = if (left) 0.dp else 10.dp, top = if (top) 6.dp else 0.dp, bottom = if (top) 0.dp else 10.dp)
+        .offset { IntOffset(((AppState.entryFloatX * preview).dp.toPx() + drag.x).toInt(), ((AppState.entryFloatY * preview).dp.toPx() + drag.y - scrollY).toInt()) }
+        .graphicsLayer {
+            scaleX = sc; scaleY = sc
+            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (left) 0f else 1f, if (top) 0f else 1f)
+        }
+        .pointerInput(preview) {
+            detectDragGesturesAfterLongPress(
+                onDrag = { ch, d -> ch.consume(); drag += d },
+                onDragEnd = {
+                    with(density) {
+                        AppState.updateEntryFloatPos(x = AppState.entryFloatX + (drag.x / preview).toDp().value.toInt(), y = AppState.entryFloatY + (drag.y / preview).toDp().value.toInt())
+                    }
+                    drag = Offset.Zero
+                },
+                onDragCancel = { drag = Offset.Zero },
+            )
+        }
+    content(m)
+}
+
+/** OS 泡泡實際方向：自動時朝畫面內側（右邊角落→左側；左邊角落→右側） */
+private fun bubbleSide(): Int = when (AppState.entryFloatBubble) {
+    1 -> 1; 2 -> 2; 3 -> 3
+    else -> if (AppState.entryFloatCorner == 1 || AppState.entryFloatCorner == 3) 2 else 1
+}
+
 /** 徽章本體（設定頁預覽也用這個）：角色＋內心 OS 對話框＋先投比例 */
 @Composable
 fun EntryFloatView(
@@ -99,46 +146,57 @@ fun EntryFloatView(
     val c = entryColor(level)
     val tag = if (level > 0) Color(0xFFE5484D) else if (level < 0) Color(0xFF16A34A) else Color(0xFF64748B)
     var osOpen by remember { mutableStateOf(true) }
-    Row(modifier, verticalAlignment = Alignment.Top) {
-        // 內心 OS 對話框（白底深字，任何背景都清楚）；點一下收合
-        if (AppState.entryFloatOs && osOpen) Row(
-            Modifier.padding(top = 6.dp).clickable(remember { MutableInteractionSource() }, null) { osOpen = false },
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(
-                Modifier.widthIn(max = 168.dp).shadow(6.dp, RoundedCornerShape(16.dp)).background(Color.White, RoundedCornerShape(16.dp))
-                    .border(2.dp, tag, RoundedCornerShape(16.dp)).padding(horizontal = 10.dp, vertical = 7.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("OS", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black,
-                        modifier = Modifier.background(tag, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
-                    Text(" " + word, color = tag, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
-                }
-                Text(osLine(style, level, now), color = Color(0xFF1B1F2A), fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 17.sp,
-                    modifier = Modifier.padding(top = 3.dp))
-                val sub = when {
-                    amount != null -> "≈ NT$" + Fmt.num(amount)
-                    ratio != null -> "長線建議 $ratio%"
-                    else -> null
-                }
-                if (sub != null) Text(sub, color = Color(0xFF5B6475), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
-            }
-            // 想法泡泡的小圓點，指向角色
-            Column(Modifier.padding(top = 18.dp, start = 2.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Box(Modifier.size(9.dp).background(Color.White, CircleShape).border(1.5.dp, tag, CircleShape))
-                Box(Modifier.padding(start = 6.dp).size(6.dp).background(Color.White, CircleShape).border(1.dp, tag, CircleShape))
-            }
-        }
+    val side = bubbleSide()
+    val showOs = AppState.entryFloatOs && osOpen
+
+    @Composable fun Bubble() {
         Column(
-            Modifier.then(if (onClick != null) Modifier.clickable(remember { MutableInteractionSource() }, null) { if (!osOpen) osOpen = true else onClick() } else Modifier),
+            Modifier.widthIn(max = 168.dp).clickable(remember { MutableInteractionSource() }, null) { osOpen = false }
+                .shadow(6.dp, RoundedCornerShape(16.dp)).background(Color.White, RoundedCornerShape(16.dp))
+                .border(2.dp, tag, RoundedCornerShape(16.dp)).padding(horizontal = 10.dp, vertical = 7.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("OS", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black,
+                    modifier = Modifier.background(tag, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
+                Text(" " + word, color = tag, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
+            }
+            Text(osLine(style, level, now), color = Color(0xFF1B1F2A), fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 17.sp,
+                modifier = Modifier.padding(top = 3.dp))
+            val sub = when {
+                amount != null -> "≈ NT$" + Fmt.num(amount)
+                ratio != null -> "長線建議 $ratio%"
+                else -> null
+            }
+            if (sub != null) Text(sub, color = Color(0xFF5B6475), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
+        }
+    }
+    @Composable fun Dot(s: Int) = Box(Modifier.size(s.dp).background(Color.White, CircleShape).border(1.5.dp, tag, CircleShape))
+    @Composable fun Character() {
+        Column(
+            Modifier.then(if (onClick != null) Modifier.clickable(remember { MutableInteractionSource() }, null) { if (AppState.entryFloatOs && !osOpen) osOpen = true else onClick() } else Modifier),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             EntryAnimIcon(style, level, now ?: 0, Modifier.size(iconSize))
-            // 先投比例：實心標籤，字色依背景亮度
-            if (now != null) Text("先投 $now%", color = onColor(c), fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1,
+            Text(if (now != null) "先投 $now%" else word, color = onColor(c), fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1,
                 modifier = Modifier.shadow(3.dp, RoundedCornerShape(8.dp)).background(c, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 2.dp))
-            else Text(word, color = onColor(c), fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1,
-                modifier = Modifier.background(c, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 2.dp))
+        }
+    }
+    if (!showOs) { Box(modifier) { Character() }; return }
+    when (side) {
+        3 -> Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            Character()
+            Dot(6); Spacer(Modifier.height(2.dp)); Dot(9)
+            Spacer(Modifier.height(2.dp)); Bubble()
+        }
+        2 -> Row(modifier, verticalAlignment = Alignment.Top) {
+            Character()
+            Column(Modifier.padding(top = 18.dp, end = 2.dp), verticalArrangement = Arrangement.spacedBy(3.dp), horizontalAlignment = Alignment.End) { Dot(6); Dot(9) }
+            Box(Modifier.padding(top = 6.dp)) { Bubble() }
+        }
+        else -> Row(modifier, verticalAlignment = Alignment.Top) {
+            Box(Modifier.padding(top = 6.dp)) { Bubble() }
+            Column(Modifier.padding(top = 18.dp, start = 2.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) { Dot(9); Box(Modifier.padding(start = 6.dp)) { Dot(6) } }
+            Character()
         }
     }
 }

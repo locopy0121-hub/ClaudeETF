@@ -292,9 +292,9 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
         if (AppState.entryFloatOn) {
             val first = listState.firstVisibleItemIndex
             val off = listState.firstVisibleItemScrollOffset
-            if (AppState.entryFloatPin || first == 0) EntryFloatBadge(q,
-                Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 14.dp)
-                    .graphicsLayer { if (!AppState.entryFloatPin) translationY = -off.toFloat() }) { tabIdx = 0; ovSub = 3 }
+            if (AppState.entryFloatPin || first == 0) PlacedEntryFloat(if (AppState.entryFloatPin) 0f else off.toFloat()) { m ->
+                EntryFloatBadge(q, m) { tabIdx = 0; ovSub = 3 }
+            }
         }
         }
     }

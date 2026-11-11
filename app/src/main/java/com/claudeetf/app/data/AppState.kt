@@ -251,6 +251,16 @@ object AppState {
     var entryFloatOn by mutableStateOf(true)
     var entryFloatStyle by mutableStateOf(0)
     var entryFloatPin by mutableStateOf(true)
+    /** 位置：角落（0 右上、1 左上、2 右下、3 左下）、位移（dp，右與下為正）、大小（%）、OS 泡泡方向（0 自動朝內、1 左、2 右、3 下） */
+    var entryFloatCorner by mutableStateOf(0)
+    var entryFloatX by mutableStateOf(0)
+    var entryFloatY by mutableStateOf(0)
+    var entryFloatScale by mutableStateOf(100)
+    var entryFloatBubble by mutableStateOf(0)
+    fun updateEntryFloatPos(corner: Int = entryFloatCorner, x: Int = entryFloatX, y: Int = entryFloatY, scale: Int = entryFloatScale, bubble: Int = entryFloatBubble) {
+        entryFloatCorner = corner.coerceIn(0, 3); entryFloatX = x.coerceIn(-320, 320); entryFloatY = y.coerceIn(-200, 700)
+        entryFloatScale = scale.coerceIn(60, 160); entryFloatBubble = bubble.coerceIn(0, 3); save()
+    }
     /** 角色旁的內心 OS 對話框 */
     var entryFloatOs by mutableStateOf(true)
     fun updateEntryFloatOs(v: Boolean) { entryFloatOs = v; save() }
@@ -525,6 +535,8 @@ object AppState {
         entryFloatStyle = p.getInt("entryFloatStyle", 0)
         entryFloatPin = p.getBoolean("entryFloatPin", true)
         entryFloatOs = p.getBoolean("entryFloatOs", true)
+        entryFloatCorner = p.getInt("efCorner", 0); entryFloatX = p.getInt("efX", 0); entryFloatY = p.getInt("efY", 0)
+        entryFloatScale = p.getInt("efScale", 100); entryFloatBubble = p.getInt("efBubble", 0)
         showLiveSignal = p.getBoolean("showLiveSignal", true)
         usRefreshMs = p.getLong("usRefreshMs", 5_000L)
         autoUpdateCheck = p.getBoolean("autoUpdateCheck", true)
@@ -839,6 +851,8 @@ object AppState {
             .putInt("entryFloatStyle", entryFloatStyle)
             .putBoolean("entryFloatPin", entryFloatPin)
             .putBoolean("entryFloatOs", entryFloatOs)
+            .putInt("efCorner", entryFloatCorner).putInt("efX", entryFloatX).putInt("efY", entryFloatY)
+            .putInt("efScale", entryFloatScale).putInt("efBubble", entryFloatBubble)
             .putBoolean("showLiveSignal", showLiveSignal)
             .putLong("usRefreshMs", usRefreshMs)
             .putBoolean("autoUpdateCheck", autoUpdateCheck)

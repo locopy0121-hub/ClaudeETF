@@ -1823,49 +1823,80 @@ private fun KStep(p: com.claudeetf.app.data.KlineConditions.Param, v: Double, se
 }
 
 
-/** 個股頁進場動畫徽章：開關、懸浮置頂、5 款樣式預覽 */
+/** 個股頁進場動畫徽章：開關、樣式（左右滑動選擇）、位置與大小、OS 泡泡、即時預覽 */
 @Composable
 private fun EntryFloatSettings() {
-    var sample by remember { mutableIntStateOf(2) }
-    Card(padding = 14.dp) {
-        Text("進場動畫徽章", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Label("顯示在個股頁右上角：動畫圖示或角色表示 K 線進場建議（角色在可進場時動作活潑，觀望放慢，偏空幾乎停住），下方為綜合結論與「先投 N%」（長線投資指數比例 × 短線進場建議）；有設定每檔預計投入金額時換算成金額。點徽章開啟 K 線分析。")
-        OptToggle("顯示進場動畫徽章", AppState.entryFloatOn) { AppState.updateEntryFloat(on = it) }
-        OptToggle("懸浮置頂（捲動時一直顯示）", AppState.entryFloatPin) { AppState.updateEntryFloat(pin = it) }
-        OptToggle("顯示角色內心 OS 對話框", AppState.entryFloatOs) { AppState.updateEntryFloatOs(it) }
-        Label("對話框用角色的口吻說出進場建議與先投比例（例：K寶「嗶！分批模式，先投 30%」）；在個股頁點對話框可收合，點角色再展開。")
-        @Composable fun StyleGrid(title: String, idx: List<Int>, iconDp: Int) {
-            Text(title, color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-            idx.chunked(4).forEach { line ->
-                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    line.forEach { i ->
-                        val sel = i == AppState.entryFloatStyle
-                        Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).border(if (sel) 2.dp else 1.dp, if (sel) C.Primary else C.Border, RoundedCornerShape(10.dp))
-                            .background(if (sel) C.Primary.copy(alpha = 0.08f) else androidx.compose.ui.graphics.Color.Transparent)
-                            .clickable { AppState.updateEntryFloat(style = i) }.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            EntryAnimIcon(i, sample, 60, Modifier.size(iconDp.dp))
-                            Text(ENTRY_FLOAT_STYLES[i], color = if (sel) C.Primary else C.Text2, fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
-                        }
-                    }
-                    repeat(4 - line.size) { Spacer(Modifier.weight(1f)) }
+    var sample by remember { mutableIntStateOf(1) }
+    val (word, now) = when (sample) { 2 -> "進場" to 60; 1 -> "分批" to 30; 0 -> "觀望" to 18; else -> "等止跌" to 9 }
+    @Composable fun Section(t: String) = Text(t, color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
+    @Composable fun Strip(title: String, idx: List<Int>, iconDp: Int) {
+        Label(title)
+        androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(idx.size) { k ->
+                val i = idx[k]
+                val sel = i == AppState.entryFloatStyle
+                Column(Modifier.width(72.dp).clip(RoundedCornerShape(10.dp)).border(if (sel) 2.dp else 1.dp, if (sel) C.Primary else C.Border, RoundedCornerShape(10.dp))
+                    .background(if (sel) C.Primary.copy(alpha = 0.10f) else androidx.compose.ui.graphics.Color.Transparent)
+                    .clickable { AppState.updateEntryFloat(style = i) }.padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    EntryAnimIcon(i, sample, now, Modifier.size(iconDp.dp))
+                    Text(ENTRY_FLOAT_STYLES[i], color = if (sel) C.Primary else C.Text2, fontSize = 11.sp, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
                 }
             }
         }
-        StyleGrid("動畫圖示（點選套用）", ENTRY_ICON_STYLES.indices.toList(), 40)
-        StyleGrid("動畫角色（點選套用）", (ENTRY_ICON_STYLES.size until ENTRY_FLOAT_STYLES.size).toList(), 56)
-        Text("預覽狀態", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-        ChipRow(listOf(2 to "建議進場", 1 to "可分批", 0 to "觀望", -1 to "暫不進場"), sample) { sample = it }
-        val (word, now) = when (sample) { 2 -> "進場" to 60; 1 -> "分批" to 30; 0 -> "觀望" to 18; else -> "等止跌" to 9 }
-        Box(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg).padding(12.dp).heightIn(min = 130.dp)) {
-            Column {
-                Text("主動中信台灣收益", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Text("7.96 ▲ +0.31", color = com.claudeetf.app.ui.theme.Trend.up, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Label("個股頁示意")
-            }
-            EntryFloatView(AppState.entryFloatStyle, sample, word, now, 60,
-                if (AppState.investBudget > 0) AppState.investBudget * now / 100 else null, Modifier.align(Alignment.TopEnd), onClick = {})
+    }
+    Card(padding = 14.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("進場動畫徽章", Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            androidx.compose.material3.Switch(AppState.entryFloatOn, { AppState.updateEntryFloat(on = it) },
+                colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary, uncheckedTrackColor = C.Border))
         }
-        Label(if (AppState.investBudget > 0) "每檔預計投入 NT$" + Fmt.num(AppState.investBudget) + "，徽章會換算成金額。"
-            else "尚未設定每檔預計投入金額：到個股頁「概覽 › 分析」的投資分析卡片設定後，徽章會顯示換算金額。", Modifier.padding(top = 6.dp))
+        Label("個股頁上的動畫角色或圖示，用內心 OS 說出 K 線進場建議與先投比例；點角色開 K 線分析，長按角色可直接拖曳位置。")
+
+        // ---- 即時預覽：與個股頁相同的位置、大小與泡泡方向（縮小呈現）
+        Box(Modifier.fillMaxWidth().padding(top = 10.dp).height(230.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg)) {
+            Column(Modifier.padding(12.dp)) {
+                Text("主動中信台灣收益", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("7.96 ▲ +0.31 (+4.05%)", color = com.claudeetf.app.ui.theme.Trend.up, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Label("個股頁示意 · 長按角色可拖曳")
+            }
+            PlacedEntryFloat(preview = 0.8f) { m ->
+                EntryFloatView(AppState.entryFloatStyle, sample, word, now, 60,
+                    if (AppState.investBudget > 0) AppState.investBudget * now / 100 else null, m, onClick = {})
+            }
+        }
+        Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Label("預覽狀態")
+            listOf(2 to "建議進場", 1 to "可分批", 0 to "觀望", -1 to "暫不進場").forEach { (v, n) ->
+                val on = v == sample
+                Text(n, color = if (on) C.OnPrimary else C.Text2, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                    .background(if (on) C.Primary else C.Bg).clickable { sample = v }.padding(horizontal = 10.dp, vertical = 5.dp))
+            }
+        }
+
+        // ---- 樣式：左右滑動選擇
+        Section("樣式（左右滑動，點選套用）")
+        Strip("動畫角色 ${MascotData.names.size} 款", (ENTRY_ICON_STYLES.size until ENTRY_FLOAT_STYLES.size).toList(), 50)
+        Strip("動畫圖示 ${ENTRY_ICON_STYLES.size} 款", ENTRY_ICON_STYLES.indices.toList(), 36)
+
+        // ---- 位置與大小
+        Section("位置與大小")
+        Label("角落")
+        ChipRow(listOf(0 to "右上", 1 to "左上", 2 to "右下", 3 to "左下"), AppState.entryFloatCorner) { AppState.updateEntryFloatPos(corner = it, x = 0, y = 0) }
+        KStep(com.claudeetf.app.data.KlineConditions.Param("左右位移（右為正）", 0.0, -320.0, 320.0, 8.0, " dp"), AppState.entryFloatX.toDouble()) { AppState.updateEntryFloatPos(x = it.toInt()) }
+        KStep(com.claudeetf.app.data.KlineConditions.Param("上下位移（下為正）", 0.0, -200.0, 700.0, 8.0, " dp"), AppState.entryFloatY.toDouble()) { AppState.updateEntryFloatPos(y = it.toInt()) }
+        KStep(com.claudeetf.app.data.KlineConditions.Param("大小", 100.0, 60.0, 160.0, 10.0, "%"), AppState.entryFloatScale.toDouble()) { AppState.updateEntryFloatPos(scale = it.toInt()) }
+        Text("重設位置與大小", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { AppState.updateEntryFloatPos(x = 0, y = 0, scale = 100) }.padding(vertical = 6.dp))
+
+        // ---- 顯示方式
+        Section("顯示方式")
+        OptToggle("懸浮置頂（捲動時一直顯示）", AppState.entryFloatPin) { AppState.updateEntryFloat(pin = it) }
+        OptToggle("顯示內心 OS 對話框", AppState.entryFloatOs) { AppState.updateEntryFloatOs(it) }
+        if (AppState.entryFloatOs) {
+            Label("OS 泡泡位置")
+            ChipRow(listOf(0 to "自動", 1 to "左側", 2 to "右側", 3 to "下方"), AppState.entryFloatBubble) { AppState.updateEntryFloatPos(bubble = it) }
+            Label("自動：角色在右邊時泡泡朝左、在左邊時朝右。個股頁點泡泡可收合，點角色再展開。")
+        }
+        Label(if (AppState.investBudget > 0) "每檔預計投入 NT$" + Fmt.num(AppState.investBudget) + "，泡泡會顯示換算金額。"
+            else "設定每檔預計投入金額（個股頁「概覽 › 分析」）後，泡泡會顯示換算金額。", Modifier.padding(top = 8.dp))
     }
 }
