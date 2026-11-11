@@ -1843,9 +1843,9 @@ private fun KCondSettings() {
             K.nsfError?.let { Text(it, color = C.Red, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
             K.nsf?.let { n ->
                 val col = when (n.state) { 1 -> com.claudeetf.app.ui.theme.Trend.up; -1 -> com.claudeetf.app.ui.theme.Trend.down; else -> C.Text2 }
-                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("國安基金：", color = C.Text2, fontSize = 13.sp)
-                    Text(n.label + (if (n.date > 0) "（" + n.dateText + "）" else ""), color = col, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Column(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(col.copy(alpha = 0.12f)).padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    Text("國安基金：" + n.label, color = col, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    if (n.date > 0) Label((if (n.state == 1) "宣布進場約於 " else "消息日期 ") + n.dateText)
                 }
             }
             K.applied?.let { ap ->

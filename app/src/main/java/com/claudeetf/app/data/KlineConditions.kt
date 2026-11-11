@@ -194,7 +194,11 @@ object KlineConditions {
             // 最新一則有明確立場的新聞；一年以前的不採用
             val year = System.currentTimeMillis() - 365L * 86_400_000L
             val decisive = news.firstOrNull { it.time > year && classify(it.title) != null }
-            val st = NsfStatus(decisive?.let { classify(it.title) } ?: 0, decisive?.time ?: 0L, decisive?.title ?: "", news.take(8), market.take(6), System.currentTimeMillis())
+            val state = decisive?.let { classify(it.title) } ?: 0
+            // 護盤中：宣布進場日＝這一波（最近一則退場新聞之後、90 天內）最早的進場新聞日期
+            val since = maxOf(news.filter { classify(it.title) == -1 }.maxOfOrNull { it.time } ?: 0L, System.currentTimeMillis() - 90L * 86_400_000L)
+            val startAt = if (state == 1) news.filter { it.time > since && classify(it.title) == 1 }.minOfOrNull { it.time } ?: decisive!!.time else decisive?.time ?: 0L
+            val st = NsfStatus(state, startAt, decisive?.title ?: "", news.take(8), market.take(6), System.currentTimeMillis())
             nsf = st
             AppState.cachePut("nsf", JSONObject().put("s", st.state).put("d", st.date).put("h", st.headline)
                 .put("n", newsJson(st.news)).put("m", newsJson(st.market)).put("f", st.fetchedAt).toString())
@@ -281,8 +285,16 @@ object KlineConditions {
         }
         val prev = KCondSetting.toJsonAll(AppState.kconds)
         sug.forEach { (id, v) -> AppState.updateKCond(id, v) }
+        // 沒有變更時保留上次的變更紀錄與復原點，只更新時間
+        val last = applied
+        if (lines.isEmpty() && last != null && last.prev.isNotEmpty()) {
+            applied = last.copy(at = System.currentTimeMillis(), lines = listOf(reason) + last.lines.drop(1).filter { !it.startsWith("設定已是最新") && !it.startsWith("（本次檢查") } +
+                "（本次檢查：設定已是最新，沒有新的變更）")
+            AppState.cachePut("kcondApplied", JSONObject().put("t", applied!!.at).put("l", org.json.JSONArray(applied!!.lines)).put("p", last.prev).toString())
+            return applied!!.lines
+        }
         val out = listOf(reason) + lines.ifEmpty { listOf("設定已是最新，沒有變更") }
-        applied = Applied(System.currentTimeMillis(), out, prev)
+        applied = Applied(System.currentTimeMillis(), out, if (lines.isEmpty()) "" else prev)
         AppState.cachePut("kcondApplied", JSONObject().put("t", applied!!.at).put("l", org.json.JSONArray(out)).put("p", prev).toString())
         return out
     }
