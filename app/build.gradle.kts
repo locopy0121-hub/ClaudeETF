@@ -16,8 +16,8 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = runNumber
-        // 顯示版本 1.0.修訂號（修訂號由 workflow 計算：建置編號 − 98），versionCode 仍用建置編號確保可覆蓋更新
-        versionName = "1.0." + (System.getenv("PATCH") ?: (runNumber - 98).coerceAtLeast(0).toString())
+        // 顯示版本 1.次.修訂（由 workflow 計算：1.1 版修訂號＝建置編號 − 176），versionCode 仍用建置編號確保可覆蓋更新
+        versionName = "1." + (System.getenv("MINOR") ?: "1") + "." + (System.getenv("PATCH") ?: (runNumber - 176).coerceAtLeast(0).toString())
         // 只打包手機用的 ARM 架構（x86／x86_64 只給模擬器用），APK 約小 25 MB，線上更新下載更快
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }

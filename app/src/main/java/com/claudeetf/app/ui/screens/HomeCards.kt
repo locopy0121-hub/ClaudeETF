@@ -227,7 +227,7 @@ fun IndexCardOptions(cardSymbol: String?) {
             Text("從首頁移除這張卡片", color = C.Red, fontSize = 13.sp,
                 modifier = Modifier.clickable { AppState.removeHomeCard("idx:$cardSymbol") }.padding(vertical = 6.dp))
         }
-        Label("開關套用到首頁所有指數卡片；要加回或新增其他卡片，到 我的 › 首頁卡片")
+        Label("開關套用到首頁所有指數卡片；要加回或新增其他卡片，到 我的 › 首頁卡片與指數跑馬燈")
     }
 }
 

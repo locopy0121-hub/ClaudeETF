@@ -29,6 +29,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.claudeetf.app.ui.theme.Trend
@@ -514,8 +515,11 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 }
                 item { SettingRow("美股時間", "台灣時間・自動夏冬令") }
             }
-            if (section == "pages") {
+            if (section == "stock") {
                 item { EntryFloatSettings() }
+                item { StockPageSettings() }
+            }
+            if (section == "pages") {
                 item {
                     Card(padding = 14.dp) {
                         Text("指數跑馬燈", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
@@ -586,11 +590,6 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                                 if (AppState.isCustomCard(id)) Text("✕", color = C.Red, fontSize = 16.sp, modifier = Modifier.clickable { AppState.removeHomeCard(id) }.padding(10.dp))
                             }
                         }
-                        Text("個股頁", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-                        OptToggle("標題顯示投資分析指數（0–100）", AppState.showScoreBadge) { AppState.updateShowScoreBadge(it) }
-                        OptToggle("行情價下方顯示即時 K 棒訊號（盤中）", AppState.showLiveSignal) { AppState.updateShowLiveSignal(it) }
-                        if (AppState.showLiveSignal) OptToggle("收盤後顯示最終進場標籤（關閉則自動隱藏）", AppState.showFinalSignal) { AppState.updateShowFinalSignal(it) }
-                        OptToggle("走勢圖標示我的買賣點", AppState.showTradeMarks) { AppState.updateShowTradeMarks(it) }
                         Text("指數卡片顯示內容", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
                         IndexCardOptions(null)
                     }
@@ -1127,32 +1126,60 @@ internal data class SettingsEntry(val key: String, val icon: String, val title: 
 /** 「我的」頁分組：每一項點進去是獨立子頁，不再整頁展開拉長 */
 internal val SETTINGS_SECTIONS = listOf(
     "外觀與顯示" to listOf(
-        SettingsEntry("look", "🎨", "主題與配色"),
+        SettingsEntry("look", "🎨", "主題、配色與 App 圖示"),
         SettingsEntry("watch", "📈", "行情卡片樣式"),
         SettingsEntry("hold", "💼", "持股卡片樣式"),
-        SettingsEntry("pages", "🏠", "首頁與個股頁"),
         SettingsEntry("widget", "🧩", "桌面小工具"),
     ),
-    "資料與帳務" to listOf(
-        SettingsEntry("source", "📡", "行情資料來源"),
-        SettingsEntry("news", "📰", "新聞來源"),
-        SettingsEntry("accounts", "🏦", "帳戶與手續費"),
-        SettingsEntry("ledger", "📒", "帳本"),
-        SettingsEntry("backup", "💾", "備份與匯入"),
+    "首頁與個股頁" to listOf(
+        SettingsEntry("pages", "🏠", "首頁卡片與指數跑馬燈"),
+        SettingsEntry("stock", "🐮", "個股頁與進場角色"),
     ),
-    "其他" to listOf(
+    "分析與提醒" to listOf(
         SettingsEntry("kcond", "🕯️", "K 棒分析條件"),
         SettingsEntry("alerts", "🔔", "提醒"),
         SettingsEntry("monitor", "📡", "盤中持股監控"),
+    ),
+    "資料與帳務" to listOf(
+        SettingsEntry("source", "🌐", "行情資料來源"),
+        SettingsEntry("news", "📰", "新聞來源"),
+        SettingsEntry("accounts", "🏦", "帳戶與手續費"),
+        SettingsEntry("ledger", "📒", "帳本與現金"),
+        SettingsEntry("backup", "💾", "備份與匯入"),
+    ),
+    "其他" to listOf(
         SettingsEntry("security", "🔒", "安全"),
         SettingsEntry("chat", "💬", "群聊"),
         SettingsEntry("about", "ℹ️", "關於與更新"),
     ),
 )
 
+/** 設定搜尋用的關鍵字 */
+private val SETTINGS_KEYWORDS = mapOf(
+    "look" to "主題 深色 淺色 配色 紅漲綠跌 綠漲紅跌 字體 App圖示 icon 圖示",
+    "watch" to "行情 自選 卡片 樣式 字級 欄位 進場標籤 動畫",
+    "hold" to "持股 卡片 樣式 欄位 市值 損益 行距 內距",
+    "widget" to "小工具 桌面 widget 透明 字級",
+    "pages" to "首頁 卡片 排序 跑馬燈 指數 時段",
+    "stock" to "個股頁 進場 徽章 角色 OS 泡泡 動畫 先投 預計投入 金額 買賣點 K棒訊號 投資分析指數 位置 大小",
+    "kcond" to "K棒 條件 國安基金 RSI KD 均線 乖離 爆量 52週",
+    "alerts" to "提醒 通知 價格 漲跌 除息 財報",
+    "monitor" to "監控 盤中 背景 推播",
+    "source" to "資料來源 富果 Fugle 證交所 櫃買 收盤 確認 金鑰 Finnhub Yahoo 期貨",
+    "news" to "新聞 RSS 來源",
+    "accounts" to "帳戶 手續費 折扣 券商",
+    "ledger" to "帳本 現金 初始 期初",
+    "backup" to "備份 匯入 匯出 雲端",
+    "security" to "安全 鎖 指紋 密碼 隱藏金額",
+    "chat" to "群聊 聊天",
+    "about" to "關於 更新 版本 線上更新",
+)
+
+
 @Composable
 private fun SettingsMenu(nav: NavController, version: String) {
     val ctx = LocalContext.current
+    var query by rememberSaveable { mutableStateOf("") }
     val hasUpdate = com.claudeetf.app.data.AppUpdater.hasUpdate(ctx)
     fun summary(key: String): String = when (key) {
         "look" -> listOf("跟隨系統", "深色", "淺色")[AppState.themeMode.coerceIn(0, 2)] + " · " +
@@ -1161,7 +1188,9 @@ private fun SettingsMenu(nav: NavController, version: String) {
             (if (AppState.showCardEntry) " · 進場標籤" else "")
         "hold" -> listOf("精簡", "標準", "寬鬆")[AppState.holdStyle.density.coerceIn(0, 2)] +
             (if (AppState.holdStyle.shows("price")) " · 現價方格" else "") + (if (AppState.holdStyle.shows("entry")) " · 進場標籤" else "")
-        "pages" -> "首頁 ${AppState.homeOrder.count { it !in AppState.homeHidden }} 張卡片"
+        "pages" -> "首頁 ${AppState.homeOrder.count { it !in AppState.homeHidden }} 張卡片" + (if (AppState.tickerShow) " · 跑馬燈" else "")
+        "stock" -> if (!AppState.entryFloatOn) "進場角色已關閉" else ENTRY_FLOAT_STYLES.getOrElse(AppState.entryFloatStyle) { "" } +
+            (if (AppState.entryFloatOs) " · 內心 OS" else "") + (if (AppState.investBudget > 0) " · 每檔 NT$" + Fmt.num(AppState.investBudget) else "")
         "source" -> "台股 " + (if (AppState.twUseFugle) "富果" else "證交所") + " · 美股 " + (if (AppState.finnhubKey.isNotBlank()) "Finnhub" else "Yahoo")
         "news" -> com.claudeetf.app.data.remote.RssNews.enabled().size.let { if (it == 0) "預設來源" else "$it 個來源" }
         "accounts" -> "${AppState.accounts.size} 個帳戶"
@@ -1197,7 +1226,20 @@ private fun SettingsMenu(nav: NavController, version: String) {
                     }
                 }
             }
-            SETTINGS_SECTIONS.forEach { (group, list) ->
+            item {
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("搜尋設定（例如：跑馬燈、手續費、角色）") },
+                    trailingIcon = { if (query.isNotEmpty()) Text("✕", color = C.Muted, modifier = Modifier.clickable { query = "" }.padding(10.dp)) },
+                    colors = fieldColors(),
+                )
+            }
+            val q = query.trim()
+            val groups = if (q.isEmpty()) SETTINGS_SECTIONS else listOf("搜尋結果" to SETTINGS_SECTIONS.flatMap { it.second }.filter { e ->
+                q.split(Regex("\\s+")).all { w -> e.title.contains(w, true) || (SETTINGS_KEYWORDS[e.key] ?: "").contains(w, true) || summary(e.key).contains(w, true) }
+            })
+            if (q.isNotEmpty() && groups.first().second.isEmpty()) item { Label("找不到「$q」相關的設定", Modifier.padding(8.dp)) }
+            groups.filter { it.second.isNotEmpty() }.forEach { (group, list) ->
                 item { Label(group, Modifier.padding(start = 4.dp, top = 6.dp)) }
                 item {
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Card)) {
@@ -1898,5 +1940,26 @@ private fun EntryFloatSettings() {
         }
         Label(if (AppState.investBudget > 0) "每檔預計投入 NT$" + Fmt.num(AppState.investBudget) + "，泡泡會顯示換算金額。"
             else "設定每檔預計投入金額（個股頁「概覽 › 分析」）後，泡泡會顯示換算金額。", Modifier.padding(top = 8.dp))
+    }
+}
+
+
+/** 個股頁：預計投入金額（進場角色換算用）、標題指數、即時訊號、買賣點 */
+@Composable
+private fun StockPageSettings() {
+    Card(padding = 14.dp) {
+        Text("個股頁顯示", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        var text by remember { mutableStateOf(if (AppState.investBudget > 0) Fmt.num(AppState.investBudget, 0).replace(",", "") else "") }
+        OutlinedTextField(
+            value = text, onValueChange = { v -> text = v.filter { it.isDigit() }; AppState.updateInvestBudget(text.toDoubleOrNull() ?: 0.0) },
+            singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("每檔預計投入金額（台幣）") },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+            colors = fieldColors(),
+        )
+        Label("用來把「先投 N%」換算成金額，顯示在進場角色的 OS 泡泡與投資分析卡片；留空＝不換算。")
+        OptToggle("標題顯示投資分析指數（0–100）", AppState.showScoreBadge) { AppState.updateShowScoreBadge(it) }
+        OptToggle("行情價下方顯示即時 K 棒訊號（盤中）", AppState.showLiveSignal) { AppState.updateShowLiveSignal(it) }
+        if (AppState.showLiveSignal) OptToggle("收盤後顯示最終進場標籤（關閉則自動隱藏）", AppState.showFinalSignal) { AppState.updateShowFinalSignal(it) }
+        OptToggle("走勢圖標示我的買賣點", AppState.showTradeMarks) { AppState.updateShowTradeMarks(it) }
     }
 }

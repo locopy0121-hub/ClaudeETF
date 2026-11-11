@@ -25,9 +25,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # 1.0 版的修訂號從 1 起算：第 99 次建置 = 1.0.1，之後每次 +1
+      # 1.1 版的修訂號從 1 起算：第 177 次建置 = 1.1.1，之後每次 +1（1.0.1–1.0.78 為第 99–176 次）
       - name: Version
-        run: echo "PATCH=$(( ${{ github.run_number }} - 98 ))" >> "$GITHUB_ENV"
+        run: |
+          echo "MINOR=1" >> "$GITHUB_ENV"
+          echo "PATCH=$(( ${{ github.run_number }} - 176 ))" >> "$GITHUB_ENV"
 
       # 先跑單元測試（金額捨去、升降單位、K 線分析），失敗就不發布
       - name: Unit tests
@@ -41,27 +43,27 @@ jobs:
       - name: Rename APK
         id: apk
         run: |
-          NAME="ClaudeETF-v1.0.${{ env.PATCH }}.apk"
+          NAME="ClaudeETF-v1.${{ env.MINOR }}.${{ env.PATCH }}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$NAME"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ClaudeETF-v1.0.${{ env.PATCH }}
+          name: ClaudeETF-v1.${{ env.MINOR }}.${{ env.PATCH }}
           path: ${{ steps.apk.outputs.name }}
 
       # 發布到 Releases，手機直接下載安裝；App 內線上更新也從這裡取得
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ env.PATCH }}
-          name: ClaudeETF v1.0.${{ env.PATCH }}
+          tag_name: v1.${{ env.MINOR }}.${{ env.PATCH }}
+          name: ClaudeETF v1.${{ env.MINOR }}.${{ env.PATCH }}
           prerelease: false
           make_latest: true
           body: |
             ${{ github.event.head_commit.message }}
 
             ---
-            版本 1.0.${{ env.PATCH }}（建置 #${{ github.run_number }}）
+            版本 1.${{ env.MINOR }}.${{ env.PATCH }}（建置 #${{ github.run_number }}）
             commit: ${{ github.sha }}
             下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。App 內「我的 › 關於 › 檢查更新」可線上更新。
           files: ${{ steps.apk.outputs.name }}
