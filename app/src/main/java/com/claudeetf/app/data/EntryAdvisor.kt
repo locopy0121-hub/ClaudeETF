@@ -68,6 +68,7 @@ object EntryAdvisor {
 
     private val gate = Semaphore(3)
     private val weekly = java.util.concurrent.ConcurrentHashMap<String, KlineAnalysis.Result>()
+    private val divs = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, DividendInfo>>()
     private val clampS = { v: Double -> v.coerceIn(-2.0, 2.0) }
 
     /** 投資分析指數：清單用的結果 60 分鐘內沿用，個股頁 10 分鐘 */
@@ -84,7 +85,10 @@ object EntryAdvisor {
         // 週 K：個股頁載入後記住，清單沿用（同一檔在清單與個股頁的結論一致）
         val kw = if (full) runCatching { KlineAnalysis.load(q, true, 60 * 60_000L) }.getOrNull()?.also { weekly[q.symbol] = it } else weekly[q.symbol]
         val mac = runCatching { macro() }.getOrNull()
-        val a = withContext(Dispatchers.Default) { compute(q, k, kw, inv, mac) } ?: return results[q.symbol]
+        // 股息與填息（普通股；ETF 已在「配息」因子）：個股頁抓取並快取 1 天，清單沿用
+        val dv = divs[q.symbol]?.takeIf { System.currentTimeMillis() - it.first < 86_400_000L }?.second
+            ?: if (full && !(inv?.etf != null || k?.etf == true)) runCatching { StockInfoRepo.dividends(q) }.getOrNull()?.also { divs[q.symbol] = System.currentTimeMillis() to it } else null
+        val a = withContext(Dispatchers.Default) { compute(q, k, kw, inv, mac, dv) } ?: return results[q.symbol]
         withContext(Dispatchers.Main) { results[q.symbol] = a }
         return a
     }
@@ -112,7 +116,7 @@ object EntryAdvisor {
         return Vola(atr, cur * 100, regime, label)
     }
 
-    fun compute(q: Quote, k: KlineAnalysis.Result?, kw: KlineAnalysis.Result?, inv: InvestAnalysis.Result?, mac: Macro? = null): Advice? {
+    fun compute(q: Quote, k: KlineAnalysis.Result?, kw: KlineAnalysis.Result?, inv: InvestAnalysis.Result?, mac: Macro? = null, dv: DividendInfo? = null): Advice? {
         if (k == null && inv == null) return null
         val src = ArrayList<Source>()
         // ---- K 線（日、週）
@@ -189,6 +193,26 @@ object EntryAdvisor {
                         else -> "：正常"
                     })
             }
+        }
+        // ---- 股息與填息（普通股）
+        if (!etf && dv != null && dv.history.isNotEmpty()) {
+            val now = System.currentTimeMillis(); val day = 86_400_000L
+            val hist = dv.history.sortedBy { it.time }
+            val judged = hist.filter { it.time < now - 60 * day && dv.fillDays.containsKey(it.time) }.takeLast(8)
+            val fillRate = if (judged.isEmpty()) null else judged.count { (dv.fillDays[it.time] ?: Int.MAX_VALUE) <= 60 } * 100.0 / judged.size
+            val last = hist.last()
+            // 依過去間隔推估下次除息日（季配約 91 天、半年配 182 天、年配 365 天）
+            val gap = if (hist.size >= 2) (hist.last().time - hist[hist.size - 2].time).coerceIn(60 * day, 400 * day) else 365 * day
+            val next = last.time + gap
+            val daysToNext = ((next - now) / day).toInt()
+            val recentUnfilled = now - last.time < 45 * day && dv.fillDays.containsKey(last.time) && dv.fillDays[last.time] == null
+            var sc = 0.0; val notes = ArrayList<String>()
+            fillRate?.let { notes += "近 ${judged.size} 次 60 日內填息率 " + "%.0f".format(it) + "%" }
+            dv.yieldPct?.let { notes += "殖利率 " + "%.1f".format(it) + "%"; if (it >= 5) sc += 0.3 else if (it < 1.5) sc -= 0.1 }
+            if (daysToNext in 0..35 && (fillRate ?: 0.0) >= 70) { sc += 0.6; notes += "預估約 $daysToNext 天後除息，填息機率高" }
+            else if (daysToNext in 0..35 && fillRate != null && fillRate < 40) { sc -= 0.3; notes += "預估約 $daysToNext 天後除息，但填息率偏低（留意貼息）" }
+            if (recentUnfilled) { sc -= 0.4; notes += "近期除息尚未填息" }
+            if (notes.isNotEmpty()) src += Source("股息與填息", "基本面", clampS(sc), 5.0, notes.joinToString("，"))
         }
         // ---- 波動
         val vola = volatility(cs)
