@@ -79,7 +79,11 @@ private fun MiniQuoteRow(nav: NavController, symbol: String, extra: String? = nu
         Sparkline(q.spark, Trend.fg(q.change), Modifier.size(width = 52.dp, height = 22.dp))
         HGap(8.dp)
         Column(horizontalAlignment = Alignment.End) {
-            NumText(if (q.price > 0) Fmt.price(q.price) else "—", 13.sp)
+            val lim = com.claudeetf.app.ui.limitOf(q)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (lim != 0) { com.claudeetf.app.ui.LimitTag(lim, 10.sp); HGap(4.dp) }
+                com.claudeetf.app.ui.LimitPrice(if (q.price > 0) Fmt.price(q.price) else "—", 13.sp, C.Text, lim, FontWeight.Normal)
+            }
             NumText(Fmt.signedPct(q.changePct), 11.sp, Trend.fg(q.change))
         }
     }
@@ -248,7 +252,11 @@ fun StockBigCard(nav: NavController, symbol: String) {
             NumText(q.symbol, 12.sp, C.Muted)
         }
         Row(verticalAlignment = Alignment.Bottom) {
-            NumText(if (q.price > 0) Fmt.price(q.price) else "—", 26.sp, Trend.fg(q.change), weight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                val lim = com.claudeetf.app.ui.limitOf(q)
+                com.claudeetf.app.ui.LimitPrice(if (q.price > 0) Fmt.price(q.price) else "—", 26.sp, Trend.fg(q.change), lim)
+                if (lim != 0) { HGap(6.dp); com.claudeetf.app.ui.LimitTag(lim) }
+            }
             Column(horizontalAlignment = Alignment.End) {
                 NumText(Fmt.signed(q.change, 2), 13.sp, Trend.fg(q.change))
                 ChangePill(q.changePct)

@@ -87,7 +87,7 @@ data class WallStyle(
         val NAMES = linkedMapOf(
             "name" to "名稱", "code" to "代號", "price" to "現價", "arrow" to "漲跌箭頭", "chg" to "漲跌", "pct" to "漲跌幅",
             "entry" to "進場建議", "band" to "光譜位階", "mv" to "持股市值", "day" to "今日損益", "ret" to "報酬率",
-            "pl" to "未實現損益", "shares" to "股數", "avg" to "均價", "cost" to "持有成本", "weight" to "持股占比", "vol" to "成交量",
+            "pl" to "未實現損益", "shares" to "股數", "avg" to "均價", "cost" to "持有成本", "weight" to "持股占比", "vol" to "成交量", "limit" to "漲跌停標籤",
         )
 
         val DEFAULT_ITEMS = listOf(
@@ -108,6 +108,7 @@ data class WallStyle(
             WallItem("cost", false, align = 2, size = 11),
             WallItem("weight", false, align = 2, size = 11),
             WallItem("vol", false, align = 2, size = 11),
+            WallItem("limit", true, head = true, inline = true, align = 1, size = 11, bold = true, px = 5, py = 1, bg = 1, ba = 100),
         )
 
         /** 預設組合 */

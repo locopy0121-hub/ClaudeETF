@@ -210,8 +210,11 @@ private fun MoverRow(m: YahooExtra.Mover, us: Boolean, onClick: () -> Unit) {
                 Label("量 " + Fmt.num(m.volume) + if (us) "" else " 張")
             }
         }
+        val lim = if (us || m.changePct > -9.0 && m.changePct < 9.0) 0
+            else limitDir(m.price, m.price / (1 + m.changePct / 100), m.symbol)
+        if (lim != 0) { LimitTag(lim); HGap(6.dp) }
         Column(horizontalAlignment = Alignment.End) {
-            NumText(Fmt.price(m.price), 14.sp)
+            LimitPrice(Fmt.price(m.price), 14.sp, C.Text, lim, FontWeight.Normal)
             ChangePill(m.changePct)
         }
     }

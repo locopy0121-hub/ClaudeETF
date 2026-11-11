@@ -343,6 +343,10 @@ object AppState {
     /** 持股現價方格樣式 */
     var priceBoxShow by mutableStateOf(true)
     var priceBoxLabel by mutableStateOf(true)
+    /** 漲停／跌停：價格反白（實心色塊）與標籤 */
+    var limitFill by mutableStateOf(true)
+    var limitTag by mutableStateOf(true)
+    fun updateLimit(fill: Boolean = limitFill, tag: Boolean = limitTag) { limitFill = fill; limitTag = tag; save() }
     /** mono 等寬、sans 一般、serif 襯線、cond 窄體 */
     var priceBoxFont by mutableStateOf("mono")
     /** 300 細、400 標準、500 中等、700 粗、900 特粗 */
@@ -596,6 +600,8 @@ object AppState {
         // 現價方格的顯示改由持股卡片項目開關控制：舊的「不顯示」轉成隱藏該項目
         if (!priceBoxShow) { holdStyle = holdStyle.copy(hidden = holdStyle.hidden + "price"); priceBoxShow = true }
         priceBoxLabel = p.getBoolean("priceBoxLabel", true)
+        limitFill = p.getBoolean("limitFill", true)
+        limitTag = p.getBoolean("limitTag", true)
         priceBoxFont = p.getString("priceBoxFont", "mono") ?: "mono"
         priceBoxWeight = p.getInt("priceBoxWeight", 700)
         priceBoxSize = p.getInt("priceBoxSize", 13)
@@ -894,6 +900,8 @@ object AppState {
             .putString("divPayMuted", divPayMuted.joinToString(","))
             .putBoolean("priceBoxShow", priceBoxShow)
             .putBoolean("priceBoxLabel", priceBoxLabel)
+            .putBoolean("limitFill", limitFill)
+            .putBoolean("limitTag", limitTag)
             .putString("priceBoxFont", priceBoxFont)
             .putInt("priceBoxWeight", priceBoxWeight)
             .putInt("priceBoxSize", priceBoxSize)

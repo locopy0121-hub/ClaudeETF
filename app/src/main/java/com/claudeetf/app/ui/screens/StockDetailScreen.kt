@@ -458,12 +458,14 @@ private fun PriceHeader(q: Quote, session: com.claudeetf.app.util.UsSession.Info
         DivDatesStrip(q)
         Row(verticalAlignment = Alignment.Bottom) {
             // 股價顏色依漲跌：漲紅、平黃、跌綠（依配色設定）
-            NumText(if (q.price > 0) Fmt.price(q.price) else "—", 32.sp, if (q.price > 0 && q.prevClose > 0) Trend.price(q.change) else C.Text, FontWeight.Bold)
+            val lim = com.claudeetf.app.ui.limitOf(q)
+            com.claudeetf.app.ui.LimitPrice(if (q.price > 0) Fmt.price(q.price) else "—", 32.sp, if (q.price > 0 && q.prevClose > 0) Trend.price(q.change) else C.Text, lim)
             HGap(10.dp)
             NumText(
                 Fmt.signed(q.change, 2) + "（" + Fmt.pct(q.changePct) + "）", 14.sp, Trend.fg(q.change),
                 modifier = Modifier.padding(bottom = 5.dp),
             )
+            if (lim != 0) { HGap(8.dp); com.claudeetf.app.ui.LimitTag(lim, 12.sp, Modifier.padding(bottom = 6.dp)) }
         }
         if (q.market == Market.US) {
             AppState.extended[q.symbol]?.let { e ->

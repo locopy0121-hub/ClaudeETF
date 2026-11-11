@@ -210,8 +210,12 @@ private fun PickRow(rank: Int, p: TwPicks.Pick, bull: Boolean, onClick: () -> Un
             Text(p.reasons.joinToString("；"), color = C.Text2, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         HGap(8.dp)
+        val lim = if (p.pct > -9.0 && p.pct < 9.0) 0 else limitDir(p.price, p.price / (1 + p.pct / 100), p.symbol)
         Column(horizontalAlignment = Alignment.End) {
-            NumText(Fmt.price(p.price), 14.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (lim != 0) { LimitTag(lim, 10.sp); HGap(4.dp) }
+                LimitPrice(Fmt.price(p.price), 14.sp, C.Text, lim, FontWeight.Normal)
+            }
             ChangePill(p.pct)
             Text("分數 " + (if (p.score > 0) "+" else "") + "%.1f".format(p.score), color = tone, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }

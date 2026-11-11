@@ -366,17 +366,22 @@ fun LivePriceBox(q: com.claudeetf.app.data.Quote, isUs: Boolean, scale: Float = 
             flash = 0
         } else last = q.price
     }
-    val c = Trend.price(q.change)
+    val lim = if (isUs) 0 else com.claudeetf.app.ui.limitOf(q)
+    val inv = lim != 0 && AppState.limitFill
+    val c = if (inv) Color.White else Trend.price(q.change)
     val live = if (isUs) com.claudeetf.app.data.MarketData.usLive() else com.claudeetf.app.data.MarketData.isTwIntraday()
     Row(
         Modifier.clip(RoundedCornerShape(6.dp))
-            .background(if (flash != 0) Trend.fg(flash.toDouble()).copy(alpha = 0.35f) else c.copy(alpha = 0.12f))
-            .border(1.dp, c.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+            .background(if (inv) com.claudeetf.app.ui.limitBg(lim) else if (flash != 0) Trend.fg(flash.toDouble()).copy(alpha = 0.35f) else c.copy(alpha = 0.12f))
+            .border(1.dp, if (inv) Color.White.copy(alpha = 0.5f) else c.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
             .padding(horizontal = 7.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (live) { Box(Modifier.size(6.dp).clip(RoundedCornerShape(3.dp)).background(C.Red)); HGap(4.dp) }
-        if (AppState.priceBoxLabel) Text(if (live) "即時 " else "收盤 ", color = C.Muted, fontSize = (10 * scale).sp)
+        // 漲停／跌停時文字改成「漲停」「跌停」（標籤設定開啟時一律顯示）
+        if (lim != 0 && AppState.limitTag) Text(if (lim > 0) "漲停 " else "跌停 ", color = if (inv) Color.White else Trend.fg(lim.toDouble()),
+            fontSize = (10 * scale).sp, fontWeight = FontWeight.Bold)
+        else if (AppState.priceBoxLabel) Text(if (live) "即時 " else "收盤 ", color = if (inv) Color.White.copy(alpha = 0.8f) else C.Muted, fontSize = (10 * scale).sp)
         // 字級＝方格字級 × 單一欄位字級；粗細可被單一欄位粗細覆蓋
         Text(
             (if (isUs) "$" else "") + Fmt.price(q.price), color = c, maxLines = 1,

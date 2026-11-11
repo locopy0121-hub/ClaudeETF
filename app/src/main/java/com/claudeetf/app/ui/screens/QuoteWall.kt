@@ -101,6 +101,8 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
     val limit = if (st.limitFill && q != null && AppState.marketOf(h.symbol) == com.claudeetf.app.data.Market.TW)
         com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00")) else null
     val inv = limit != null || (demo != 0 && st.limitFill)
+    val limitText = if (demo != 0) (if (demo > 0) "漲停" else "跌停") else if (q != null && AppState.marketOf(h.symbol) == com.claudeetf.app.data.Market.TW)
+        com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00")) else null
     // 進場建議、光譜需要分析結果（背景載入，快取共用）
     val entry = if (vis.any { it.id == "entry" } && q != null) entryResultFor(q) else null
     if (vis.any { it.id == "band" } && q != null) LaunchedEffect(q.symbol) {
@@ -123,6 +125,7 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
             "chg" -> "" to sg(chg, if (abs(chg) < 10) 2 else 1)
             "pct" -> "" to Fmt.num(abs(pct), 2) + "%"
             "entry" -> entry?.entry?.label?.let { "" to it }
+            "limit" -> limitText?.let { "" to it }
             "band" -> band?.zoneName?.let { p("光譜") to it }
             "mv" -> p("市值") to mask(Fmt.num(AppState.marketValueTwd(h)))
             "day" -> p("今日") to mask(sg(chg * h.shares * fx, 0))
@@ -151,11 +154,13 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
         "band" -> band?.let { zoneColor(it.zone) } ?: trend
         else -> trend
     }
-    fun bgColor(i: WallItem): Color? = when (i.bg) {
+    // 反白格子裡的漲跌停標籤（底色依漲跌）改成白底、漲跌色字，才不會和格子同色
+    fun limitOnFill(i: WallItem) = inv && i.id == "limit" && (i.bg == 1 || i.bg == 2)
+    fun bgColor(i: WallItem): Color? = if (limitOnFill(i)) Color.White else when (i.bg) {
         1 -> trend; 2 -> level(i); 3 -> C.Muted; 4 -> GOLD; 5 -> C.Primary; 6 -> Color.White; 7 -> C.Bg
         else -> null
     }?.copy(alpha = i.ba / 100f)
-    fun color(i: WallItem): Color = if (inv && i.bg == 0) (if (i.id == "code") Color.White.copy(alpha = 0.7f) else Color.White) else when (i.color) {
+    fun color(i: WallItem): Color = if (limitOnFill(i)) trend else if (inv && i.bg == 0) (if (i.id == "code") Color.White.copy(alpha = 0.7f) else Color.White) else when (i.color) {
         1 -> trend; 2 -> C.Text; 3 -> C.Muted; 4 -> GOLD; 5 -> C.Primary; 6 -> level(i)
         else -> bgColor(i)?.takeIf { it.alpha >= 0.6f }?.let { onColor(it) } ?: natural(i)
     }

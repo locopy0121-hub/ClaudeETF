@@ -188,9 +188,7 @@ fun WatchExtraItem(q: Quote, id: String, st: WatchStyle, list: Boolean = false) 
         } ?: Text("三關：—", color = C.Muted, fontSize = small)
         "entry" -> EntryTagFor(q)
         "limit" -> if (q.market == Market.TW) {
-            com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00"))?.let { s ->
-                Text(s, color = Trend.fg(if (s == "漲停") 1.0 else -1.0), fontSize = st.sp(11), fontWeight = FontWeight.Bold)
-            }
+            com.claudeetf.app.ui.LimitTag(com.claudeetf.app.ui.limitOf(q), st.sp(11))
         }
         "market" -> Row(verticalAlignment = Alignment.CenterVertically) {
             MarketTag(q.market)
@@ -270,7 +268,9 @@ fun WatchCardBody(q: Quote, st: WatchStyle, flash: Int, modifier: Modifier, sel:
             else if (st.nameMode == 0 && !small) NumText(q.symbol, st.sp(11), C.Muted)
         }
         Row(Modifier.align(priceAlign).tap(t, "price"), verticalAlignment = Alignment.CenterVertically) {
-            Styled(st, "c:price", q) { s -> NumText(if (q.price > 0) Fmt.price(q.price) else "—", s.sp(if (small) 19 else 26), Trend.price(q.change), weight = FontWeight.Bold) }
+            val lim = com.claudeetf.app.ui.limitOf(q)
+            Styled(st, "c:price", q) { s -> com.claudeetf.app.ui.LimitPrice(if (q.price > 0) Fmt.price(q.price) else "—", s.sp(if (small) 19 else 26), Trend.price(q.change), lim) }
+            if (lim != 0 && !st.shows("limit")) { HGap(6.dp); com.claudeetf.app.ui.LimitTag(lim, st.sp(10)) }
             if (st.tagPos == 2) { HGap(6.dp); EntryTagFor(q) }
         }
         val ids = st.items.filter { st.shows(it) && !(it == "entry" && st.tagPos != 0) }
@@ -359,7 +359,9 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
             Column(Modifier.widthIn(min = 88.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(Modifier.tap(t, "price"), verticalAlignment = Alignment.CenterVertically) {
                     if (st.tagPos == 2) { EntryTagFor(q); HGap(6.dp) }
-                    Styled(st, "l:price", q) { s -> NumText(if (q.price > 0) Fmt.price(q.price) else "—", s.sp(16), Trend.price(q.change), FontWeight.Bold) }
+                    val lim = com.claudeetf.app.ui.limitOf(q)
+                    if (lim != 0 && !st.shows("limit")) { com.claudeetf.app.ui.LimitTag(lim, st.sp(10)); HGap(4.dp) }
+                    Styled(st, "l:price", q) { s -> com.claudeetf.app.ui.LimitPrice(if (q.price > 0) Fmt.price(q.price) else "—", s.sp(16), Trend.price(q.change), lim) }
                 }
                 Styled(st, "l:change", q, Modifier.tap(t, "change")) { s -> Row(verticalAlignment = Alignment.CenterVertically) {
                     if (s.changeMode != 1) NumText(Fmt.signed(q.change, 2), s.sp(11), c)
@@ -437,7 +439,7 @@ private fun infoLine(q: Quote, id: String, st: WatchStyle): (@Composable RowScop
             h.day?.let { NumText("今日 " + mask(Fmt.signed(it, if (q.market == Market.US) 2 else 0)), sz, Trend.fg(it)) }
         } }
         "limit" -> if (!tw) null else com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00"))?.let { s ->
-            line { Text(s, color = Trend.fg(if (s == "漲停") 1.0 else -1.0), fontSize = sz, fontWeight = FontWeight.Bold) }
+            line { com.claudeetf.app.ui.LimitTag(if (s == "漲停") 1 else -1, sz) }
         }
         "ext" -> AppState.extended[q.symbol]?.let { e -> line {
             NumText(Fmt.price(e.price), sz, Trend.fg(e.changePct))

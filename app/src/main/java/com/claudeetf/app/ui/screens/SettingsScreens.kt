@@ -474,6 +474,19 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 item { AppIconPicker() }
                 item {
                     Card(padding = 14.dp) {
+                        Text("漲停／跌停顯示（台股）", color = C.Text, fontSize = 14.sp)
+                        Label("套用到持股、自選行情、首頁、個股頁、市場排行與行情牆。")
+                        OptToggle("價格反白（實心色塊、白字）", AppState.limitFill) { AppState.updateLimit(fill = it) }
+                        OptToggle("顯示「漲停」「跌停」標籤", AppState.limitTag) { AppState.updateLimit(tag = it) }
+                        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Label("預覽 "); HGap(6.dp)
+                            com.claudeetf.app.ui.LimitPrice("110.00", 18.sp, C.Text, 1); HGap(6.dp); com.claudeetf.app.ui.LimitTag(1); HGap(14.dp)
+                            com.claudeetf.app.ui.LimitPrice("90.00", 18.sp, C.Text, -1); HGap(6.dp); com.claudeetf.app.ui.LimitTag(-1)
+                        }
+                    }
+                }
+                item {
+                    Card(padding = 14.dp) {
                         Text("主題", color = C.Text, fontSize = 14.sp)
                         Segmented(listOf("跟隨系統", "深色", "淺色"), AppState.themeMode, { AppState.updateTheme(it) }, background = C.Bg)
                         Text("字級", color = C.Text, fontSize = 14.sp)
@@ -1169,7 +1182,7 @@ internal val SETTINGS_SECTIONS = listOf(
 
 /** 設定搜尋用的關鍵字 */
 private val SETTINGS_KEYWORDS = mapOf(
-    "look" to "主題 深色 淺色 配色 紅漲綠跌 綠漲紅跌 字體 App圖示 icon 圖示",
+    "look" to "主題 深色 淺色 配色 紅漲綠跌 綠漲紅跌 字體 App圖示 icon 圖示 漲停 跌停 反白 標籤",
     "watch" to "行情 自選 卡片 樣式 字級 欄位 進場標籤 動畫",
     "hold" to "持股 卡片 樣式 欄位 市值 損益 行距 內距 行情牆 字高 字級",
     "widget" to "小工具 桌面 widget 透明 字級",
