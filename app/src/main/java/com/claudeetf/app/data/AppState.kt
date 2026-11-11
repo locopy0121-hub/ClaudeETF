@@ -146,6 +146,10 @@ object AppState {
     var kconds by mutableStateOf<Map<String, com.claudeetf.app.data.KCondSetting>>(emptyMap())
     fun updateKCond(id: String, v: com.claudeetf.app.data.KCondSetting) { kconds = kconds + (id to v); save() }
     fun resetKConds() { kconds = emptyMap(); save() }
+    fun resetKCondsTo(m: Map<String, com.claudeetf.app.data.KCondSetting>) { kconds = m; save() }
+    /** 每 6 小時依線上資訊自動套用 K 棒條件設定 */
+    var kcondAutoApply by mutableStateOf(true)
+    fun updateKCondAutoApply(v: Boolean) { kcondAutoApply = v; save() }
     /** 國安基金：官方宣布進場（新聞）時直接視為條件達成 */
     var kcondNsfOfficial by mutableStateOf(true)
     fun updateKCondNsfOfficial(v: Boolean) { kcondNsfOfficial = v; save() }
@@ -528,6 +532,7 @@ object AppState {
         twOfficialClose = p.getBoolean("twOfficialClose", true)
         kcondNotify = p.getBoolean("kcondNotify", false)
         kcondNsfOfficial = p.getBoolean("kcondNsfOfficial", true)
+        kcondAutoApply = p.getBoolean("kcondAutoApply", true)
         kconds = com.claudeetf.app.data.KCondSetting.parseAll(p.getString("kconds", "") ?: "")
         monthlyReport = p.getBoolean("monthlyReport", true)
         showKeyLevels = p.getBoolean("showKeyLevels", true)
@@ -845,6 +850,7 @@ object AppState {
             .putBoolean("twOfficialClose", twOfficialClose)
             .putBoolean("kcondNotify", kcondNotify)
             .putBoolean("kcondNsfOfficial", kcondNsfOfficial)
+            .putBoolean("kcondAutoApply", kcondAutoApply)
             .putString("kconds", com.claudeetf.app.data.KCondSetting.toJsonAll(kconds))
             .putBoolean("monthlyReport", monthlyReport)
             .putBoolean("showKeyLevels", showKeyLevels)

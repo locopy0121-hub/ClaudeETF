@@ -146,8 +146,10 @@ object KlineConditions {
     /** 標題判讀：先看否定與退場，再看進場 */
     fun classify(t: String): Int? {
         if (!t.contains("國安基金")) return null
+        // 「何時退場」「曝退場時間」等是在討論退場，不代表已退場
+        val exitTalk = Regex("何時退場|退場時間|退場時機|退場時點|退場條件|曝退場|談退場|討論退場|退場[？?]").containsMatchIn(t)
         return when {
-            Regex("退場|撤出|撤場|結束護盤|功成身退|出場").containsMatchIn(t) -> -1
+            !exitTalk && Regex("已退場|宣布退場|正式退場|撤出|撤場|結束護盤|功成身退|退場").containsMatchIn(t) -> -1
             Regex("不進場|暫不|無須|不必|未進場|沒進場|不會進場|不出手|按兵不動").containsMatchIn(t) -> 0
             Regex("進場|護盤|出手|啟動|宣布進駐|入市").containsMatchIn(t) -> 1
             else -> null
@@ -201,6 +203,115 @@ object KlineConditions {
         } finally {
             nsfLoading = false
         }
+    }
+
+    // ---------------------------------------------------------------- 依線上資訊自動設定開關與數值
+
+    data class Applied(val at: Long, val lines: List<String>, val prev: String)
+
+    var applied by androidx.compose.runtime.mutableStateOf<Applied?>(null)
+        private set
+
+    fun loadApplied() {
+        if (applied != null) return
+        runCatching {
+            val o = JSONObject(AppState.cacheGet("kcondApplied") ?: return)
+            val a = o.getJSONArray("l")
+            applied = Applied(o.getLong("t"), (0 until a.length()).map { a.getString(it) }, o.optString("p"))
+        }
+    }
+
+    private fun pct1(v: Double) = Math.round(v * 2) / 2.0
+
+    /**
+     * 依線上資訊算出建議設定：
+     *  - 國安基金：新聞判定已宣布進場時，回落門檻＝宣布當天加權指數距 60 日高點的跌幅、單日跌幅＝宣布前 5 個交易日最大單日跌幅；
+     *    否則依近 60 日波動度（日報酬標準差 σ）設定單日跌幅 ≈ 2.5σ。
+     *  - 盤勢：國安基金護盤中、距高點回落 ≥ 10% 或 σ ≥ 2% 視為急跌盤，開啟超跌類條件（RSI、KD、負乖離、52 週低、自高點回檔、年線）；
+     *    一般盤勢開啟季線、爆量、RSI、KD。門檻依 σ 縮放。
+     */
+    fun suggest(cs: List<Candle>): Map<String, KCondSetting> {
+        val closes = cs.map { it.c }
+        val rets = closes.zipWithNext { a, b -> (b / a - 1) * 100 }.takeLast(60)
+        val mean = rets.average()
+        val sigma = kotlin.math.sqrt(rets.sumOf { (it - mean) * (it - mean) } / rets.size.coerceAtLeast(1))
+        val c = closes.last(); val hi = closes.takeLast(60).max(); val dd = (hi - c) / hi * 100
+        val ns = nsf
+        val crash = ns?.state == 1 || dd >= 10 || sigma >= 2
+        // 國安基金宣布進場當天的跌幅
+        var nsfA = 10.0; var nsfB = pct1((2.5 * sigma).coerceIn(2.0, 6.0))
+        if (ns?.state == 1 && ns.date > 0) {
+            val zone = java.time.ZoneId.of("Asia/Taipei")
+            val d0 = java.time.Instant.ofEpochMilli(ns.date).atZone(zone).toLocalDate()
+            val i = cs.indexOfLast { java.time.Instant.ofEpochMilli(it.t).atZone(zone).toLocalDate() <= d0 }
+            if (i > 5) {
+                val h = cs.subList(maxOf(0, i - 59), i + 1).maxOf { it.c }
+                nsfA = Math.round((h - cs[i].c) / h * 100).toDouble().coerceIn(3.0, 40.0)
+                nsfB = pct1((i - 4..i).maxOf { k -> (cs[k - 1].c - cs[k].c) / cs[k - 1].c * 100 }.coerceIn(1.0, 10.0))
+            }
+        }
+        fun r(v: Double, lo: Double, hi2: Double) = Math.round(v).toDouble().coerceIn(lo, hi2)
+        return mapOf(
+            "nsf" to KCondSetting(true, nsfA, nsfB),
+            "pullback" to KCondSetting(crash, r(maxOf(8.0, 6 * sigma), 3.0, 60.0)),
+            "ma" to KCondSetting(true, if (crash) 240.0 else 60.0),
+            "bias" to KCondSetting(crash, r(maxOf(5.0, 4 * sigma), 2.0, 30.0)),
+            "rsi" to KCondSetting(true, if (crash) 25.0 else 30.0),
+            "kd" to KCondSetting(true, 20.0),
+            "vol" to KCondSetting(!crash, 2.0),
+            "down" to KCondSetting(crash, if (crash) 5.0 else 4.0),
+            "low52" to KCondSetting(crash, 5.0),
+        )
+    }
+
+    /** 套用建議並記錄變更（可復原）；回傳變更說明 */
+    fun apply(sug: Map<String, KCondSetting>, reason: String): List<String> {
+        val before = defs.associate { it.id to setting(it.id) }
+        val lines = ArrayList<String>()
+        defs.forEach { d ->
+            val n = sug[d.id] ?: return@forEach
+            val o = before[d.id]!!
+            if (n == o) return@forEach
+            fun v(x: Double, p: Param) = (if (p.step < 1) String.format("%.1f", x) else x.toLong().toString()) + p.unit
+            val parts = ArrayList<String>()
+            if (n.on != o.on) parts += if (n.on) "開啟" else "關閉"
+            if (n.on && n.a != o.a) parts += d.a.label + " " + v(o.a, d.a) + "→" + v(n.a, d.a)
+            if (n.on && d.b != null && n.b != o.b) parts += d.b.label + " " + v(o.b, d.b) + "→" + v(n.b, d.b)
+            if (parts.isNotEmpty()) lines += d.name + "：" + parts.joinToString("，")
+        }
+        val prev = KCondSetting.toJsonAll(AppState.kconds)
+        sug.forEach { (id, v) -> AppState.updateKCond(id, v) }
+        val out = listOf(reason) + lines.ifEmpty { listOf("設定已是最新，沒有變更") }
+        applied = Applied(System.currentTimeMillis(), out, prev)
+        AppState.cachePut("kcondApplied", JSONObject().put("t", applied!!.at).put("l", org.json.JSONArray(out)).put("p", prev).toString())
+        return out
+    }
+
+    /** 復原上次自動套用前的設定 */
+    fun undoApply() {
+        val a = applied ?: return
+        AppState.kconds = KCondSetting.parseAll(a.prev)
+        AppState.resetKCondsTo(AppState.kconds)
+        applied = null
+        AppState.cachePut("kcondApplied", "")
+    }
+
+    /**
+     * 線上更新：抓新聞判定國安基金狀態、重抓大盤，依此設定下方開關與數值。
+     * force：手動按「更新」；自動更新時只有開啟「自動套用」才改設定（6 小時一次）。
+     */
+    suspend fun updateFromOnline(force: Boolean): List<String>? {
+        loadApplied()
+        val stale = applied?.let { System.currentTimeMillis() - it.at > 6 * 3600_000L } ?: true
+        if (!force && !(AppState.kcondAutoApply && stale)) { refreshNews(false); return null }
+        if (force) clearIndexCache()
+        refreshNews(force)
+        val cs = indexCandles()
+        if (cs.size < 70) return null
+        val ns = nsf
+        val reason = "依據：國安基金" + (ns?.label ?: "狀態未知") + (if (ns?.state == 1) "（${ns.dateText}）" else "") +
+            "；加權指數距 60 日高點 −" + f1((cs.takeLast(60).maxOf { it.c } - cs.last().c) / cs.takeLast(60).maxOf { it.c } * 100) + "%"
+        return apply(suggest(cs), reason)
     }
 
     /** 立即重抓大盤日 K（清除快取） */
