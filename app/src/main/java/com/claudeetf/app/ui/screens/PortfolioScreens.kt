@@ -407,7 +407,7 @@ internal fun HoldingRow(
     else (if (isUs) "NT$" else "") + Fmt.num(AppState.marketValue(h) * fx)
     val plText = if (showTwd) Fmt.signed(plOrig * fx) else Fmt.signed(plOrig, 2, "$")
     val vPad = when (st.density) { 0 -> 4.dp; 2 -> 12.dp; else -> 8.dp }
-    val entry = if (q != null && (st.shows("entry") || st.shows("tip"))) entryResultFor(q)?.entry else null
+    val entry = if (q != null && (st.shows("entry") || st.shows("tip"))) adviceFor(q)?.entry else null
 
     // 設定頁預覽：點項目選取編輯，選中的加框
     fun Modifier.pick(id: String): Modifier = if (onPick == null) this else this.clip(RoundedCornerShape(6.dp))

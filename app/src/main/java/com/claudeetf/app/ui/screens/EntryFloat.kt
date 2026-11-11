@@ -55,14 +55,11 @@ fun isMascotStyle(style: Int) = style >= ENTRY_ICON_STYLES.size
  */
 @Composable
 fun EntryFloatBadge(q: Quote, modifier: Modifier = Modifier, onOpen: () -> Unit) {
-    LaunchedEffect(q.symbol) { if (InvestAnalysis.cached(q.symbol) == null) runCatching { InvestAnalysis.analyze(q) } }
-    LaunchedEffect(q.symbol) { runCatching { KlineAnalysis.load(q, false) } }
-    val k = KlineAnalysis.latestDaily[q.symbol] ?: return
-    val r = InvestAnalysis.results[q.symbol]
-    val ratio = r?.let { it.verdict?.ratio ?: InvestAnalysis.suggestedRatio(it.score) }
-    val (word, now) = if (ratio != null) KlineAnalysis.combined(ratio, k.entry) else (k.entry.label to null)
+    // 綜合進場建議（所有分析來源加權彙總）
+    val a = adviceFor(q, full = true) ?: return
+    val now = a.ratio
     val budget = AppState.investBudget
-    EntryFloatView(AppState.entryFloatStyle, k.entry.level, word, now, ratio, if (budget > 0 && now != null) budget * now / 100 else null, modifier, onOpen)
+    EntryFloatView(AppState.entryFloatStyle, a.entry.level, a.entry.label, now, now, if (budget > 0) budget * now / 100 else null, modifier, onOpen)
 }
 
 /**

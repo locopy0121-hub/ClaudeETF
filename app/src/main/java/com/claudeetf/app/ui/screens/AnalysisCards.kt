@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -417,15 +419,12 @@ private fun FactorLine(tag: String, f: InvestAnalysis.Factor, color: Color) {
     }
 }
 
-/** 個股頁標題列的投資分析指數徽章 */
+/** 個股頁標題列徽章：投資分析指數＋綜合進場建議（點一下看各來源） */
 @Composable
 fun ScoreBadge(q: Quote) {
     if (!AppState.showScoreBadge) return
     val r = InvestAnalysis.results[q.symbol]
-    LaunchedEffect(q.symbol) { if (InvestAnalysis.cached(q.symbol) == null) runCatching { InvestAnalysis.analyze(q) } }
-    // 短線 K 線結果（與摘要列共用快取）
-    LaunchedEffect(q.symbol) { runCatching { com.claudeetf.app.data.KlineAnalysis.load(q, false) } }
-    val k = com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol]
+    val a = adviceFor(q, full = true)
     val color = r?.let { scoreColor(it.score) } ?: C.Muted
     var info by remember { mutableStateOf(false) }
     Row(
@@ -435,44 +434,137 @@ fun ScoreBadge(q: Quote) {
     ) {
         Text("指數 ", color = C.Text2, fontSize = 11.sp, maxLines = 1)
         NumText(r?.let { "${it.score}%" } ?: "…", 14.sp, color, FontWeight.Bold)
-        r?.let {
-            // 光譜區間已移到代號下方的標籤列
-            val ratio = it.verdict?.ratio ?: InvestAnalysis.suggestedRatio(it.score)
-            if (k != null) {
-                val (word, now) = com.claudeetf.app.data.KlineAnalysis.combined(ratio, k.entry)
-                Text(" · ", color = C.Muted, fontSize = 11.sp)
-                Text(word, color = entryColor(k.entry.level), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(" 先投 $now%", color = C.Text2, fontSize = 11.sp, maxLines = 1)
-            } else Text(" · 投入 $ratio%", color = C.Text2, fontSize = 11.sp, maxLines = 1)
+        if (a != null) {
+            Text(" · ", color = C.Muted, fontSize = 11.sp)
+            Text(a.entry.label, color = entryColor(a.entry.level), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(" 先投 ${a.ratio}%", color = C.Text2, fontSize = 11.sp, maxLines = 1)
         }
     }
-    if (info && r != null) {
-        val ratio = r.verdict?.ratio ?: InvestAnalysis.suggestedRatio(r.score)
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { info = false },
-            containerColor = C.Card,
-            title = { Text("長短線綜合結論", color = C.Text, fontSize = 16.sp) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    KeyValue("長線：投資分析指數", "${r.score}% " + r.label + (r.band?.let { " · " + it.zoneName } ?: ""), color)
-                    KeyValue("長線建議投入比例", "$ratio%")
-                    if (k != null) {
-                        val (word, now) = com.claudeetf.app.data.KlineAnalysis.combined(ratio, k.entry)
-                        KeyValue("短線：K 線訊號", k.dir.label + " " + k.strength, entryColor(k.entry.level))
-                        KeyValue("短線進場建議", k.entry.label, entryColor(k.entry.level))
-                        KeyValue("綜合：現在先投入", "$now%（$word）", entryColor(k.entry.level))
-                        Text(
-                            if (now < ratio) "長線評估可投入 $ratio%，但短線" + k.entry.label + "，先投 $now%，其餘 ${ratio - now}% 等 K 線轉為「可分批進場」以上再補足。"
-                            else "長短線方向一致，可依長線比例 $ratio% 布局。",
-                            color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp,
-                        )
-                        Text(k.entry.reason, color = C.Muted, fontSize = 12.sp, lineHeight = 17.sp)
-                    } else Label("K 線分析載入中…")
-                    Label("換算：建議進場 100%、分批 50%、等回測／觀望 30%、等止跌 15%、暫緩 0%（乘上長線比例）。僅供參考，不構成投資建議。")
-                }
-            },
-            confirmButton = { Text("關閉", color = C.Primary, fontSize = 14.sp, modifier = Modifier.clickable { info = false }.padding(12.dp)) },
-        )
+    if (info) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { info = false },
+        containerColor = C.Card,
+        title = { Text("綜合進場建議", color = C.Text, fontSize = 16.sp) },
+        text = {
+            Column(Modifier.heightIn(max = 460.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                if (a == null) Label("分析中…") else EntryAdviceBody(a, compact = true)
+            }
+        },
+        confirmButton = { Text("關閉", color = C.Primary, fontSize = 14.sp, modifier = Modifier.clickable { info = false }.padding(12.dp)) },
+    )
+}
+
+private val SRC_ORDER = listOf("技術", "價位", "基本面", "籌碼", "大盤", "風險", "ETF", "其他")
+
+/** 綜合進場建議內容（卡片與對話框共用） */
+@Composable
+fun EntryAdviceBody(a: com.claudeetf.app.data.EntryAdvisor.Advice, compact: Boolean = false) {
+    val ec = entryColor(a.entry.level)
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            EntryTag(a.entry, big = !compact)
+            Text(a.entry.holderTip.let { "持有者：$it" }, color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Label("建議現在先投")
+            NumText("${a.ratio}%", 22.sp, ec, FontWeight.Bold)
+            if (AppState.investBudget > 0) Label("≈ " + Fmt.num(AppState.investBudget * a.ratio / 100.0))
+        }
+    }
+    ScoreGauge(a.score)
+    Row(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+        KeyValue("綜合分數", "${a.score}（50 中性）", ec)
+    }
+    Row(Modifier.fillMaxWidth()) {
+        KeyValue("信心度", "${a.confidence}%" + when { a.confidence >= 70 -> "（多數指標一致）"; a.confidence >= 50 -> "（略有分歧）"; else -> "（指標分歧大）" },
+            if (a.confidence >= 70) C.Text else C.Muted)
+    }
+    if (!a.complete) Label("部分資料（投資分析或 K 線）尚未取得，結論已保守處理。")
+    Text(a.entry.reason, color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 6.dp))
+
+    if (a.guards.isNotEmpty() || a.conflicts.isNotEmpty()) {
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFF2B544).copy(alpha = 0.12f)).padding(10.dp)) {
+            Text("分歧與保護", color = Color(0xFFF2B544), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            (a.conflicts + a.guards).forEach { Text("• $it", color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp) }
+        }
+    }
+
+    // ---- 各來源貢獻（中線為中性，左偏空、右偏多；粗細依權重）
+    Text("各項指標（${a.sources.size} 項）", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+    Label("條長＝偏多／偏空程度，右側為實際權重；任何單一指標權重上限 18%。")
+    a.sources.sortedWith(compareBy({ SRC_ORDER.indexOf(it.group).let { i -> if (i < 0) 99 else i } }, { -kotlin.math.abs(it.score) })).forEach { s ->
+        val c = if (s.score >= 0.25) Trend.fg(1.0) else if (s.score <= -0.25) Trend.fg(-1.0) else C.Muted
+        Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(s.group, color = C.Muted, fontSize = 10.sp, modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(C.Bg).padding(horizontal = 4.dp, vertical = 1.dp))
+                Text(" " + s.name, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, maxLines = 1)
+                Text("%+.1f".format(s.score), color = c, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("  " + Math.round(s.share * 100) + "%", color = C.Muted, fontSize = 11.sp)
+            }
+            // 置中長條
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 3.dp).height(5.dp).clip(RoundedCornerShape(3.dp)).background(C.Bg)) {
+                val half = maxWidth / 2
+                val len = half * (kotlin.math.abs(s.score) / 2.0).toFloat().coerceIn(0f, 1f)
+                Box(Modifier.offset(x = if (s.score >= 0) half else half - len).width(len).fillMaxHeight().background(c))
+                Box(Modifier.offset(x = half - 0.5.dp).width(1.dp).fillMaxHeight().background(C.Border))
+            }
+            if (!compact) Text(s.note, color = C.Text2, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 2.dp))
+        }
+    }
+    if (a.pros.isNotEmpty()) {
+        Text("看多理由", color = Trend.fg(1.0), fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        a.pros.forEach { Text("• $it", color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp) }
+    }
+    if (a.cons.isNotEmpty()) {
+        Text("看空理由", color = Trend.fg(-1.0), fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+        a.cons.forEach { Text("• $it", color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp) }
+    }
+    a.vola?.let { v ->
+        Text("波動", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        KeyValue("狀態", v.label, if (v.regime >= 1.25) Trend.fg(-1.0) else C.Text)
+        KeyValue("近 20 日年化波動", "%.0f".format(v.annual) + "%（一年中位數 ×" + "%.1f".format(v.regime) + "）")
+        KeyValue("ATR(14)／股價", "%.2f".format(v.atrPct) + "%（每日平均振幅）")
+        if (v.regime > 1.0) Label("波動越大，建議投入比例越低（已自動打折）。")
+    }
+    a.plan?.let { p ->
+        Text("操作參考（日 K）", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Text(p.trigger, color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp)
+        KeyValue("布局區間", Fmt.price(p.entryMin) + " ～ " + Fmt.price(p.entryMax))
+        KeyValue("停損", Fmt.price(p.stop), Trend.fg(-1.0))
+        KeyValue("目標一／二", Fmt.price(p.tp1) + " ／ " + Fmt.price(p.tp2), Trend.fg(1.0))
+    }
+    Label("依公開資料計算的綜合參考，不是投資建議；請搭配自身資金規劃與風險承受度判斷。", Modifier.padding(top = 10.dp))
+}
+
+/** 個股頁 › 分析：綜合進場建議卡（整合 K 線、投資分析、光譜、分析師、籌碼、波動等所有來源） */
+@Composable
+fun EntryAdviceCard(q0: Quote, onKline: () -> Unit = {}, onBand: () -> Unit = {}) {
+    val q = AppState.quote(q0.symbol) ?: q0
+    val a = adviceFor(q, full = true)
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    Card(padding = 14.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("綜合進場建議", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Label(a?.let { "整合 ${it.sources.size} 項指標 · " + java.time.Instant.ofEpochMilli(it.at).atZone(java.time.ZoneId.systemDefault())
+                    .format(DateTimeFormatter.ofPattern("HH:mm")) + " 更新" } ?: "分析中…")
+            }
+            Text(if (busy) "更新中" else "重新分析", color = if (busy) C.Muted else C.Primary, fontSize = 12.sp,
+                modifier = Modifier.clickable(enabled = !busy) {
+                    busy = true
+                    scope.launch {
+                        InvestAnalysis.results.remove(q.symbol)
+                        runCatching { com.claudeetf.app.data.EntryAdvisor.load(q, full = true) }
+                        busy = false
+                    }
+                }.padding(6.dp))
+        }
+        if (a == null) { Label("正在整合 K 線、投資分析、光譜、分析師、籌碼與波動資料…", Modifier.padding(top = 8.dp)); return@Card }
+        EntryAdviceBody(a)
+        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("K 線詳情 ›", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable(onClick = onKline).padding(horizontal = 10.dp, vertical = 6.dp))
+            Text("股價光譜 ›", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable(onClick = onBand).padding(horizontal = 10.dp, vertical = 6.dp))
+        }
     }
 }
 

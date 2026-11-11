@@ -104,12 +104,26 @@ fun EntryTag(e: KlineAnalysis.Entry, big: Boolean = false, animLevel: Int = AppS
 fun EntryTagFor(q: Quote, holder: Boolean = false, modifier: Modifier = Modifier) {
     // 自選行情用自己的開關；持股卡片由 HoldStyle 控制（呼叫端決定是否顯示）
     if (!holder && !AppState.showCardEntry) return
-    val r = entryResultFor(q) ?: return
+    val r = adviceFor(q) ?: return
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         EntryTag(r.entry, animLevel = if (holder) AppState.holdStyle.entryAnim else AppState.entryAnim)
         if (holder) Text(" " + r.entry.holderTip, color = C.Muted, fontSize = 10.sp, maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
+}
+
+/**
+ * 綜合進場建議（K 線、投資分析各因子、光譜、分析師、籌碼、波動、K 棒條件、三關價、營收、融資）：
+ * 背景載入並共用快取；價格 1.5 秒內連續變動時只算最後一次。
+ */
+@Composable
+fun adviceFor(q: Quote, full: Boolean = false): com.claudeetf.app.data.EntryAdvisor.Advice? {
+    if (q.price <= 0) return com.claudeetf.app.data.EntryAdvisor.results[q.symbol]
+    LaunchedEffect(q.symbol, q.price, full) {
+        if (com.claudeetf.app.data.EntryAdvisor.results[q.symbol] != null) kotlinx.coroutines.delay(1_500)
+        runCatching { com.claudeetf.app.data.EntryAdvisor.load(q, full) }
+    }
+    return com.claudeetf.app.data.EntryAdvisor.results[q.symbol]
 }
 
 /** 取得（並在背景更新）此檔的日 K 分析結果 */
@@ -175,7 +189,7 @@ fun KlineAnalysisCard(q0: Quote) {
         Row(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(entryColor(r.entry.level).copy(alpha = 0.10f)).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                Label("是否進場")
+                Label("K 線觀點（綜合建議見「分析」分頁）")
                 Text(r.entry.reason, color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp)
                 if (held) Text("已持有：" + r.entry.holderTip, color = C.Text, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp))
             }

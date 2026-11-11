@@ -107,7 +107,7 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
     val limitText = if (demo != 0) (if (demo > 0) "漲停" else "跌停") else if (q != null && AppState.marketOf(h.symbol) == com.claudeetf.app.data.Market.TW)
         com.claudeetf.app.util.TwSession.limitState(q.price, q.prevClose, q.isEtf || q.symbol.startsWith("00")) else null
     // 進場建議、光譜需要分析結果（背景載入，快取共用）
-    val entry = if (vis.any { it.id == "entry" } && q != null) entryResultFor(q) else null
+    val entry = if (vis.any { it.id == "entry" } && q != null) adviceFor(q) else null
     if (vis.any { it.id == "band" } && q != null) LaunchedEffect(q.symbol) {
         if (com.claudeetf.app.data.InvestAnalysis.cached(q.symbol) == null) runCatching { com.claudeetf.app.data.InvestAnalysis.analyze(q) }
     }

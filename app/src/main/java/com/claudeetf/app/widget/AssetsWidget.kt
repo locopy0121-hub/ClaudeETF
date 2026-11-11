@@ -240,7 +240,7 @@ object WidgetUpdater {
             val d = (q.price - q.prevClose) * sh * AppState.fxFor(q.market)
             val vol = (AppState.dayStats[q.symbol]?.volume ?: com.claudeetf.app.data.KlineAnalysis.volumeOn(q))?.takeIf { it > 0 }
                 ?.let { v -> com.claudeetf.app.ui.screens.volumeText(v, q.market) }
-            val e = com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol]?.entry
+            val e = com.claudeetf.app.data.EntryAdvisor.results[q.symbol]?.entry ?: com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol]?.entry
             val bandNow = com.claudeetf.app.data.InvestAnalysis.results[q.symbol]?.band?.zoneName
             // 有新結果就記下來（App 重開、背景程序重建後仍能顯示上次的標籤）
             val old = tags[q.symbol]

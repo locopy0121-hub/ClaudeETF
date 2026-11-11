@@ -271,7 +271,11 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                                 )
                             }
                         }
-                        2 -> { item { AnalysisCard(q) }; peersSection(nav, peers, peerExtras) }
+                        2 -> {
+                            item { EntryAdviceCard(q, onKline = { ovSub = 3 }, onBand = { ovSub = 4 }) }
+                            item { AnalysisCard(q) }
+                            peersSection(nav, peers, peerExtras)
+                        }
                         3 -> item { KlineAnalysisCard(q) }
                         4 -> item { PriceBandCard(q) }
                         5 -> { item { YearlyReturnsCard(q) }; item { DrawdownCard(q) }; item { NextDividendCard(q, compact = true) } }
