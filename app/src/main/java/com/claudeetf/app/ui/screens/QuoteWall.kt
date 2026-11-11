@@ -178,7 +178,7 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
             append(v)
         }
         Text(txt, color = main, fontSize = i.size.sp, lineHeight = (i.size * 1.18f * ilh).sp,
-            fontWeight = if (i.bold) FontWeight.Bold else FontWeight.Normal, fontFamily = if (i.mono) FontFamily.Monospace else null,
+            fontWeight = if (i.bold) FontWeight.Bold else FontWeight.Normal, fontFamily = com.claudeetf.app.ui.fontOf(i.font.ifEmpty { if (i.mono) "mono" else "" }),
             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = textAlignOf(i.align),
             modifier = Modifier.outer(i.mx, i.my)
                 .then(if (bgc != null) Modifier.drawBehind { drawRoundRect(bgc, cornerRadius = CornerRadius(6.dp.toPx())) } else Modifier)
@@ -340,7 +340,7 @@ fun WallStyleSettings(showPreview: Boolean = true) {
     fun toggle(k: String) { open = if (open == k) null else k }
     Card(padding = 14.dp) {
         Text("行情牆模式", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        Label("持股頁「行情牆」的格子：每個項目都能選擇顯示、位置、同行、對齊、字級、粗細、外距、內距、行距、字高與文字／底色／前綴配色；內距與行距可設負值，字高調整行高。點分區標題展開或收合。")
+        Label("持股頁「行情牆」的格子：每個項目都能選擇顯示、位置、同行、對齊、字級、字體、粗細、外距、內距、行距、字高與文字／底色／前綴配色；內距與行距可設負值，字高調整行高。點分區標題展開或收合。")
         if (showPreview) WallPreview(Modifier.padding(top = 10.dp))
 
         Blind("preset", "預設組合", "標準、精簡、完整資訊、大字看盤", open, ::toggle) {
@@ -396,8 +396,10 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                             WChips("對齊", listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), i.align) { v -> upd { it.copy(align = v) } }
                             WStep("字級", i.size, 8, 60, 1, " sp") { v -> upd { it.copy(size = v) } }
                             WToggle("粗體", i.bold) { v -> upd { it.copy(bold = v) } }
-                            if (i.id in setOf("price", "chg", "pct", "mv", "day", "pl", "cost", "avg", "shares", "vol", "weight", "ret"))
-                                WToggle("等寬數字", i.mono) { v -> upd { it.copy(mono = v) } }
+                            WChips("字體", com.claudeetf.app.ui.FONT_OPTS.mapIndexed { k, p -> k to p.second },
+                                com.claudeetf.app.ui.FONT_OPTS.indexOfFirst { it.first == i.font.ifEmpty { if (i.mono) "mono" else "" } }.coerceAtLeast(0)) { k ->
+                                val key = com.claudeetf.app.ui.FONT_OPTS[k].first
+                                upd { it.copy(font = key, mono = key == "mono") } }
 
                             WSub("間距與字高（外距、內距、行距皆可設負值）")
                             WStep("外距・左右", i.mx, -8, 24, 1, " dp") { v -> upd { it.copy(mx = v) } }
@@ -418,7 +420,7 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                             }
                             Text("此項目恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp).clickable {
                                 val d = WallStyle.DEFAULT_ITEMS.first { it.id == i.id }
-                                upd { it.copy(head = d.head, inline = d.inline, align = d.align, size = d.size, bold = d.bold, color = d.color, mono = d.mono, label = d.label,
+                                upd { it.copy(head = d.head, inline = d.inline, align = d.align, size = d.size, bold = d.bold, color = d.color, mono = d.mono, font = d.font, label = d.label,
                                     fl = d.fl, fx = d.fx, fy = d.fy, mx = d.mx, my = d.my, px = d.px, py = d.py, lg = d.lg, lh = d.lh, bg = d.bg, ba = d.ba, lc = d.lc) } }.padding(vertical = 4.dp))
                             if (i.id == "entry") Label("進場建議依 K 線分析（與個股頁相同），未分析過的個股會在背景分析後顯示。")
                         }

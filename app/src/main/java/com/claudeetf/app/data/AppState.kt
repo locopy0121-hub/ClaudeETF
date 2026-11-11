@@ -320,6 +320,8 @@ object AppState {
 
     /** 持股、自選行情頁頂部的指數跑馬燈 */
     var tickerShow by mutableStateOf(true)
+    var tickerStyle by mutableStateOf(TickerStyle())
+    fun updateTickerStyle(s: TickerStyle) { tickerStyle = s; save() }
     var tickerSymbols by mutableStateOf(listOf("^TWII", "^DJI", "^IXIC", "^GSPC", "^SOX"))
     /** 固定置頂（不隨頁面捲動）／隨頁面捲動 */
     var tickerPinned by mutableStateOf(true)
@@ -591,6 +593,7 @@ object AppState {
         monPnlStep = p.getFloat("monPnlStep", 0f).toDouble()
         monUs = p.getBoolean("monUs", false)
         tickerShow = p.getBoolean("tickerShow", true)
+        tickerStyle = TickerStyle.fromJson(p.getString("tickerStyle", null))
         tickerPinned = p.getBoolean("tickerPinned", true)
         tickerAuto = p.getBoolean("tickerAuto", true)
         tickerSched = p.getBoolean("tickerSched", false)
@@ -890,6 +893,7 @@ object AppState {
             .putString("widgetStyle", widgetStyle.toJson())
             .putBoolean("monOn", monOn).putInt("monInterval", monInterval).putFloat("monStepPct", monStepPct.toFloat())
             .putBoolean("monLimit", monLimit).putFloat("monPnlStep", monPnlStep.toFloat()).putBoolean("monUs", monUs)
+            .putString("tickerStyle", tickerStyle.toJson())
             .putBoolean("tickerShow", tickerShow).putString("tickerSymbols", tickerSymbols.joinToString(","))
             .putBoolean("tickerPinned", tickerPinned).putBoolean("tickerAuto", tickerAuto).putBoolean("tickerSched", tickerSched)
             .putString("tickerWindows", tickerWindows.joinToString(",")).putBoolean("tickerWeekdays", tickerWeekdays)

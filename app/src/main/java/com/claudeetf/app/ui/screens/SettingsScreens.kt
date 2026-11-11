@@ -591,6 +591,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                         }
                     }
                 }
+                if (AppState.tickerShow) item { TickerStyleSettings() }
                 item {
                     Card(padding = 14.dp) {
                         var picking by remember { mutableStateOf(false) }
@@ -1186,7 +1187,7 @@ private val SETTINGS_KEYWORDS = mapOf(
     "watch" to "行情 自選 卡片 樣式 字級 欄位 進場標籤 動畫",
     "hold" to "持股 卡片 樣式 欄位 市值 損益 行距 內距 行情牆 字高 字級",
     "widget" to "小工具 桌面 widget 透明 字級",
-    "pages" to "首頁 卡片 排序 跑馬燈 指數 時段",
+    "pages" to "首頁 卡片 排序 跑馬燈 指數 時段 字條 加權指數 字級 字體",
     "stock" to "個股頁 進場 徽章 角色 OS 泡泡 動畫 先投 預計投入 金額 買賣點 K棒訊號 投資分析指數 位置 大小",
     "kcond" to "K棒 條件 國安基金 RSI KD 均線 乖離 爆量 52週",
     "alerts" to "提醒 通知 價格 漲跌 除息 財報",
@@ -2043,5 +2044,74 @@ private fun HoldModeHeader(title: String, summary: String, open: Boolean, onClic
             Text(summary, color = C.Muted, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
         Text(if (open) "收合 ▲" else "展開 ▼", color = C.Primary, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun TStep(label: String, v: Int, min: Int, max: Int, unit: String, set: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+        Text("－", color = if (v > min) C.Primary else C.Border, fontSize = 18.sp,
+            modifier = Modifier.clickable(enabled = v > min) { set(v - 1) }.padding(horizontal = 12.dp, vertical = 4.dp))
+        Text("$v$unit", Modifier.width(60.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text("＋", color = if (v < max) C.Primary else C.Border, fontSize = 18.sp,
+            modifier = Modifier.clickable(enabled = v < max) { set(v + 1) }.padding(horizontal = 12.dp, vertical = 4.dp))
+    }
+}
+
+/** 指數跑馬燈（置頂字條）樣式：字級、字體、粗細、顯示項目、配色、間距與速度，附即時預覽 */
+@Composable
+fun TickerStyleSettings() {
+    val st = AppState.tickerStyle
+    fun set(f: (com.claudeetf.app.data.TickerStyle) -> com.claudeetf.app.data.TickerStyle) = AppState.updateTickerStyle(f(AppState.tickerStyle))
+    var open by remember { mutableStateOf<String?>("size") }
+    @Composable fun Sec(key: String, title: String, content: @Composable ColumnScope.() -> Unit) {
+        val on = open == key
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable { open = if (on) null else key }
+            .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(if (on) "▲" else "▼", color = C.Muted, fontSize = 12.sp)
+        }
+        if (on) Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp), content = content)
+    }
+    Card(padding = 14.dp) {
+        Text("跑馬燈字條樣式", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Label("置頂的指數字條（例如「TW 盤後 加權指數 44,257.15 ▲ +2,595.45」）的字級、字體與顯示項目。")
+        Box(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(6.dp)) { IndexTicker(null, preview = true) }
+        Sec("size", "字級") {
+            TStep("指數名稱", st.nameSize, 8, 28, " sp") { v -> set { it.copy(nameSize = v) } }
+            TStep("指數點數", st.valueSize, 8, 28, " sp") { v -> set { it.copy(valueSize = v) } }
+            TStep("漲跌與漲跌幅", st.changeSize, 8, 28, " sp") { v -> set { it.copy(changeSize = v) } }
+            TStep("TW／US 標籤與盤別", st.tagSize, 8, 22, " sp") { v -> set { it.copy(tagSize = v) } }
+        }
+        Sec("font", "字體與粗細") {
+            Text("名稱字體", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            ChipRow(com.claudeetf.app.ui.FONT_OPTS, st.nameFont) { v -> set { it.copy(nameFont = v) } }
+            Text("數字字體", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            ChipRow(com.claudeetf.app.ui.FONT_OPTS, st.numFont) { v -> set { it.copy(numFont = v) } }
+            OptToggle("名稱粗體", st.nameBold) { v -> set { it.copy(nameBold = v) } }
+            OptToggle("點數粗體", st.valueBold) { v -> set { it.copy(valueBold = v) } }
+        }
+        Sec("items", "顯示項目") {
+            OptToggle("TW／US 市場標籤", st.showTag) { v -> set { it.copy(showTag = v) } }
+            OptToggle("即時／盤後", st.showSession) { v -> set { it.copy(showSession = v) } }
+            OptToggle("指數名稱", st.showName) { v -> set { it.copy(showName = v) } }
+            OptToggle("指數點數", st.showValue) { v -> set { it.copy(showValue = v) } }
+            OptToggle("漲跌箭頭 ▲▼", st.showArrow) { v -> set { it.copy(showArrow = v) } }
+            OptToggle("漲跌點數", st.showChange) { v -> set { it.copy(showChange = v) } }
+            OptToggle("漲跌幅（%）", st.showPct) { v -> set { it.copy(showPct = v) } }
+        }
+        Sec("color", "配色與間距") {
+            Text("點數顏色", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            ChipRow(listOf(0 to "白色", 1 to "依漲跌"), st.valueColor) { v -> set { it.copy(valueColor = v) } }
+            Text("字條底色", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            ChipRow(listOf(0 to "卡片色", 1 to "透明", 2 to "依加權漲跌"), st.bg) { v -> set { it.copy(bg = v) } }
+            TStep("左右內距", st.padH, 0, 24, " dp") { v -> set { it.copy(padH = v) } }
+            TStep("上下內距", st.padV, 0, 20, " dp") { v -> set { it.copy(padV = v) } }
+            TStep("指數間距", st.gap, 4, 40, " dp") { v -> set { it.copy(gap = v) } }
+            TStep("圓角", st.radius, 0, 24, " dp") { v -> set { it.copy(radius = v) } }
+            if (AppState.tickerAuto) TStep("跑馬燈速度", st.speed, 10, 120, "") { v -> set { it.copy(speed = v) } }
+        }
+        Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.updateTickerStyle(com.claudeetf.app.data.TickerStyle()) }.padding(vertical = 10.dp))
     }
 }

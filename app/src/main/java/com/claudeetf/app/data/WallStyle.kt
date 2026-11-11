@@ -36,10 +36,12 @@ data class WallItem(
     val fl: Boolean = false,
     val fx: Int = 100,
     val fy: Int = 30,
+    /** 字體（FONT_OPTS 代號；空白＝依「等寬」設定） */
+    val font: String = "",
 ) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("s", show).put("h", head).put("i", inline).put("a", align)
         .put("z", size).put("b", bold).put("c", color).put("m", mono).put("l", label)
-        .put("mx", mx).put("my", my).put("px", px).put("py", py).put("lg", lg).put("lh", lh).put("bg", bg).put("ba", ba).put("lc", lc).put("fl", fl).put("fx", fx).put("fy", fy)
+        .put("mx", mx).put("my", my).put("px", px).put("py", py).put("lg", lg).put("lh", lh).put("bg", bg).put("ba", ba).put("lc", lc).put("fl", fl).put("fx", fx).put("fy", fy).put("f", font)
 
     companion object {
         fun fromJson(o: JSONObject, d: WallItem) = WallItem(
@@ -49,6 +51,7 @@ data class WallItem(
             o.optInt("lg", d.lg).coerceIn(-12, 16), o.optInt("lh", d.lh).let { if (it == 0) 0 else it.coerceIn(70, 170) },
             o.optInt("bg", d.bg).coerceIn(0, 7), o.optInt("ba", d.ba).coerceIn(10, 100), o.optInt("lc", d.lc).coerceIn(0, 5),
             o.optBoolean("fl", d.fl), o.optInt("fx", d.fx).coerceIn(0, 100), o.optInt("fy", d.fy).coerceIn(0, 100),
+            o.optString("f", d.font),
         )
     }
 }

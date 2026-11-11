@@ -67,51 +67,62 @@ private fun inWindow(w: String, t: java.time.LocalTime, afterMidnightOnly: Boole
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun IndexTicker(nav: NavController, inList: Boolean = false) {
-    if (!AppState.tickerShow || AppState.tickerPinned == inList) return
+fun IndexTicker(nav: NavController?, inList: Boolean = false, preview: Boolean = false) {
+    if (!preview && (!AppState.tickerShow || AppState.tickerPinned == inList)) return
     // 每 30 秒重新判斷是否在顯示時段內
     val inSched by androidx.compose.runtime.produceState(tickerInSchedule(), AppState.tickerSched, AppState.tickerWindows, AppState.tickerWeekdays) {
         while (true) { value = tickerInSchedule(); kotlinx.coroutines.delay(30_000) }
     }
-    if (!inSched) return
+    if (!inSched && !preview) return
+    val st = AppState.tickerStyle
     val all = AppState.twIndices + AppState.usIndices
     val list = AppState.tickerSymbols.mapNotNull { s -> all.firstOrNull { it.symbol == s }?.takeIf { it.value > 0 } }
+        .ifEmpty { if (preview) all.filter { it.value > 0 }.take(2) else emptyList() }
     if (list.isEmpty()) return
     val tw = list.filter { it.symbol == "^TWII" || it.symbol == "^TWOII" }
     val us = list - tw.toSet()
+    val bg = when (st.bg) {
+        1 -> androidx.compose.ui.graphics.Color.Transparent
+        2 -> Trend.fg((tw.firstOrNull() ?: list.first()).changePct).copy(alpha = 0.14f)
+        else -> C.Card
+    }
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = if (inList) 0.dp else 16.dp, vertical = 2.dp).clip(RoundedCornerShape(10.dp)).background(C.Card)
-            .padding(horizontal = 10.dp, vertical = 7.dp)
+        Modifier.fillMaxWidth().padding(horizontal = if (inList || preview) 0.dp else 16.dp, vertical = 2.dp).clip(RoundedCornerShape(st.radius.dp)).background(bg)
+            .padding(horizontal = st.padH.dp, vertical = st.padV.dp)
             .then(
-                if (AppState.tickerAuto) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 2000, initialDelayMillis = 1500, velocity = 32.dp)
+                if (AppState.tickerAuto) Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 2000, initialDelayMillis = 1500, velocity = st.speed.dp)
                 else Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState())
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (tw.isNotEmpty()) Group("TW", C.Tw, MarketData.isTwIntraday(), tw, nav)
-        if (tw.isNotEmpty() && us.isNotEmpty()) HGap(18.dp)
-        if (us.isNotEmpty()) Group("US", C.Us, MarketData.usLive(), us, nav)
+        if (tw.isNotEmpty()) Group("TW", C.Tw, MarketData.isTwIntraday(), tw, nav, st)
+        if (tw.isNotEmpty() && us.isNotEmpty()) HGap((st.gap + 4).dp)
+        if (us.isNotEmpty()) Group("US", C.Us, MarketData.usLive(), us, nav, st)
     }
 }
 
 @Composable
-private fun Group(tag: String, color: androidx.compose.ui.graphics.Color, live: Boolean, items: List<IndexQuote>, nav: NavController) {
-    Text(tag, color = color, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(color.copy(alpha = 0.18f)).padding(horizontal = 5.dp, vertical = 1.dp))
-    HGap(5.dp)
+private fun Group(tag: String, color: androidx.compose.ui.graphics.Color, live: Boolean, items: List<IndexQuote>, nav: NavController?, st: com.claudeetf.app.data.TickerStyle) {
+    val nf = com.claudeetf.app.ui.fontOf(st.nameFont)
+    val mf = com.claudeetf.app.ui.fontOf(st.numFont)
+    if (st.showTag) {
+        Text(tag, color = color, fontSize = st.tagSize.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(color.copy(alpha = 0.18f)).padding(horizontal = 5.dp, vertical = 1.dp))
+        HGap(5.dp)
+    }
     // 盤中「即時」，其餘時段「盤後」
-    Text(if (live) "即時" else "盤後", color = if (live) C.Red else C.Muted, fontSize = 11.sp)
+    if (st.showSession) Text(if (live) "即時" else "盤後", color = if (live) C.Red else C.Muted, fontSize = st.tagSize.sp, fontFamily = nf)
     items.forEachIndexed { i, q ->
-        HGap(if (i == 0) 6.dp else 14.dp)
-        Row(Modifier.clickable { nav.navigate(Routes.index(q.symbol)) }, verticalAlignment = Alignment.CenterVertically) {
-            Text(TICKER_CHOICES[q.symbol] ?: q.name, color = C.Text, fontSize = 13.sp, maxLines = 1)
-            HGap(5.dp)
-            NumText(Fmt.num(q.value, 2), 13.sp, C.Text, FontWeight.Bold)
-            HGap(5.dp)
-            val c = Trend.fg(q.changePct)
-            NumText(Fmt.signed(q.change, 2), 12.sp, c)
-            HGap(4.dp)
-            NumText("(" + Fmt.pct(q.changePct) + ")", 12.sp, c)
+        HGap(if (i == 0) 6.dp else st.gap.dp)
+        val c = Trend.fg(q.changePct)
+        Row(Modifier.then(if (nav != null) Modifier.clickable { nav.navigate(Routes.index(q.symbol)) } else Modifier), verticalAlignment = Alignment.CenterVertically) {
+            if (st.showName) { Text(TICKER_CHOICES[q.symbol] ?: q.name, color = C.Text, fontSize = st.nameSize.sp, fontFamily = nf,
+                fontWeight = if (st.nameBold) FontWeight.Bold else FontWeight.Normal, maxLines = 1); HGap(5.dp) }
+            if (st.showValue) { Text(Fmt.num(q.value, 2), color = if (st.valueColor == 1) c else C.Text, fontSize = st.valueSize.sp, fontFamily = mf,
+                fontWeight = if (st.valueBold) FontWeight.Bold else FontWeight.Normal, maxLines = 1); HGap(5.dp) }
+            if (st.showArrow) { Text(if (q.change > 0) "▲" else if (q.change < 0) "▼" else "－", color = c, fontSize = (st.changeSize - 2).coerceAtLeast(8).sp); HGap(3.dp) }
+            if (st.showChange) { Text(Fmt.signed(q.change, 2), color = c, fontSize = st.changeSize.sp, fontFamily = mf, maxLines = 1); HGap(4.dp) }
+            if (st.showPct) Text("(" + Fmt.pct(q.changePct) + ")", color = c, fontSize = st.changeSize.sp, fontFamily = mf, maxLines = 1)
         }
     }
 }
