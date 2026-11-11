@@ -65,20 +65,27 @@ fun EntryFloatView(
     modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, iconSize: Dp = if (isMascotStyle(style)) 64.dp else 46.dp,
 ) {
     val c = entryColor(level)
+    // 去背：圖示／角色直接浮在頁面上，沒有底卡；提示要點放在下方實心色塊，任何背景都看得清楚
     Column(
-        modifier.shadow(6.dp, RoundedCornerShape(14.dp)).clip(RoundedCornerShape(14.dp))
-            .background(C.Card.copy(alpha = 0.94f)).border(1.dp, c.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+        modifier.then(if (onClick != null) Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick) else Modifier),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         EntryAnimIcon(style, level, now ?: 0, Modifier.size(iconSize))
-        Text(word, color = c, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        if (now != null) Text("先投 $now%", color = C.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        when {
-            amount != null -> Text("≈ NT$" + Fmt.num(amount), color = C.Text2, fontSize = 10.sp, maxLines = 1)
-            ratio != null -> Text("長線 $ratio%", color = C.Muted, fontSize = 10.sp, maxLines = 1)
+        Column(
+            Modifier.padding(top = 2.dp).shadow(4.dp, RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp))
+                .background(c).padding(horizontal = 9.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(word, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black, maxLines = 1)
+            if (now != null) Text("先投 $now%", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         }
+        val sub = when {
+            amount != null -> "≈ NT$" + Fmt.num(amount)
+            ratio != null -> "長線 $ratio%"
+            else -> null
+        }
+        if (sub != null) Text(sub, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+            modifier = Modifier.padding(top = 3.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xCC111827)).padding(horizontal = 7.dp, vertical = 2.dp))
     }
 }
 
