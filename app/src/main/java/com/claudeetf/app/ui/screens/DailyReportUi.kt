@@ -215,6 +215,8 @@ fun DailyReportScreen(nav: NavController) {
                         Label("近 ${r.twiiSeries.size} 個交易日收盤（虛線：月線）")
                     }
                 }
+                // ---- 近期報表趨勢
+                item { TrendCard(r.date) }
                 // ---- 漲跌家數與分布
                 item {
                     Card(padding = 14.dp) {
@@ -512,5 +514,42 @@ private fun MineCard(r: DailyReport.Report, open: (String) -> Unit) {
                 Column(horizontalAlignment = Alignment.End) { NumText(Fmt.price(m.pick.price), 13.sp); ChangePill(m.pick.pct) }
             }
         }
+    }
+}
+
+
+/** 近 20 份報表的市場趨勢：漲跌家數差、漲停跌停、市場氣氛 */
+@Composable
+private fun TrendCard(upTo: String) {
+    val rs = remember(upTo, DailyReport.dates.size) {
+        DailyReport.dates.filter { it <= upTo }.take(20).mapNotNull { DailyReport.load(it) }.reversed()
+    }
+    if (rs.size < 2) return
+    val up = Trend.fg(1.0); val dn = Trend.fg(-1.0); val grid = C.Border
+    Card(padding = 14.dp) {
+        Text("近期市場趨勢（${rs.size} 份報表）", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Label("長條：上漲家數－下跌家數；圓點：市場氣氛（上偏多、下偏空）")
+        Canvas(Modifier.fillMaxWidth().height(130.dp).padding(top = 8.dp)) {
+            val mx = rs.maxOf { kotlin.math.abs(it.up - it.down) }.coerceAtLeast(1).toFloat()
+            val w = size.width / rs.size
+            val mid = size.height / 2
+            drawLine(grid, Offset(0f, mid), Offset(size.width, mid), 1f)
+            rs.forEachIndexed { i, r ->
+                val d = (r.up - r.down).toFloat()
+                val h = mid * 0.9f * kotlin.math.abs(d) / mx
+                drawRect(if (d >= 0) up else dn, Offset(i * w + w * 0.2f, if (d >= 0) mid - h else mid), Size(w * 0.6f, h))
+                val my = mid - r.mood * mid * 0.4f
+                drawCircle(if (r.mood > 0) up else if (r.mood < 0) dn else Color(0xFFF2B544), 3.5.dp.toPx(), Offset(i * w + w / 2, my))
+            }
+        }
+        Row(Modifier.fillMaxWidth()) {
+            Text(dateShort(rs.first().date), Modifier.weight(1f), color = C.Muted, fontSize = 10.sp)
+            Text(dateShort(rs.last().date), color = C.Muted, fontSize = 10.sp)
+        }
+        val lu = rs.takeLast(5).map { it.limitUp }; val ld = rs.takeLast(5).map { it.limitDown }
+        KeyValue("近 5 日漲停／跌停", lu.joinToString("、") + "　／　" + ld.joinToString("、"))
+        KeyValue("偏多天數", "${rs.count { it.mood > 0 }} / ${rs.size}（偏空 ${rs.count { it.mood < 0 }}）")
+        val ev = rs.filter { it.hasEtf }
+        if (ev.size >= 2) KeyValue("ETF 成交占比", ev.takeLast(5).joinToString("、") { "%.0f".format(if (it.tseValue + it.otcValue > 0) it.etfValue / (it.tseValue + it.otcValue) * 100 else 0.0) + "%" })
     }
 }
