@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -131,24 +132,48 @@ object AppUpdater {
      * 偵測到新版時預先在背景下載並驗證（依設定限 Wi-Fi），完成後等使用者點「立即安裝」。
      * 回傳 true = 安裝檔已就緒。
      */
+    /** 唯一的下載工作：背景預先下載與按「更新」共用同一個，不會重複下載 */
+    private var job: kotlinx.coroutines.Deferred<File?>? = null
+    /** 下載完成後自動安裝（使用者按了「更新」） */
+    @Volatile private var installWhenReady = false
+
+    /** 開始（或沿用進行中的）背景下載；中斷過的會從已下載的位置續傳 */
+    private fun startDownload(context: Context, r: Release): kotlinx.coroutines.Deferred<File?> {
+        job?.takeIf { it.isActive }?.let { return it }
+        val app = context.applicationContext
+        prefetching = true
+        return appScope.async {
+            try {
+                download(app, r, showProgress = true).also { f ->
+                    refreshReady(app)
+                    // 使用者按過「更新」：下載完成就直接安裝（關掉視窗也照樣執行）
+                    if (installWhenReady) { installWhenReady = false; runCatching { install(app, f) }.onFailure { message = "更新失敗：" + (it.message ?: it.javaClass.simpleName) } }
+                }
+            } catch (e: Exception) {
+                message = if (e.message == CANCELLED) "已取消下載" else "下載失敗：" + (e.message ?: e.javaClass.simpleName) + "，稍後會自動續傳"
+                null
+            } finally {
+                prefetching = false
+                progress = null
+            }
+        }.also { job = it }
+    }
+
+    /**
+     * 偵測到新版時在背景下載並驗證（依設定限 Wi-Fi），完成後等使用者點「安裝」。
+     * 回傳 true = 安裝檔已就緒。
+     */
     suspend fun prefetch(context: Context): Boolean {
         val r = latest ?: return false
         if (!hasUpdate(context)) return false
         refreshReady(context)
         if (ready == r.tag) return true
-        val mode = prefetchMode(context)
-        if (mode == 2 || (mode == 0 && !unmetered(context))) return false
-        if (progress != null || prefetching) return false
-        prefetching = true
-        return try {
-            download(context, r, showProgress = false)
-            refreshReady(context)
-            ready == r.tag
-        } catch (e: Exception) {
-            false
-        } finally {
-            prefetching = false
+        val active = job?.isActive == true
+        if (!active) {
+            val mode = prefetchMode(context)
+            if (mode == 2 || (mode == 0 && !unmetered(context))) return false
         }
+        return startDownload(context, r).await() != null
     }
 
     /** App 啟動時呼叫：版本與上次執行不同 → 代表剛更新完成 */
@@ -367,55 +392,49 @@ object AppUpdater {
     }
 
     /** 安裝：已預先下載就直接安裝；否則下載（顯示進度）後安裝 */
+    /** 按「更新」：已下載好就直接安裝；否則接續背景下載（不另開下載），完成後自動安裝 */
     suspend fun downloadAndInstall(context: Context) {
         val r = latest ?: return
-        if (progress != null) return
         message = null
         readyFile(context)?.let { f -> runCatching { install(context, f) }.onFailure { message = "更新失敗：" + (it.message ?: it.javaClass.simpleName) }; return }
-        // 背景正在預先下載：等它完成再安裝，不重複下載
-        if (prefetching) {
-            progress = 0f
-            while (prefetching) kotlinx.coroutines.delay(300)
-            progress = null
-            readyFile(context)?.let { f -> install(context, f); return }
-        }
-        progress = 0f
-        try {
-            val file = download(context, r, showProgress = true)
-            progress = 1f
-            refreshReady(context)
-            install(context, file)
-        } catch (e: Exception) {
-            message = if (e.message == CANCELLED) "已取消下載" else "更新失敗：" + (e.message ?: e.javaClass.simpleName)
-        } finally {
-            progress = null
-        }
+        installWhenReady = true
+        startDownload(context, r)
     }
 
     /** 下載並驗證（長度與 SHA-256），回傳安裝檔 */
     private suspend fun download(context: Context, r: Release, showProgress: Boolean): File = withContext(Dispatchers.IO) {
                 val dir = File(context.cacheDir, "updates").apply { mkdirs() }
-                dir.listFiles()?.forEach { it.delete() }
                 val out = File(dir, "ClaudeETF-${r.tag}.apk")
                 // 先下載到 .part，驗證長度與 SHA-256 後才改名，避免把殘缺檔交給安裝程式
                 val part = File(dir, out.name + ".part")
+                // 只保留這一版的暫存檔（續傳用），其他版本的清掉
+                dir.listFiles()?.forEach { if (it.name != part.name && it.name != out.name) it.delete() }
+                if (out.exists() && out.length() > 0) return@withContext out
                 val md = java.security.MessageDigest.getInstance("SHA-256")
                 var expected = 0L
                 var got = 0L
-                client.newCall(Request.Builder().url(r.apkUrl).header("User-Agent", "ClaudeETF-Android").build()).execute().use { resp ->
+                // 續傳：已有部分檔案時用 Range 接著下載，先把已下載的部分算進 SHA-256
+                var have = if (part.exists()) part.length() else 0L
+                val req = Request.Builder().url(r.apkUrl).header("User-Agent", "ClaudeETF-Android")
+                if (have > 0) req.header("Range", "bytes=$have-")
+                client.newCall(req.build()).execute().use { resp ->
+                    if (resp.code == 416) { part.delete(); throw IllegalStateException("暫存檔已失效，請重試") }
                     if (!resp.isSuccessful) throw IllegalStateException("下載失敗 HTTP ${resp.code}")
                     val body = resp.body ?: throw IllegalStateException("下載內容為空")
-                    val total = body.contentLength().takeIf { it > 0 } ?: r.size
+                    val resumed = have > 0 && resp.code == 206
+                    if (!resumed) { have = 0L; part.delete() }
+                    else part.inputStream().use { i -> val b = ByteArray(64 * 1024); while (true) { val n = i.read(b); if (n < 0) break; md.update(b, 0, n) } }
+                    val total = (body.contentLength().takeIf { it > 0 }?.plus(have)) ?: r.size
                     expected = total
                     cancelRequested = false
-                    withContext(Dispatchers.Main) { downloading = true; dlDone = 0L; dlTotal = total; dlSpeed = 0.0 }
+                    withContext(Dispatchers.Main) { downloading = true; dlDone = have; dlTotal = total; dlSpeed = 0.0 }
                     try {
                     body.byteStream().use { input ->
-                        part.outputStream().use { o ->
+                        java.io.FileOutputStream(part, resumed).use { o ->
                             val buf = ByteArray(64 * 1024)
-                            var done = 0L
+                            var done = have
                             var lastUi = 0L
-                            var lastBytes = 0L
+                            var lastBytes = have
                             val start = System.currentTimeMillis()
                             var lastT = start
                             while (true) {
@@ -433,7 +452,7 @@ object AppUpdater {
                                     withContext(Dispatchers.Main) {
                                         dlDone = d
                                         dlSpeed = if (dlSpeed <= 0) inst else dlSpeed * 0.7 + inst * 0.3
-                                        if (showProgress && p != null) progress = p
+                                        if (p != null) progress = p
                                     }
                                 }
                             }

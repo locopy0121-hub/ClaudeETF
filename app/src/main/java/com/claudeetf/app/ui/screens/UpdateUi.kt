@@ -112,7 +112,7 @@ private fun UpdateDialog(r: AppUpdater.Release, onLater: () -> Unit) {
     val p = AppUpdater.progress
     val isReady = AppUpdater.ready == r.tag
     AlertDialog(
-        onDismissRequest = { if (p == null) onLater() },
+        onDismissRequest = onLater,
         containerColor = C.Card,
         title = { Text((if (isReady) "✓ 新版本 " else "有新版本 ") + r.tag.removeSuffix("-dev") + (if (isReady) " 已下載" else ""), color = C.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold) },
         text = {
@@ -127,9 +127,9 @@ private fun UpdateDialog(r: AppUpdater.Release, onLater: () -> Unit) {
                     Text(notes, color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp)
                 }
                 if (isReady) Text("已在背景下載並驗證完成，按「立即安裝」即可更新。", color = C.Primary, fontSize = 13.sp)
-                else if (AppUpdater.prefetching && p == null) Label("背景下載中…")
+                else if (AppUpdater.prefetching && p == null) Label("背景下載中…完成後自動安裝")
                 if (p != null) {
-                    Label((if (AppUpdater.prefetching) "背景下載中 " else "下載中 ") + AppUpdater.progressText())
+                    Label("背景下載中 " + AppUpdater.progressText() + "，完成後自動安裝")
                     Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(C.Bg)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(p).clip(RoundedCornerShape(4.dp)).background(C.Primary))
                     }
@@ -141,16 +141,16 @@ private fun UpdateDialog(r: AppUpdater.Release, onLater: () -> Unit) {
         },
         confirmButton = {
             Text(
-                if (p != null) "下載中…" else if (!canInstall) "前往允許安裝" else if (isReady) "立即安裝" else "下載並安裝",
-                color = if (p != null) C.Muted else C.Primary, fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable(enabled = p == null) {
+                if (!canInstall) "前往允許安裝" else if (isReady) "立即安裝" else if (p != null) "完成後自動安裝" else "下載並安裝",
+                color = C.Primary, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable {
                     if (!canInstall) AppUpdater.openInstallPermission(ctx)
                     else scope.launch { AppUpdater.downloadAndInstall(ctx) }
                 }.padding(12.dp),
             )
         },
         dismissButton = {
-            if (p == null) Text("稍後", color = C.Muted, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onLater).padding(12.dp))
+            Text(if (p != null) "背景繼續下載" else "稍後", color = C.Muted, fontSize = 14.sp, modifier = Modifier.clickable(onClick = onLater).padding(12.dp))
         },
     )
 }
@@ -164,7 +164,7 @@ fun DownloadProgress() {
     val anim by androidx.compose.animation.core.animateFloatAsState(frac ?: 0f, label = "dl")
     Column(Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg).padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (AppUpdater.prefetching) "背景預先下載中" else "下載中", Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("背景下載中", Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Text("取消", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { AppUpdater.cancelDownload() }.padding(horizontal = 8.dp, vertical = 4.dp))
         }
         Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(10.dp).clip(RoundedCornerShape(5.dp)).background(C.Card)) {
@@ -172,7 +172,7 @@ fun DownloadProgress() {
             else androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxSize(), color = C.Primary, trackColor = C.Card)
         }
         Text(AppUpdater.progressText(), color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
-        Label("下載完成後會驗證檔案（大小與 SHA-256）再交給系統安裝。")
+        Label("只會有一個下載在背景進行，中斷後會從已下載的位置續傳；完成後驗證大小與 SHA-256。")
     }
 }
 
