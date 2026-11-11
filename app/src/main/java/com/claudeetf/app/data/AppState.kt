@@ -251,6 +251,9 @@ object AppState {
     var entryFloatOn by mutableStateOf(true)
     var entryFloatStyle by mutableStateOf(0)
     var entryFloatPin by mutableStateOf(true)
+    /** 角色旁的內心 OS 對話框 */
+    var entryFloatOs by mutableStateOf(true)
+    fun updateEntryFloatOs(v: Boolean) { entryFloatOs = v; save() }
     fun updateEntryFloat(on: Boolean = entryFloatOn, style: Int = entryFloatStyle, pin: Boolean = entryFloatPin) {
         entryFloatOn = on; entryFloatStyle = style.coerceIn(0, 15); entryFloatPin = pin; save()
     }
@@ -521,6 +524,7 @@ object AppState {
         entryFloatOn = p.getBoolean("entryFloatOn", true)
         entryFloatStyle = p.getInt("entryFloatStyle", 0)
         entryFloatPin = p.getBoolean("entryFloatPin", true)
+        entryFloatOs = p.getBoolean("entryFloatOs", true)
         showLiveSignal = p.getBoolean("showLiveSignal", true)
         usRefreshMs = p.getLong("usRefreshMs", 5_000L)
         autoUpdateCheck = p.getBoolean("autoUpdateCheck", true)
@@ -834,6 +838,7 @@ object AppState {
             .putBoolean("entryFloatOn", entryFloatOn)
             .putInt("entryFloatStyle", entryFloatStyle)
             .putBoolean("entryFloatPin", entryFloatPin)
+            .putBoolean("entryFloatOs", entryFloatOs)
             .putBoolean("showLiveSignal", showLiveSignal)
             .putLong("usRefreshMs", usRefreshMs)
             .putBoolean("autoUpdateCheck", autoUpdateCheck)

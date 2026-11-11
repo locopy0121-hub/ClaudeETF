@@ -7,6 +7,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -58,34 +61,85 @@ fun EntryFloatBadge(q: Quote, modifier: Modifier = Modifier, onOpen: () -> Unit)
     EntryFloatView(AppState.entryFloatStyle, k.entry.level, word, now, ratio, if (budget > 0 && now != null) budget * now / 100 else null, modifier, onOpen)
 }
 
-/** 徽章本體（設定頁預覽也用這個） */
+/**
+ * 角色的「內心 OS」台詞：依角色個性與進場等級（2 … -2）；{n} 代入先投比例。
+ * 動畫圖示（非角色）用通用台詞。
+ */
+private val OS_LINES: Map<String, List<String>> = mapOf(
+    "" to listOf("訊號轉強，可以進場囉！先投 {n}%", "可以分批上車，先投 {n}%", "再等等…先小投 {n}% 就好", "先別急，等止跌再說", "先避一避，暫不進場"),
+    "存存" to listOf("好時機！趕快囤 {n}% 的橡實～", "一點一點存，先存 {n}%", "橡實先藏好，只放 {n}%", "冬天還沒過，先別出洞", "糧倉守好，這次不囤"),
+    "牛牛" to listOf("哞～多頭來了，衝 {n}%！", "蹄子熱好了，先跑 {n}%", "哞…先觀望，小跑 {n}%", "等等，熊還在附近", "哞嗚，先回牛棚躲雨"),
+    "博士" to listOf("依我分析：可以進場 {n}%", "數據不錯，建議分批 {n}%", "嗯…再觀察，先試 {n}%", "形態未穩，等止跌確認", "結論：暫不宜進場"),
+    "K寶" to listOf("嗶嗶！進場訊號 ON，{n}%", "嗶！分批模式，先投 {n}%", "掃描中…先投 {n}% 待命", "警示：等待止跌訊號", "系統建議：暫停進場"),
+    "穩穩" to listOf("穩穩的，可以進場 {n}%", "穩住節奏，分批 {n}%", "穩一下，先放 {n}% 就好", "先拿盾牌，等止跌", "穩住！這次先不進"),
+    "衝衝" to listOf("3、2、1，點火！上 {n}%", "引擎暖好了，先衝 {n}%", "發射台待命，先 {n}%", "天氣不佳，延後發射", "任務取消，暫不起飛"),
+    "圓圓" to listOf("叮噹～把我投進去 {n}%", "叮！先投 {n}% 試試水溫", "我先轉一圈，投 {n}% 就好", "先躺著，等止跌再翻身", "我要躺平，暫不進場"),
+    "滿滿" to listOf("噗通～餵我 {n}%！", "肚子還有空位，先 {n}%", "吃一點點就好，{n}%", "先別餵，等止跌", "吃太飽了，暫不進場"),
+    "複複" to listOf("陽光正好，種下 {n}%", "慢慢澆水，先投 {n}%", "先曬太陽，投 {n}% 就好", "下雨天，等雨停再說", "風太大，先不種"),
+    "八爪" to listOf("八隻手一起上，{n}%！", "分散布局，先投 {n}%", "先觀望，每邊放一點 {n}%", "觸手收起來，等止跌", "全部收手，暫不進場"),
+    "晴晴" to listOf("今天大晴天！進場 {n}%", "晴時多雲，分批 {n}%", "多雲，帶傘小投 {n}%", "小雨，等雨停再出門", "大雷雨，待在家別出門"),
+)
+
+fun osLine(style: Int, level: Int, now: Int?): String {
+    val key = if (isMascotStyle(style)) MascotData.names.getOrElse(style - ENTRY_ICON_STYLES.size) { "" } else ""
+    val lines = OS_LINES[key] ?: OS_LINES[""]!!
+    val i = when { level >= 2 -> 0; level == 1 -> 1; level == 0 -> 2; level == -1 -> 3; else -> 4 }
+    return lines[i].replace("{n}", (now ?: 0).toString())
+}
+
+/** 依背景亮度選字色，淺色背景用深字 */
+private fun onColor(c: Color) = if (c.luminance() > 0.45f) Color(0xFF1B1F2A) else Color.White
+
+/** 徽章本體（設定頁預覽也用這個）：角色＋內心 OS 對話框＋先投比例 */
 @Composable
 fun EntryFloatView(
     style: Int, level: Int, word: String, now: Int?, ratio: Int?, amount: Double?,
-    modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, iconSize: Dp = if (isMascotStyle(style)) 64.dp else 46.dp,
+    modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, iconSize: Dp = if (isMascotStyle(style)) 66.dp else 48.dp,
 ) {
     val c = entryColor(level)
-    // 去背：圖示／角色直接浮在頁面上，沒有底卡；提示要點放在下方實心色塊，任何背景都看得清楚
-    Column(
-        modifier.then(if (onClick != null) Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick) else Modifier),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        EntryAnimIcon(style, level, now ?: 0, Modifier.size(iconSize))
+    val tag = if (level > 0) Color(0xFFE5484D) else if (level < 0) Color(0xFF16A34A) else Color(0xFF64748B)
+    var osOpen by remember { mutableStateOf(true) }
+    Row(modifier, verticalAlignment = Alignment.Top) {
+        // 內心 OS 對話框（白底深字，任何背景都清楚）；點一下收合
+        if (AppState.entryFloatOs && osOpen) Row(
+            Modifier.padding(top = 6.dp).clickable(remember { MutableInteractionSource() }, null) { osOpen = false },
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(
+                Modifier.widthIn(max = 168.dp).shadow(6.dp, RoundedCornerShape(16.dp)).background(Color.White, RoundedCornerShape(16.dp))
+                    .border(2.dp, tag, RoundedCornerShape(16.dp)).padding(horizontal = 10.dp, vertical = 7.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("OS", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Black,
+                        modifier = Modifier.background(tag, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
+                    Text(" " + word, color = tag, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                }
+                Text(osLine(style, level, now), color = Color(0xFF1B1F2A), fontSize = 13.sp, fontWeight = FontWeight.Bold, lineHeight = 17.sp,
+                    modifier = Modifier.padding(top = 3.dp))
+                val sub = when {
+                    amount != null -> "≈ NT$" + Fmt.num(amount)
+                    ratio != null -> "長線建議 $ratio%"
+                    else -> null
+                }
+                if (sub != null) Text(sub, color = Color(0xFF5B6475), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
+            }
+            // 想法泡泡的小圓點，指向角色
+            Column(Modifier.padding(top = 18.dp, start = 2.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Box(Modifier.size(9.dp).background(Color.White, CircleShape).border(1.5.dp, tag, CircleShape))
+                Box(Modifier.padding(start = 6.dp).size(6.dp).background(Color.White, CircleShape).border(1.dp, tag, CircleShape))
+            }
+        }
         Column(
-            Modifier.padding(top = 2.dp).shadow(4.dp, RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp))
-                .background(c).padding(horizontal = 9.dp, vertical = 4.dp),
+            Modifier.then(if (onClick != null) Modifier.clickable(remember { MutableInteractionSource() }, null) { if (!osOpen) osOpen = true else onClick() } else Modifier),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(word, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black, maxLines = 1)
-            if (now != null) Text("先投 $now%", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            EntryAnimIcon(style, level, now ?: 0, Modifier.size(iconSize))
+            // 先投比例：實心標籤，字色依背景亮度
+            if (now != null) Text("先投 $now%", color = onColor(c), fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1,
+                modifier = Modifier.shadow(3.dp, RoundedCornerShape(8.dp)).background(c, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 2.dp))
+            else Text(word, color = onColor(c), fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1,
+                modifier = Modifier.background(c, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 2.dp))
         }
-        val sub = when {
-            amount != null -> "≈ NT$" + Fmt.num(amount)
-            ratio != null -> "長線 $ratio%"
-            else -> null
-        }
-        if (sub != null) Text(sub, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-            modifier = Modifier.padding(top = 3.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xCC111827)).padding(horizontal = 7.dp, vertical = 2.dp))
     }
 }
 
