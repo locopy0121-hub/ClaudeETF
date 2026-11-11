@@ -196,6 +196,19 @@ object TwOpenData {
         return out
     }
 
+    /** 上市公司：全名與簡稱 → 代號（ETF 成分只有公司全名時用來補代號） */
+    fun nameIndex(): Map<String, String> {
+        val arr = dataset("/opendata/t187ap03_L")
+        val out = HashMap<String, String>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val c = o.find("公司代號") ?: continue
+            o.find("公司名稱")?.let { out[it] = c }
+            o.find("公司簡稱")?.let { out[it] = c }
+        }
+        return out
+    }
+
     fun company(code: String): Company? {
         val o = dataset("/opendata/t187ap03_L").rowFor(code) ?: return null
         val out = ArrayList<Pair<String, String>>()

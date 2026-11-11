@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.horizontalScroll
@@ -1256,6 +1257,9 @@ private fun LazyListScope.holdingsTab(q: Quote, holdings: Load<com.claudeetf.app
     }
 }
 
+/** 點了不在自選的成分股：詢問是否加入自選後開啟 */
+private val compAsk = mutableStateOf<Pair<String, String>?>(null)
+
 /** 成分頁的子分頁與排序（跨重組保留） */
 private val compSub = mutableStateMapOf<String, Int>()
 private val compSort = mutableStateMapOf<String, Int>()
@@ -1308,14 +1312,57 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
         }
     }
     item {
+        val others = r.rows.filter { it.symbol.isBlank() }
         Row {
-            Label("共 ${r.rows.count { it.symbol.isNotBlank() }} 檔個股" + (r.rows.count { it.symbol.isBlank() }.takeIf { it > 0 }?.let { "＋$it 項其他部位" } ?: ""), Modifier.weight(1f))
+            Label("共 ${r.rows.count { it.symbol.isNotBlank() }} 檔個股" +
+                (if (others.isNotEmpty()) "＋" + others.groupBy { it.industry }.entries.joinToString("、") { (k, l) -> k + " " + Fmt.num(l.sumOf { it.weight }, 2) + "%" } else ""),
+                Modifier.weight(1f))
             r.asOf?.let { Label("資料日期 $it") }
         }
     }
+    if (r.tw && sub == 0) item {
+        // 成分總覽：今日貢獻、漲跌家數、集中度、揭露比例
+        Card(padding = 14.dp) {
+            Row(Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Label("成分今日貢獻")
+                    val c = r.contribution
+                    NumText(c?.let { Fmt.signedPct(it) } ?: "—", 18.sp, c?.let { Trend.fg(it) } ?: C.Text, FontWeight.Bold)
+                    Label("上漲 ${r.upCount}・下跌 ${r.downCount} 檔")
+                }
+                Column(Modifier.weight(1f)) {
+                    Label("前十大集中度")
+                    NumText(Fmt.num(r.top10, 2) + "%", 18.sp, C.Text, FontWeight.Bold)
+                    Label(if (r.disclosed < 98) "已揭露 " + Fmt.num(r.disclosed, 1) + "%" else "完整持股")
+                }
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                    Label("基金規模")
+                    NumText(r.aum?.let { Fmt.num(it / 1e8, 1) + " 億" } ?: "—", 18.sp, C.Text, FontWeight.Bold)
+                    Label(if (r.aum != null) "Yahoo 淨資產" else "暫無資料")
+                }
+            }
+            if (r.disclosed < 98) Label("此 ETF 的資料來源只揭露前 ${r.rows.size} 項持股（合計 ${Fmt.num(r.disclosed, 1)}%），其餘部位未公開；圖中「其他」含未揭露部位。",
+                Modifier.padding(top = 8.dp))
+            if (r.rows.any { it.estimated }) Label("標「≈」的持股市值與張數是以「權重 × 基金規模 ÷ 收盤價」估算，僅供參考。", Modifier.padding(top = 4.dp))
+        }
+    }
+    item {
+        val ask = compAsk.value
+        val scope = rememberCoroutineScope()
+        if (ask != null) androidx.compose.material3.AlertDialog(
+            onDismissRequest = { compAsk.value = null }, containerColor = C.Card,
+            title = { Text(ask.first + " " + ask.second, color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+            text = { Text("這檔還不在自選清單，要加入自選並開啟個股頁嗎？", color = C.Text2, fontSize = 14.sp) },
+            confirmButton = { Text("加入並開啟", color = C.Primary, fontSize = 14.sp, modifier = Modifier.clickable {
+                compAsk.value = null
+                scope.launch { com.claudeetf.app.data.MarketData.addAndFetch(ask.first); nav.navigate(Routes.stock(ask.first)) }
+            }.padding(12.dp)) },
+            dismissButton = { Text("取消", color = C.Muted, fontSize = 14.sp, modifier = Modifier.clickable { compAsk.value = null }.padding(12.dp)) },
+        )
+    }
     when (sub) {
         0 -> {
-            item { Card(padding = 14.dp) { DonutWithLegend(r.rows.sortedByDescending { it.weight }.map { it.name to it.weight }) } }
+            item { Card(padding = 14.dp) { DonutWithLegend(r.rows.sortedByDescending { it.weight }.map { (it.short ?: it.name) to it.weight }) } }
             val sort = compSort[q.symbol] ?: 0
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1344,17 +1391,28 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
                 else -> r.rows.sortedByDescending { it.weight }
             }
             items(list, key = { "c" + it.key }) { row ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                val maxW = list.maxOf { it.weight }.takeIf { it > 0 } ?: 1.0
+                Row(Modifier.fillMaxWidth().clickable(enabled = row.symbol.isNotBlank()) {
+                    if (AppState.quote(row.symbol) != null) nav.navigate(Routes.stock(row.symbol)) else compAsk.value = row.symbol to (row.short ?: row.name)
+                }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1.3f)) {
-                        Text(row.name, color = C.Text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (row.symbol.isNotBlank()) NumText(row.symbol, 11.sp, C.Muted)
+                        Text(row.short ?: row.name, color = C.Text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(listOfNotNull(row.symbol.ifBlank { null }, row.industry.ifBlank { null }).joinToString(" · ").ifEmpty { row.name },
+                            color = C.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        // 權重比例條
+                        Box(Modifier.padding(top = 3.dp).fillMaxWidth(0.9f).height(3.dp).clip(RoundedCornerShape(2.dp)).background(C.Line)) {
+                            Box(Modifier.fillMaxWidth((row.weight / maxW).toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(
+                                if (row.symbol.isBlank()) C.Muted else androidx.compose.ui.graphics.Color(0xFF3F7BD9)))
+                        }
                     }
                     if (r.tw) Column(Modifier.weight(1.1f), horizontalAlignment = Alignment.End) {
-                        // 持股市值＝股數×收盤價（億元，捨去至小數第 2 位）；張數＝股數÷1,000，零股另列
-                        NumText(row.mv?.let { Fmt.numTrunc(it / 1e8, 2) + "億" } ?: "—", 13.sp)
+                        // 持股市值＝股數×收盤價（億元，捨去至小數第 2 位）；張數＝股數÷1,000，零股另列；≈ 為估算
+                        val pre = if (row.estimated) "≈" else ""
+                        NumText(row.mv?.let { pre + Fmt.numTrunc(it / 1e8, 2) + "億" } ?: "—", 13.sp, if (row.estimated) C.Text2 else C.Text)
                         NumText(row.shares?.let { sh ->
                             val lots = Math.floor(sh / 1000).toLong(); val odd = Math.round(sh - lots * 1000)
-                            Fmt.num(lots.toDouble()) + "張" + (if (odd > 0) " ${odd}股" else "")
+                            (if (row.estimated) "≈" else "") + Fmt.num(lots.toDouble()) + "張" + (if (odd > 0 && !row.estimated) " ${odd}股" else "")
                         } ?: "", 11.sp, C.Muted)
                     }
                     Column(Modifier.weight(0.8f), horizontalAlignment = Alignment.End) {
@@ -1452,7 +1510,7 @@ private fun EtfCompositionSection(scope: LazyListScope, q: Quote, r: com.claudee
     item {
         Label(
             "資料來源：" + (if (r.tw) "MoneyDJ 持股明細、證交所／櫃買收盤與產業別、" else "") + "Yahoo Finance。" +
-                (if (r.tw) "持股市值＝持有股數 × 最近收盤價；操作日報依 App 記錄的每日持股比較，主動式 ETF 請以投信公告為準。" else ""),
+                (if (r.tw) "成分只有公司全名時，以證交所／櫃買公司基本資料比對代號。點個股可開啟該股頁面。持股市值＝持有股數 × 最近收盤價；操作日報依 App 記錄的每日持股比較，主動式 ETF 請以投信公告為準。" else ""),
             Modifier.padding(top = 6.dp),
         )
     }

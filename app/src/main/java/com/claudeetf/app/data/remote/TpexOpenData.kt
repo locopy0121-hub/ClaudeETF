@@ -187,6 +187,18 @@ object TpexOpenData {
         out
     }
 
+    /** 上櫃公司：全名與簡稱 → 代號 */
+    fun nameIndex(): Map<String, String> = firstOf(listOf("/mopsfin_t187ap03_O", "/t187ap03_O")) { arr ->
+        val out = HashMap<String, String>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val c = (o.like(listOf("公司代號")) ?: code(o)) ?: continue
+            (o.like(listOf("公司名稱")) ?: o.like(listOf("CompanyName")))?.let { out[it] = c }
+            (o.like(listOf("公司簡稱")) ?: o.like(listOf("CompanyAbbreviation")))?.let { out[it] = c }
+        }
+        out
+    }
+
     /** 上櫃公司基本資料：代號 → 欄位（含實收資本額） */
     fun companies(): Map<String, TwOpenData.Company> = firstOf(listOf("/mopsfin_t187ap03_O", "/t187ap03_O")) { arr ->
         val out = HashMap<String, TwOpenData.Company>()
