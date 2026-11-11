@@ -233,7 +233,7 @@ fun PortfolioScreen(nav: NavController) {
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).clickable { nav.navigate(Routes.settings("hold")) }
                         .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("行情牆設定", Modifier.weight(1f), color = C.Text, fontSize = 14.sp)
-                        Label("每列 ${AppState.wallStyle.cols} 格 · 字級 ${AppState.wallStyle.priceSize} ›")
+                        Label("每列 ${AppState.wallStyle.cols} 格 · ${AppState.wallStyle.items.count { it.show }} 項 ›")
                     }
                 }
                 item { QuoteWall(tw + us) { nav.navigate(Routes.stock(it)) } }
