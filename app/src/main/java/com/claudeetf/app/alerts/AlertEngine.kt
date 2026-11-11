@@ -134,6 +134,7 @@ object AlertEngine {
             notify(context, 500 + p.id, "定期定額：${p.symbol}", "本月扣款日（每月 ${p.day} 日）已到，打開 App 一鍵記錄這筆買進。")
             AppState.logNotice("定期定額：${p.symbol} 本月扣款日已到")
         }
+        if (AppState.kcondNotify) runCatching { checkKConds(context, today) }
         for (a in AppState.alerts.toList()) {
             if (!a.enabled) continue
             val result: Pair<String, String>? = when (a.type) {
@@ -335,6 +336,42 @@ object AlertEngine {
         }
     }
 
+    /**
+     * K 棒分析條件達成通知：持股逐檔算日 K 條件，國安基金條件看加權指數。
+     * 以「日期|代號|條件」記錄，同一天同一條件只通知一次；只在條件由未達成變成達成的當天通知。
+     */
+    suspend fun checkKConds(context: Context, today: LocalDate) {
+        val K = com.claudeetf.app.data.KlineConditions
+        val on = K.enabled()
+        if (on.isEmpty()) return
+        val day = today.toString()
+        if (on.any { it.id == "nsf" }) {
+            K.evalIndex(K.indexCandles())?.takeIf { it.met }?.let { e ->
+                val key = "$day|^TWII|nsf"
+                if (!AppState.kcondSent(key)) {
+                    AppState.markKCondSent(key)
+                    val text = "加權指數 " + e.value + "，已達你設定的國安基金進場條件。"
+                    notify(context, 7900, "大盤達國安基金進場條件", text)
+                    AppState.logNotice(text)
+                }
+            }
+        }
+        val stockDefs = on.filter { it.id != "nsf" }
+        if (stockDefs.isEmpty()) return
+        val syms = AppState.holdings.filter { it.shares > 0 }.map { it.symbol }.distinct().take(30)
+        for (sym in syms) {
+            val q = AppState.quote(sym) ?: continue
+            if (q.price <= 0 || q.source == QuoteSource.SAMPLE) continue
+            val r = com.claudeetf.app.data.KlineAnalysis.load(q, false) ?: continue
+            val met = K.evalStock(r.candles, stockDefs).filter { it.met }.filter { !AppState.kcondSent("$day|$sym|${it.def.id}") }
+            if (met.isEmpty()) continue
+            met.forEach { AppState.markKCondSent("$day|$sym|${it.def.id}") }
+            val text = "${q.symbol} ${q.name}：" + met.joinToString("、") { it.def.name + "（" + it.value + "）" } + "，現價 ${Fmt.price(q.price)}"
+            notify(context, 7400 + (sym.hashCode() and 0x3ff), "${q.symbol} 達成 K 棒條件", text)
+            AppState.logNotice(text)
+        }
+    }
+
     /** 三關區間：0 跌破下關、1 下關～中關、2 中關～上關、3 站上上關 */
     private val lastZone = HashMap<String, Int>()
 
@@ -464,7 +501,7 @@ class AlertWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
             AlertEngine.checkPayDays(applicationContext)
         }
         val summaries = (AppState.dailySummary || AppState.monthlyReport) && AppState.holdings.isNotEmpty()
-        if (AppState.alerts.none { it.enabled } && !summaries && AppState.dcaPlans.none { it.enabled }) return Result.success()
+        if (AppState.alerts.none { it.enabled } && !summaries && AppState.dcaPlans.none { it.enabled } && !AppState.kcondNotify) return Result.success()
         runCatching {
             val TW = com.claudeetf.app.data.Market.TW
             val US = com.claudeetf.app.data.Market.US
@@ -472,7 +509,7 @@ class AlertWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                 (summaries && AppState.holdingsOf(TW).isNotEmpty())
             val needsUs = AppState.alerts.any { it.enabled && it.isPrice && it.market == US } ||
                 (summaries && AppState.holdingsOf(US).isNotEmpty())
-            val entry = AppState.alerts.any { it.enabled && it.type == AlertType.ENTRY_SIGNAL }
+            val entry = AppState.alerts.any { it.enabled && it.type == AlertType.ENTRY_SIGNAL } || AppState.kcondNotify
             if (needsTw || entry) MarketData.refreshTw()
             if (needsUs || entry) MarketData.refreshUs()
             AppState.persist()

@@ -308,6 +308,16 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 }
                 item {
                     Card(padding = 14.dp) {
+                        Text("台股盤後收盤確認", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        OptToggle("以證交所／櫃買官方收盤價為準", AppState.twOfficialClose) { AppState.updateTwOfficialClose(it) }
+                        Label("盤中來源收盤後保留的是「最後一筆成交」，偶爾與官方收盤價（13:25–13:30 收盤集合競價結果）不同，或少了最後一盤。" +
+                            "開啟後，交易日 14:00 起自動向證交所每日收盤行情（MI_INDEX，指定當日日期）與櫃買中心收盤行情確認，" +
+                            "日期相符才採用，所有台股（持股與自選）的收盤價、漲跌、最高最低與成交量一律改為官方數字；未公布時每 10 分鐘自動再試。")
+                        if (MarketData.officialStatus.isNotBlank()) Label("最近確認：" + MarketData.officialStatus, color = C.Text2)
+                    }
+                }
+                item {
+                    Card(padding = 14.dp) {
                         val fs = com.claudeetf.app.data.remote.FutStream
                         Text("期貨（首頁台指期卡片）", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         val opts = listOf("auto" to "自動", "fugle" to "富果", "taifex" to "期交所", "off" to "關閉")
@@ -586,6 +596,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 }
             }
             if (section == "monitor") item { MonitorSettings() }
+            if (section == "kcond") item { KCondSettings() }
             if (section == "widget") item { WidgetSettings() }
             if (section == "accounts") {
                 items(AppState.accounts.toList(), key = { "acc-" + it.id }) { a -> AccountCard(a) }
@@ -1129,6 +1140,7 @@ internal val SETTINGS_SECTIONS = listOf(
         SettingsEntry("backup", "💾", "備份與匯入"),
     ),
     "其他" to listOf(
+        SettingsEntry("kcond", "🕯️", "K 棒分析條件"),
         SettingsEntry("alerts", "🔔", "提醒"),
         SettingsEntry("monitor", "📡", "盤中持股監控"),
         SettingsEntry("security", "🔒", "安全"),
@@ -1155,6 +1167,7 @@ private fun SettingsMenu(nav: NavController, version: String) {
         "ledger" -> "交易紀錄 ${AppState.trades.size} 筆"
         "backup" -> "匯出、匯入與備份"
         "alerts" -> "${AppState.alerts.count { it.enabled }} 項開啟"
+        "kcond" -> com.claudeetf.app.data.KlineConditions.enabled().size.let { if (it == 0) "未開啟" else "$it 項條件" } + (if (AppState.kcondNotify) " · 達成通知" else "")
         "widget" -> listOf("跟隨 App", "深色", "淺色", "透明")[AppState.widgetStyle.theme.coerceIn(0, 3)] + " · " +
             (if (AppState.widgetStyle.source == 0) "持股" else "自選") + " ${AppState.widgetStyle.rows} 列"
         "monitor" -> if (!AppState.monOn) "未開啟" else (if (com.claudeetf.app.alerts.MonitorService.running) "監控中" else "已開啟") + " · 每 ${AppState.monInterval} 秒"
@@ -1733,5 +1746,77 @@ private fun AppIconPicker() {
             }) { Text("更換") } },
             dismissButton = { androidx.compose.material3.TextButton({ ask = null }) { Text("取消") } },
         )
+    }
+}
+
+
+/** K 棒分析條件：國安基金進場（大盤）與個股技術條件，開關、參數與達成通知 */
+@Composable
+private fun KCondSettings() {
+    val K = com.claudeetf.app.data.KlineConditions
+    val cur = AppState.kconds
+    var idx by remember { mutableStateOf<com.claudeetf.app.data.KlineConditions.Eval?>(null) }
+    LaunchedEffect(cur) { idx = runCatching { K.evalIndex(K.indexCandles()) }.getOrNull() }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Card(padding = 14.dp) {
+            Text("K 棒分析條件", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Label("開啟的條件會顯示在個股頁「K 線形態分析 › 條件訊號」，標示是否達成與目前數值。國安基金條件看加權指數（大盤），其餘看個股日 K。")
+            OptToggle("條件達成時通知（持股）", AppState.kcondNotify) { AppState.updateKCondNotify(it) }
+            Label("盤中監控或背景更新時檢查，同一檔同一條件每天最多通知一次；國安基金條件達成時通知一次。")
+            idx?.let { e ->
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(if (e.met) C.Primary.copy(alpha = 0.12f) else C.Bg).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("目前大盤：" + (if (e.met) "已達國安基金進場條件" else "未達國安基金進場條件"), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("加權指數 " + e.value, color = C.Text2, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+        K.defs.forEach { d ->
+            val st = K.setting(d.id)
+            fun upd(v: com.claudeetf.app.data.KCondSetting) = AppState.updateKCond(d.id, v)
+            Card(padding = 14.dp) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(d.name, color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text(d.scope, color = if (d.scope == "大盤") C.Primary else C.Muted, fontSize = 11.sp,
+                                modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(6.dp)).background(C.Bg).padding(horizontal = 6.dp, vertical = 2.dp))
+                        }
+                    }
+                    androidx.compose.material3.Switch(st.on, { upd(st.copy(on = it)) },
+                        colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary, uncheckedTrackColor = C.Border))
+                }
+                Label(d.desc)
+                if (st.on) {
+                    KStep(d.a, st.a) { upd(st.copy(a = it)) }
+                    d.b?.let { b -> KStep(b, st.b) { upd(st.copy(b = it)) } }
+                    if (d.id == "ma") Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+                        listOf(20 to "月線", 60 to "季線", 120 to "半年線", 240 to "年線").forEach { (n, label) ->
+                            val sel = st.a.toInt() == n
+                            Text(label, color = if (sel) C.OnPrimary else C.Text2, fontSize = 12.sp,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (sel) C.Primary else C.Bg).clickable { upd(st.copy(a = n.toDouble())) }.padding(horizontal = 10.dp, vertical = 5.dp))
+                        }
+                    }
+                }
+            }
+        }
+        Text("全部恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.resetKConds() }.padding(8.dp))
+        Label("條件僅為技術面篩選參考，不構成投資建議。")
+    }
+}
+
+@Composable
+private fun KStep(p: com.claudeetf.app.data.KlineConditions.Param, v: Double, set: (Double) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(p.label, Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
+        fun r(x: Double) = Math.round(x / p.step) * p.step
+        Text("－", color = if (v > p.min) C.Primary else C.Border, fontSize = 18.sp,
+            modifier = Modifier.clickable(enabled = v > p.min) { set(r((v - p.step).coerceAtLeast(p.min))) }.padding(horizontal = 12.dp))
+        Text((if (p.step < 1) String.format("%.1f", v) else v.toLong().toString()) + p.unit, Modifier.width(72.dp), color = C.Text, fontSize = 13.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text("＋", color = if (v < p.max) C.Primary else C.Border, fontSize = 18.sp,
+            modifier = Modifier.clickable(enabled = v < p.max) { set(r((v + p.step).coerceAtMost(p.max))) }.padding(horizontal = 12.dp))
     }
 }

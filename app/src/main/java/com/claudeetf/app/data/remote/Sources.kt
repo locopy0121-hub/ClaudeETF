@@ -137,6 +137,64 @@ fun FugleApi.snapshot(symbol: String, apiKey: String): FugleSnapshot {
 // 欄位：Code, Name, OpeningPrice, HighestPrice, LowestPrice, ClosingPrice, Change
 // ---------------------------------------------------------------------------
 object TwseApi {
+    /**
+     * 證交所「每日收盤行情」（MI_INDEX，全部上市證券含 ETF，不含權證與牛熊證）。
+     * 指定交易日，回傳的日期與要求一致才採用，作為盤後官方收盤價的確認來源。
+     * 漲跌欄「漲跌(+/-)」是含 HTML 的正負號，「漲跌價差」為絕對值。
+     */
+    fun miIndex(day: java.time.LocalDate): Map<String, RemoteQuote> {
+        val ds = day.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
+        val o = JSONObject(Http.get("https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=$ds&type=ALLBUT0999&response=json", timeoutMs = 30_000))
+        if (o.optString("stat") != "OK") return emptyMap()
+        val d0 = o.optString("date")
+        if (d0.isNotBlank() && d0 != ds) return emptyMap()
+        val tables = ArrayList<Pair<JSONArray, JSONArray>>()
+        o.optJSONArray("tables")?.let { t ->
+            for (i in 0 until t.length()) t.optJSONObject(i)?.let { x ->
+                val f = x.optJSONArray("fields"); val d = x.optJSONArray("data")
+                if (f != null && d != null) tables += f to d
+            }
+        }
+        o.keys().forEach { k ->
+            if (k.startsWith("fields")) {
+                val f = o.optJSONArray(k); val d = o.optJSONArray("data" + k.removePrefix("fields"))
+                if (f != null && d != null) tables += f to d
+            }
+        }
+        fun JSONArray.names() = (0 until length()).map { optString(it).trim() }
+        val (f, rows) = tables.firstOrNull { (f, _) -> f.names().let { "證券代號" in it && "收盤價" in it } } ?: return emptyMap()
+        val n = f.names()
+        fun idx(name: String) = n.indexOfFirst { it.startsWith(name) }
+        val iCode = idx("證券代號"); val iName = idx("證券名稱"); val iVol = idx("成交股數"); val iTx = idx("成交筆數")
+        val iVal = idx("成交金額"); val iO = idx("開盤價"); val iH = idx("最高價"); val iL = idx("最低價"); val iC = idx("收盤價")
+        val iSign = idx("漲跌(+/-)"); val iChg = idx("漲跌價差")
+        val out = HashMap<String, RemoteQuote>(rows.length() * 2)
+        for (r in 0 until rows.length()) {
+            val row = rows.optJSONArray(r) ?: continue
+            fun cell(i: Int) = if (i >= 0) row.optString(i) else null
+            val code = cell(iCode)?.trim().orEmpty()
+            val close = parseNum(cell(iC)) ?: continue
+            if (code.isEmpty() || close <= 0) continue
+            val signTxt = cell(iSign)?.replace(Regex("<[^>]*>"), "")?.trim().orEmpty()
+            val sign = when { signTxt.contains("-") -> -1.0; signTxt.contains("+") -> 1.0; else -> 0.0 }
+            val change = sign * (parseNum(cell(iChg)) ?: 0.0)
+            out[code] = RemoteQuote(
+                symbol = code,
+                name = cell(iName)?.trim()?.ifBlank { null },
+                price = close,
+                prevClose = close - change,
+                open = parseNum(cell(iO)),
+                high = parseNum(cell(iH)),
+                low = parseNum(cell(iL)),
+                volume = parseNum(cell(iVol)),
+                value = parseNum(cell(iVal)),
+                transactions = parseNum(cell(iTx)),
+                date = day,
+            )
+        }
+        return out
+    }
+
     fun dayAll(): Map<String, RemoteQuote> {
         val arr = JSONArray(Http.get("https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL", timeoutMs = 25_000))
         val out = HashMap<String, RemoteQuote>(arr.length() * 2)

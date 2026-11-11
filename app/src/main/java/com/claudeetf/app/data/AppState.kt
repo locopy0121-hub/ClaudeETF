@@ -137,6 +137,25 @@ object AppState {
     var twIntradaySource by mutableStateOf("fugle")
     fun updateTwIntradaySource(s: String) { twIntradaySource = s; save() }
     val twUseFugle: Boolean get() = twIntradaySource != "twse"
+
+    /** 盤後以證交所／櫃買官方收盤行情確認所有台股價格 */
+    var twOfficialClose by mutableStateOf(true)
+    fun updateTwOfficialClose(v: Boolean) { twOfficialClose = v; save() }
+
+    /** K 棒分析條件（國安基金進場、RSI 超賣…）：代號 → 設定 */
+    var kconds by mutableStateOf<Map<String, com.claudeetf.app.data.KCondSetting>>(emptyMap())
+    fun updateKCond(id: String, v: com.claudeetf.app.data.KCondSetting) { kconds = kconds + (id to v); save() }
+    fun resetKConds() { kconds = emptyMap(); save() }
+    /** 條件達成時通知（持股；國安基金條件看大盤） */
+    var kcondNotify by mutableStateOf(false)
+    fun updateKCondNotify(v: Boolean) { kcondNotify = v; save() }
+    /** 已通知過的條件（日期|代號|條件），避免同一天重複 */
+    fun kcondSent(key: String): Boolean = prefs?.getString("kcondSent", "")?.split(",")?.contains(key) == true
+    fun markKCondSent(key: String) {
+        val p = prefs ?: return
+        val list = (p.getString("kcondSent", "")?.split(",")?.filter { it.isNotBlank() } ?: emptyList()).takeLast(300) + key
+        p.edit().putString("kcondSent", list.joinToString(",")).apply()
+    }
     var finnhubKey by mutableStateOf("")
         private set
     var refreshing by mutableStateOf(false)
@@ -477,6 +496,9 @@ object AppState {
         cashTwd = p.getD("cash", 164_000f)
         fugleKey = loadSecret(p, "fugleKey")
         twIntradaySource = p.getString("twIntradaySource", "fugle") ?: "fugle"
+        twOfficialClose = p.getBoolean("twOfficialClose", true)
+        kcondNotify = p.getBoolean("kcondNotify", false)
+        kconds = com.claudeetf.app.data.KCondSetting.parseAll(p.getString("kconds", "") ?: "")
         monthlyReport = p.getBoolean("monthlyReport", true)
         showKeyLevels = p.getBoolean("showKeyLevels", true)
         limitAxis = p.getBoolean("limitAxis", true)
@@ -781,6 +803,9 @@ object AppState {
             .putString("alertHistory", JSONArray().apply { alertHistory.take(60).forEach { put(JSONObject().put("t", it.time).put("x", it.text)) } }.toString())
             .apply { if (secretOk) remove("fugleKey") else putString("fugleKey", fugleKey) }
             .putString("twIntradaySource", twIntradaySource)
+            .putBoolean("twOfficialClose", twOfficialClose)
+            .putBoolean("kcondNotify", kcondNotify)
+            .putString("kconds", com.claudeetf.app.data.KCondSetting.toJsonAll(kconds))
             .putBoolean("monthlyReport", monthlyReport)
             .putBoolean("showKeyLevels", showKeyLevels)
             .putBoolean("limitAxis", limitAxis)

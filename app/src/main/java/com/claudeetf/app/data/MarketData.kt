@@ -287,6 +287,9 @@ object MarketData {
             }
         }
 
+        // 4) 盤後官方收盤確認：證交所／櫃買公布當日收盤行情後，所有台股（持股與自選）一律以官方收盤價為準
+        val confirmed = if (!live && !intraday) runCatching { officialConfirm(symbols, now) }.getOrDefault(0) else 0
+
         AppState.setStatus(
             "TW",
             buildString {
@@ -295,6 +298,7 @@ object MarketData {
                     if (fugle.isNotEmpty()) "富果即時 ${fugle.size} 檔" else null,
                     if (mis.isNotEmpty()) "證交所即時 ${mis.size} 檔" else null,
                     if (closeCount > 0) "收盤資料 $closeCount 檔" else null,
+                    if (confirmed > 0) "證交所收盤確認 $confirmed 檔" else null,
                 )
                 append(parts.joinToString("，").ifEmpty { "無更新" })
                 fugleError?.let { append("｜富果：").append(it) }
@@ -302,6 +306,56 @@ object MarketData {
                 closeError?.let { append("｜").append(it) }
             },
         )
+    }
+
+    /** 各檔已以官方收盤價確認的交易日 */
+    private val confirmedDay = java.util.concurrent.ConcurrentHashMap<String, java.time.LocalDate>()
+    @Volatile private var lastOfficialTry = 0L
+    /** 最近一次官方收盤確認的結果（設定頁顯示） */
+    @Volatile var officialStatus: String = ""
+
+    /** 此檔報價是否已依證交所／櫃買官方收盤價確認（最近一個交易日） */
+    fun isOfficialClose(symbol: String): Boolean = confirmedDay[symbol] == lastTradingDay()
+
+    /**
+     * 盤後官方收盤確認：
+     * 盤中即時來源（富果、證交所 MIS）收盤後保留的是「最後一筆成交」，偶有與官方收盤價（含收盤集合競價）不同、
+     * 或缺最後一盤的情況。交易日 14:00 後向證交所 MI_INDEX（指定日期）與櫃買 OpenAPI 取當日收盤行情，
+     * 日期與最近交易日一致才採用，覆蓋所有台股的價格、漲跌、高低與成交量；每 10 分鐘最多嘗試一次，確認後不再重抓。
+     */
+    private suspend fun officialConfirm(symbols: List<String>, now: Long): Int {
+        if (!AppState.twOfficialClose) return 0
+        val day = lastTradingDay()
+        val t = ZonedDateTime.now(TPE)
+        if (t.toLocalDate() == day && t.toLocalTime() < LocalTime.of(14, 0)) return 0
+        val need = symbols.filter { confirmedDay[it] != day }
+        if (need.isEmpty()) return 0
+        if (now - lastOfficialTry < 10 * 60_000L) return 0
+        lastOfficialTry = now
+        val data = withContext(Dispatchers.IO) {
+            val twse = runCatching { TwseApi.miIndex(day) }.getOrDefault(emptyMap())
+            val tpex = if (need.any { it !in twse }) runCatching { TpexApi.dayAll() }.getOrDefault(emptyMap()).filterValues { it.date == day } else emptyMap()
+            tpex.mapValues { it.value to QuoteSource.TPEX } + twse.mapValues { it.value to QuoteSource.TWSE }
+        }
+        var n = 0
+        var diff = 0
+        need.forEach { s ->
+            val (rq, src) = data[s] ?: return@forEach
+            if (rq.price <= 0) return@forEach
+            val old = AppState.quote(s)
+            if (old != null && kotlin.math.abs(old.price - rq.price) > 1e-6) diff++
+            AppState.applyRemote(rq, src, now)
+            val ds = AppState.dayStats[s]
+            AppState.dayStats[s] = AppState.DayStat(rq.high ?: ds?.high, rq.low ?: ds?.low, rq.volume ?: ds?.volume, now)
+            closeDay[s] = day
+            confirmedDay[s] = day
+            n++
+        }
+        val total = symbols.count { confirmedDay[it] == day }
+        officialStatus = clockSec(now) + " " + day.monthValue + "/" + day.dayOfMonth + " 收盤：" +
+            (if (data.isEmpty()) "官方資料尚未公布，稍後自動再試" else "已確認 $total／${symbols.size} 檔" + (if (diff > 0) "（修正 $diff 檔價格）" else ""))
+        if (n > 0) AppState.persist()
+        return n
     }
 
     /** 全部盤後資料，需在 IO 執行緒呼叫 */
