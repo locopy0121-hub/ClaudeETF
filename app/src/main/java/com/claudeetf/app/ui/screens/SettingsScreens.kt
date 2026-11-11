@@ -163,7 +163,7 @@ fun AlertsScreen(nav: NavController, initialSymbol: String = "") {
             items(AppState.alertHistory.toList()) { h ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
                     NumText(Fmt.time(h.time), 12.sp, C.Muted, modifier = Modifier.width(80.dp))
-                    Text(h.text, Modifier.weight(1f), color = C.Text2, fontSize = 13.sp)
+                    Text(h.text, Modifier.weight(1f), color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp)
                 }
             }
             item {

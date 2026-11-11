@@ -141,7 +141,7 @@ fun AlertsCard(nav: NavController) {
         list.forEach { h ->
             Row(Modifier.padding(vertical = 3.dp)) {
                 NumText(Fmt.time(h.time), 11.sp, C.Muted, modifier = Modifier.width(72.dp))
-                Text(h.text, Modifier.weight(1f), color = C.Text2, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(h.text, Modifier.weight(1f), color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
         }
     }

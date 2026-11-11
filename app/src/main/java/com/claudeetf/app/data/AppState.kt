@@ -1197,7 +1197,7 @@ object AppState {
 
     /** 通知紀錄（所有推播，最多 60 筆） */
     fun logNotice(text: String, now: Long = System.currentTimeMillis()) {
-        alertHistory.add(0, AlertHit(now, text))
+        alertHistory.add(0, AlertHit(now, com.claudeetf.app.alerts.AlertEngine.wrap(text)))
         while (alertHistory.size > 60) alertHistory.removeAt(alertHistory.lastIndex)
         save()
     }

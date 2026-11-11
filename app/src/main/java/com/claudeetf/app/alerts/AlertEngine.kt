@@ -57,8 +57,28 @@ object AlertEngine {
         }
     }
 
+    /**
+     * 通知文字自動換行：以「；」「。」與換行分段，每段一行；
+     * 用「、」串起的多個項目（3 項以上）拆成「・」條列。收合時只顯示第一行。
+     */
+    fun wrap(text: String): String {
+        val out = ArrayList<String>()
+        text.replace("\r", "").split("\n").forEach { para ->
+            para.split(Regex("(?<=[；。！])")).map { it.trim() }.filter { it.isNotEmpty() }.forEach { seg ->
+                val head = seg.substringBefore("：", "")
+                val items = seg.substringAfter("：").split("、")
+                if (items.size >= 3 && head.isNotEmpty() && head.length <= 24) {
+                    out += "$head："
+                    items.forEach { out += "・" + it.trim().removeSuffix("；").removeSuffix("。") }
+                } else out += seg.removeSuffix("；")
+            }
+        }
+        return out.joinToString("\n")
+    }
+
     @SuppressLint("MissingPermission")
-    internal fun notify(context: Context, id: Int, title: String, text: String) {
+    internal fun notify(context: Context, id: Int, title: String, text0: String) {
+        val text = wrap(text0)
         if (!hasPermission(context)) return
         ensureChannel(context)
         val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -66,8 +86,9 @@ object AlertEngine {
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_alert)
             .setContentTitle(title)
-            .setContentText(text)
+            .setContentText(text.lineSequence().firstOrNull() ?: text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setWhen(System.currentTimeMillis()).setShowWhen(true)
             .setAutoCancel(true)
             .setContentIntent(pi)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -369,7 +390,7 @@ object AlertEngine {
             val met = K.evalStock(r.candles, stockDefs).filter { it.met }.filter { !AppState.kcondSent("$day|$sym|${it.def.id}") }
             if (met.isEmpty()) continue
             met.forEach { AppState.markKCondSent("$day|$sym|${it.def.id}") }
-            val text = "${q.symbol} ${q.name}：" + met.joinToString("、") { it.def.name + "（" + it.value + "）" } + "，現價 ${Fmt.price(q.price)}"
+            val text = "${q.symbol} ${q.name} 現價 ${Fmt.price(q.price)}\n" + met.joinToString("\n") { "・" + it.def.name + "（" + it.value + "）" }
             notify(context, 7400 + (sym.hashCode() and 0x3ff), "${q.symbol} 達成 K 棒條件", text)
             AppState.logNotice(text)
         }
