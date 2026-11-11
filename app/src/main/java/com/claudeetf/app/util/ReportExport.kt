@@ -42,7 +42,23 @@ object ReportExport {
 
     private fun up(v: Double): Int = Trend.fg(v).toArgb()
 
-    private class Block(val h: Float, val card: Boolean = true, val draw: Canvas.(Float) -> Unit)
+    /** cont：接在前一個區塊的同一張卡片裡（個股列） */
+    private class Block(val h: Float, val card: Boolean = true, val cont: Boolean = false, val draw: Canvas.(Float) -> Unit)
+
+    /** 個股完整解析文字 */
+    fun pickDetail(p: TwPicks.Pick): String = buildString {
+        append("分析：").append(p.reasons.joinToString("；")).append("。")
+        append("\n建議：").append(p.entry).append("（K 線").append(p.dir).append("）")
+        if (p.entryReason.isNotBlank()) append(" ").append(p.entryReason)
+        if (p.stop != null || p.tp1 != null) {
+            append("\n操作參考：")
+            p.stop?.let { append("停損 ").append(Fmt.price(it)) }
+            p.tp1?.let { append(if (p.stop != null) " · " else "").append("目標 ").append(Fmt.price(it)) }
+            p.tp2?.let { append("／").append(Fmt.price(it)) }
+            p.ma60Gap?.let { append(" · 距 60 日均線 ").append("%+.1f".format(it)).append("%") }
+        }
+        p.signal?.let { append("\n策略訊號：").append(it) }
+    }
 
     private fun paint(size: Float, color: Int, bold: Boolean = false, mono: Boolean = false, align: Paint.Align = Paint.Align.LEFT) =
         TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -182,7 +198,9 @@ object ReportExport {
             if (list.isEmpty()) out += Block(70f) { y -> drawText("沒有符合條件的個股", x0, y + 44f, paint(26f, MUTED)) }
             val mx = list.maxOfOrNull { abs(it.score) }?.takeIf { it > 0 } ?: 1.0
             list.forEachIndexed { i, p ->
-                out += Block(92f) { y ->
+                val detail = layout(pickDetail(p), 22f, TEXT2, (inner - 56f).toInt())
+                out += Block(76f + detail.height + 22f, cont = true) { y ->
+                    if (i > 0) drawLine(x0, y, x0 + inner, y, fill(GRID).apply { strokeWidth = 1.5f })
                     val rk = paint(24f, if (i < 3) android.graphics.Color.WHITE else tone, bold = true, align = Paint.Align.CENTER)
                     drawCircle(x0 + 20f, y + 34f, 20f, fill(tone).apply { alpha = if (i < 3) 255 else 50 })
                     drawText((i + 1).toString(), x0 + 20f, y + 43f, rk)
@@ -199,7 +217,7 @@ object ReportExport {
                     drawText("%+.1f".format(p.score), bx + bw + 12f, y + 42f, paint(22f, tone, mono = true))
                     drawText(Fmt.price(p.price), x0 + inner, y + 32f, paint(24f, TEXT, mono = true, align = Paint.Align.RIGHT))
                     drawText("%+.2f".format(p.pct) + "%", x0 + inner, y + 62f, paint(22f, up(p.pct), mono = true, align = Paint.Align.RIGHT))
-                    drawText(fit(p.reasons.joinToString("；"), paint(21f, TEXT2), 480f + 220f), nx, y + 78f, paint(21f, TEXT2))
+                    save(); translate(nx, y + 76f); detail.draw(this); restore()
                 }
             }
         }
@@ -220,7 +238,7 @@ object ReportExport {
                 var j = i; var h = 0f
                 // 標題列與後續的個股列畫在同一張卡片
                 h += bs[j].h; j++
-                while (j < bs.size && bs[j].card && bs[j].h == 92f) { h += bs[j].h; j++ }
+                while (j < bs.size && bs[j].cont) { h += bs[j].h; j++ }
                 drawRoundRect(RectF(M, y, W - M, y + h + 12f), 28f, 28f, fill(CARD))
                 var yy = y
                 for (k in i until j) { bs[k].draw(this, yy); yy += bs[k].h }
@@ -235,7 +253,7 @@ object ReportExport {
         while (i < bs.size) {
             if (bs[i].card) {
                 var j = i + 1; var h = bs[i].h
-                while (j < bs.size && bs[j].card && bs[j].h == 92f) { h += bs[j].h; j++ }
+                while (j < bs.size && bs[j].cont) { h += bs[j].h; j++ }
                 y += h + 36f; i = j
             } else { y += bs[i].h; i++ }
         }
@@ -263,7 +281,7 @@ object ReportExport {
         val pages = ArrayList<MutableList<Block>>()
         var cur = ArrayList<Block>(); var used = 24f
         bs.forEach { b ->
-            val need = b.h + if (b.card && b.h != 92f) 36f else 0f
+            val need = b.h + if (b.card && !b.cont) 36f else 0f
             if (used + need > usable && cur.isNotEmpty()) { pages += cur; cur = ArrayList(); used = 24f }
             cur += b; used += need
         }

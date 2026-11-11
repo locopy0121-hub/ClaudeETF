@@ -208,7 +208,7 @@ private fun PickRow(rank: Int, p: TwPicks.Pick, bull: Boolean, onClick: () -> Un
                 Text(p.name, color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 HGap(6.dp); NumText(p.symbol, 12.sp, C.Muted); HGap(4.dp); Label(if (p.otc) "櫃" else "市")
             }
-            Text(p.reasons.joinToString("；"), color = C.Text2, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(com.claudeetf.app.util.ReportExport.pickDetail(p), color = C.Text2, fontSize = 11.sp, lineHeight = 16.sp)
         }
         HGap(8.dp)
         val lim = if (p.pct > -9.0 && p.pct < 9.0) 0 else limitDir(p.price, p.price / (1 + p.pct / 100), p.symbol)

@@ -32,13 +32,22 @@ object TwPicks {
         val price: Double, val pct: Double, val score: Double,
         val dir: String, val entry: String, val entryLevel: Int,
         val zone: Int, val mom20: Double, val reasons: List<String>,
+        /** K 線進場建議說明、操作參考（停損、目標）、K 棒策略訊號與進場時機 */
+        val entryReason: String = "",
+        val stop: Double? = null, val tp1: Double? = null, val tp2: Double? = null,
+        val signal: String? = null,
+        val ma60Gap: Double? = null,
     ) {
         fun toJson(): JSONObject = JSONObject().put("s", symbol).put("n", name).put("o", otc).put("p", price).put("pc", pct).put("sc", score)
             .put("d", dir).put("e", entry).put("el", entryLevel).put("z", zone).put("m", mom20).put("r", JSONArray(reasons))
+            .put("er", entryReason).put("sl", stop ?: JSONObject.NULL).put("t1", tp1 ?: JSONObject.NULL).put("t2", tp2 ?: JSONObject.NULL)
+            .put("sg", signal ?: JSONObject.NULL).put("mg", ma60Gap ?: JSONObject.NULL)
         companion object {
             fun of(o: JSONObject) = Pick(o.optString("s"), o.optString("n"), o.optBoolean("o"), o.optDouble("p"), o.optDouble("pc"), o.optDouble("sc"),
                 o.optString("d"), o.optString("e"), o.optInt("el"), o.optInt("z", -1), o.optDouble("m"),
-                o.optJSONArray("r")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList())
+                o.optJSONArray("r")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(),
+                o.optString("er"), o.optDouble("sl").takeIf { !it.isNaN() }, o.optDouble("t1").takeIf { !it.isNaN() }, o.optDouble("t2").takeIf { !it.isNaN() },
+                if (o.isNull("sg")) null else o.optString("sg").ifBlank { null }, o.optDouble("mg").takeIf { !it.isNaN() })
         }
     }
 
@@ -179,7 +188,15 @@ object TwPicks {
         reasons += "K 線" + r.dir.label + "（" + r.entry.label + "）"
         reasons += "近 20 日 " + (if (mom20 >= 0) "+" else "") + "%.1f".format(mom20 * 100) + "%，" + (if (last >= ma60) "站上" else "跌破") + " 60 日均線"
         band?.let { reasons += "一年光譜「" + it.zoneName + "」" }
-        r.latest.firstOrNull()?.let { reasons += "近期形態：" + it.pat.cn }
-        return Pick(q.symbol, q.name, otc, q.price, q.changePct, s, r.dir.label, r.entry.label, r.entry.level, zone, mom20 * 100, reasons)
+        r.latest.distinctBy { it.pat }.take(3).takeIf { it.isNotEmpty() }?.let { l -> reasons += "近期形態：" + l.joinToString("、") { it.pat.cn } }
+        reasons += "趨勢：" + r.ctx.trendLabel + "，支撐 " + com.claudeetf.app.util.Fmt.price(r.ctx.support) + "、壓力 " + com.claudeetf.app.util.Fmt.price(r.ctx.resistance)
+        val vr = cs.takeLast(21).dropLast(1).map { it.v }.average().takeIf { it > 0 }?.let { cs.last().v / it }
+        vr?.let { reasons += "成交量為 20 日均量 " + "%.1f".format(it) + " 倍" }
+        val sig = r.signals.firstOrNull()?.let { g ->
+            g.strategy.cn + (if (g.bullish) "（做多" else "（偏空") + "，" + g.status.cn + "，信心 " + g.confidenceScore + "）" +
+                g.entryTimingType.cn + "：" + g.entryTimingDescription
+        }
+        return Pick(q.symbol, q.name, otc, q.price, q.changePct, s, r.dir.label, r.entry.label, r.entry.level, zone, mom20 * 100, reasons,
+            r.entry.reason, r.plan?.stop, r.plan?.tp1, r.plan?.tp2, sig, (last / ma60 - 1) * 100)
     }
 }

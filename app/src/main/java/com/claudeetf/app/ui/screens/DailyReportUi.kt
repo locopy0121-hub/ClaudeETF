@@ -290,7 +290,7 @@ fun DailyReportScreen(nav: NavController) {
 @Composable
 private fun ReportPickRow(rank: Int, p: TwPicks.Pick, bull: Boolean, onClick: () -> Unit) {
     val tone = Trend.fg(if (bull) 1.0 else -1.0)
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 7.dp), verticalAlignment = Alignment.Top) {
         Text(rank.toString(), color = if (rank <= 3) Color.White else tone, fontSize = 12.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.size(24.dp).clip(RoundedCornerShape(12.dp)).background(if (rank <= 3) tone else tone.copy(alpha = 0.15f)).wrapContentSize(Alignment.Center))
         HGap(8.dp)
@@ -300,7 +300,8 @@ private fun ReportPickRow(rank: Int, p: TwPicks.Pick, bull: Boolean, onClick: ()
                 HGap(4.dp); NumText(p.symbol, 11.sp, C.Muted); HGap(4.dp); Label(if (p.otc) "櫃" else "市")
                 if (p.zone >= 0) { HGap(4.dp); Text(com.claudeetf.app.data.PriceBand.zoneNames[p.zone], color = zoneColor(p.zone), fontSize = 10.sp, fontWeight = FontWeight.Bold) }
             }
-            Text(p.reasons.joinToString("；"), color = C.Text2, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // 完整解析：分析理由、建議、操作參考、策略訊號（不截斷）
+            Text(com.claudeetf.app.util.ReportExport.pickDetail(p), color = C.Text2, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
         }
         HGap(6.dp)
         Column(horizontalAlignment = Alignment.End) {
