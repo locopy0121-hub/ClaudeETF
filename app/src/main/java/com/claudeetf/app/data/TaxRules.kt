@@ -102,12 +102,22 @@ object TaxRules {
     fun sellTaxRate(symbol: String, date: String, dayTrade: Boolean): Pair<Double, String> {
         val d = runCatching { java.time.LocalDate.parse(date.trim().replace("/", "-")) }.getOrNull() ?: java.time.LocalDate.now()
         if (isTwEtf(symbol)) {
-            return if (kindOf(symbol) == TaxKind.TW_ETF_BOND && !d.isAfter(java.time.LocalDate.of(2026, 12, 31))) 0.0 to "債券 ETF 停徵證交稅（至 2026/12/31）"
+            val until = bondExemptUntil()
+            return if (kindOf(symbol) == TaxKind.TW_ETF_BOND && !d.isAfter(until)) 0.0 to "債券 ETF 停徵證交稅（至 ${until.toString().replace("-", "/")}）"
             else 0.001 to "ETF 證交稅 0.1%"
         }
         if (dayTrade && !d.isAfter(java.time.LocalDate.of(2027, 12, 31))) return 0.0015 to "現股當沖證交稅減半 0.15%"
         return 0.003 to "股票證交稅 0.3%"
     }
+
+    /**
+     * 債券 ETF 停徵證交稅的截止日：現行 2026/12/31；行政院 2026/10 通過延長至 2036/12/31 的草案（待立法院三讀），
+     * 使用者可在「設置 › 帳戶與手續費」切換。
+     */
+    fun bondExemptUntil(): java.time.LocalDate =
+        AppState.cacheGet("bondExemptUntil")?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } ?: java.time.LocalDate.of(2026, 12, 31)
+
+    fun setBondExemptUntil(d: java.time.LocalDate) = AppState.cachePut("bondExemptUntil", d.toString())
 
     /** 證交稅金額：元以下不計（無條件捨去） */
     fun sellTax(symbol: String, amount: Double, date: String, dayTrade: Boolean): Double =

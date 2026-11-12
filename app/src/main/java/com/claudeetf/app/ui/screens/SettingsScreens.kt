@@ -634,6 +634,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
             if (section == "accounts") {
                 items(AppState.accounts.toList(), key = { "acc-" + it.id }) { a -> AccountCard(a) }
                 item { AddAccountRow() }
+                item { BondTaxCard() }
             }
             if (section == "alerts") {
                 item { SettingRow("提醒中心", "${AppState.alerts.count { it.enabled }} 項開啟 ›") { nav.navigate(Routes.ALERTS) } }
@@ -2127,5 +2128,20 @@ fun TickerStyleSettings() {
             if (AppState.tickerAuto) TStep("跑馬燈速度", st.speed, 10, 120, "") { v -> set { it.copy(speed = v) } }
         }
         Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.updateTickerStyle(com.claudeetf.app.data.TickerStyle()) }.padding(vertical = 10.dp))
+    }
+}
+
+
+/** 債券 ETF 證交稅停徵期限：現行至 2026/12/31，延長草案三讀後可切換為 2036/12/31 */
+@Composable
+private fun BondTaxCard() {
+    var until by remember { mutableStateOf(com.claudeetf.app.data.TaxRules.bondExemptUntil()) }
+    val opts = listOf(java.time.LocalDate.of(2026, 12, 31), java.time.LocalDate.of(2036, 12, 31))
+    com.claudeetf.app.ui.Card {
+        Text("債券 ETF 證交稅停徵期限", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Label("現行停徵至 2026/12/31。行政院已於 2026/10 通過延長至 2036/12/31 的修正草案，待立法院三讀；通過後切換到 2036 即可，賣出債券 ETF 時的證交稅會依此計算。")
+        Segmented(listOf("至 2026/12/31（現行）", "至 2036/12/31（延長）"), opts.indexOf(until).coerceAtLeast(0), onSelect = { i ->
+            until = opts[i]; com.claudeetf.app.data.TaxRules.setBondExemptUntil(opts[i])
+        })
     }
 }
