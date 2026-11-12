@@ -39,7 +39,9 @@ object StockDirectory {
     /** ISIN 一覽表的額外資訊：代號 → 類型、上市日、產業 */
     @Volatile private var meta: Map<String, TwIsin.Sec> = emptyMap()
     /** 目前目錄中的 ISIN 資料筆數（診斷用） */
-    val isinCount: Int get() = meta.size
+    val isinCount: Int get() { if (meta.isEmpty() && tw.isEmpty()) runCatching { loadFiles() }; return meta.size }
+    /** 上次嘗試補抓 ISIN 的時間（缺 ISIN 時每 30 分鐘最多重試一次） */
+    @Volatile private var isinTryAt = 0L
     fun metaOf(symbol: String): TwIsin.Sec? = meta[symbol.uppercase()]
     fun isOtc(symbol: String) = symbol.uppercase() in otc
 
@@ -76,6 +78,8 @@ object StockDirectory {
      */
     fun stale(now: Long = System.currentTimeMillis()): Boolean {
         val last = f("tw_directory.json")?.takeIf { it.exists() }?.lastModified() ?: return true
+        // 還沒有完整的 ISIN 一覽表（之前下載都失敗）：每 30 分鐘補抓一次
+        if (f("tw_isin.json")?.exists() != true && now - isinTryAt > 30 * 60_000L) return true
         val z = java.time.ZoneId.of("Asia/Taipei")
         val n = java.time.Instant.ofEpochMilli(now).atZone(z)
         val l = java.time.Instant.ofEpochMilli(last).atZone(z)
@@ -92,6 +96,7 @@ object StockDirectory {
         if (tw.isEmpty()) loadFiles()
         if (!force && !stale()) return@withLock true
         MarketChanges.updating = true
+        isinTryAt = System.currentTimeMillis()
         try {
             val o2 = HashSet<String>()
             val (names, isin, complete) = withContext(Dispatchers.IO) {
@@ -120,13 +125,14 @@ object StockDirectory {
                 MarketChanges.record(oldNames, names, if (complete) oldIsin else emptySet(), isin, o2, complete)
             }
             tw = merged; otc = o2 + otc.filter { it in merged && it !in names }
-            if (complete) meta = isin
+            // 完整才整份替換；只取得部分時與舊資料合併（新上市、名稱仍可用）
+            meta = if (complete) isin else meta + isin
             runCatching {
                 f("tw_directory.json")?.writeText(JSONObject(merged as Map<*, *>).toString())
                 f("tw_directory_otc.txt")?.writeText(otc.joinToString(","))
                 if (names.isNotEmpty()) f("tw_names_day.json")?.writeText(JSONObject(names as Map<*, *>).toString())
-                if (complete) f("tw_isin.json")?.writeText(JSONObject().apply {
-                    isin.values.forEach { s -> put(s.code, org.json.JSONArray(listOf(s.name, s.listDate, s.market, s.industry, s.type))) }
+                if (complete || isin.isNotEmpty()) f("tw_isin.json")?.writeText(JSONObject().apply {
+                    meta.values.forEach { s -> put(s.code, org.json.JSONArray(listOf(s.name, s.listDate, s.market, s.industry, s.type))) }
                 }.toString())
             }
             MarketChanges.updatedAt = System.currentTimeMillis()
