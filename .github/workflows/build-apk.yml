@@ -58,7 +58,7 @@ jobs:
       # 更新說明：彙整上次發布以來的 commit 訊息，去掉署名行與 [發布] 標記
       - name: Release notes
         run: |
-          LAST=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          LAST=$(git describe --tags --match 'v*' --abbrev=0 HEAD^ 2>/dev/null || echo "")
           RANGE=${LAST:+$LAST..}HEAD
           git log --reverse --format='%B%n' $RANGE | grep -vE '^(Co-Authored-By|Claude-Session):' | sed 's/ *\[發布\]//' | cat -s > notes.md
           printf '\n---\n版本 1.%s.%s（建置 #%s）\n下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。App 內「設置 › 關於 › 檢查更新」可線上更新。\n' "${{ env.MINOR }}" "${{ env.PATCH }}" "${{ github.run_number }}" >> notes.md
