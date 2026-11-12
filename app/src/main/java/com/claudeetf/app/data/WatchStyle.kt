@@ -43,6 +43,8 @@ data class WatchStyle(
     val radius: Int = 12,
     val padDp: Int = -1,
     val gapDp: Int = 8,
+    /** 名稱後方顯示股價光譜標籤（特價、便宜…極貴） */
+    val bandTag: Boolean = true,
 ) {
     fun style(key: String): ItemStyle = itemStyles[key] ?: ItemStyle()
     /** 套用某欄位的字級縮放 */
@@ -52,7 +54,7 @@ data class WatchStyle(
 
     fun toJson(): String = JSONObject()
         .put("v", 3)
-        .put("density", density).put("nameMode", nameMode).put("nameLines", nameLines).put("priceAlign", priceAlign)
+        .put("density", density).put("nameMode", nameMode).put("nameLines", nameLines).put("bandTag", bandTag).put("priceAlign", priceAlign)
         .put("changeMode", changeMode).put("changeStyle", changeStyle).put("cardCols", cardCols).put("tintBg", tintBg)
         .put("tagPos", tagPos).put("tagAlign", tagAlign)
         .put("items", JSONArray(items)).put("hidden", JSONArray(hidden.toList()))
@@ -121,6 +123,7 @@ data class WatchStyle(
                     o.optJSONObject("itemStyles")?.let { m -> m.keys().asSequence().associateWith { ItemStyle.fromJson(m.optJSONObject(it)) } } ?: emptyMap(),
                     1f,
                     o.optLong("cardBg", 0L), o.optLong("cardBorder", 0L), o.optInt("radius", 12), o.optInt("padDp", -1), o.optInt("gapDp", 8),
+                    o.optBoolean("bandTag", true),
                 )
             }.getOrDefault(WatchStyle())
         }

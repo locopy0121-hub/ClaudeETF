@@ -151,15 +151,26 @@ fun WatchName(q: Quote, st: WatchStyle, base: Int, modifier: Modifier = Modifier
             Text(name, color = color, fontSize = st.at(prefix + "name").sp(size), fontWeight = LocalItemWeight.current, maxLines = st.nameLines, overflow = TextOverflow.Ellipsis)
         }
     }
+    // 名稱後方的股價光譜標籤（與投資分析共用結果）
+    @Composable fun Band() {
+        if (!st.bandTag) return
+        val b = com.claudeetf.app.data.InvestAnalysis.results[q.symbol]?.band ?: return
+        val c = zoneColor(b.zone)
+        HGap(6.dp)
+        Text(b.zoneName, color = c, fontSize = st.sp((base - 4).coerceAtLeast(9)), fontWeight = FontWeight.Bold, maxLines = 1,
+            modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(c.copy(alpha = 0.15f)).padding(horizontal = 4.dp, vertical = 1.dp))
+    }
     when (st.nameMode) {
         1 -> Row(modifier, verticalAlignment = Alignment.CenterVertically) {
             Code(base, C.Text, true); HGap(6.dp)
             Name(base - 2, C.Text2, Modifier.weight(1f, fill = false))
+            Band()
         }
-        3 -> Box(modifier) { Code(base, C.Text, true) }
+        3 -> Row(modifier, verticalAlignment = Alignment.CenterVertically) { Code(base, C.Text, true); Band() }
         else -> Row(modifier, verticalAlignment = Alignment.CenterVertically) {
             Name(base, C.Text, Modifier.weight(1f, fill = false))
             if (showCode && st.nameMode == 0) { HGap(6.dp); Code(base - 2, C.Muted, false) }
+            Band()
         }
     }
 }
@@ -522,6 +533,7 @@ fun WatchStyleSettings() {
         Section("共用設定")
         Opt("版型") { Chips(listOf(0 to "精簡", 1 to "標準", 2 to "大字"), st.density) { v -> set { it.copy(density = v) } } }
         Opt("名稱與代號") { Chips(listOf(0 to "名稱在前", 1 to "代號在前", 2 to "只顯示名稱", 3 to "只顯示代號"), st.nameMode) { v -> set { it.copy(nameMode = v) } } }
+        Opt("名稱後方光譜標籤") { Chips(listOf(1 to "顯示", 0 to "隱藏"), if (st.bandTag) 1 else 0) { v -> set { it.copy(bandTag = v == 1) } } }
         if (st.nameMode != 3) Opt("名稱行數") { Chips(listOf(1 to "1 行", 2 to "最多 2 行"), st.nameLines) { v -> set { it.copy(nameLines = v) } } }
         Opt("漲跌顯示") { Chips(listOf(0 to "金額＋百分比", 1 to "只顯示百分比", 2 to "只顯示金額"), st.changeMode) { v -> set { it.copy(changeMode = v) } } }
         if (st.changeMode != 2) Opt("百分比樣式") { Chips(listOf(0 to "文字", 1 to "色塊"), st.changeStyle) { v -> set { it.copy(changeStyle = v) } } }
