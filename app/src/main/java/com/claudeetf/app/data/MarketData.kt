@@ -488,8 +488,19 @@ object MarketData {
 
     /** 指數、10 年債、美元指數：Yahoo Finance */
     suspend fun refreshIndices() {
-        val symbols = AppState.indexSymbols()
         val now = System.currentTimeMillis()
+        // 台股加權、櫃買指數：Yahoo 的 ^TWII 昨收有時落後一天、報價也有延遲，會蓋掉正確數字；
+        // 一律改用證交所 MIS（盤中即時、休市保留最後交易日；含正確昨收），取不到才退回 Yahoo
+        val twIdx = setOf("^TWII", "^TWOII")
+        val misOk = HashSet<String>()
+        withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.TwseMisApi.fetch(listOf("tse_t00.tw", "otc_o00.tw")) } }
+            .getOrNull()?.forEach { (code, t) ->
+                val sym = if (code == "t00") "^TWII" else if (code == "o00") "^TWOII" else null
+                if (sym != null && t.quote.price > 0 && t.quote.prevClose > 0) { AppState.applyIndex(sym, t.quote.price, t.quote.prevClose, now); misOk += sym }
+            }
+        // 富果盤中已更新過（30 秒內）的也不再用 Yahoo 覆蓋
+        val fresh = AppState.twIndices.filter { it.symbol in twIdx && now - it.updatedAt < 60_000 }.map { it.symbol }
+        val symbols = AppState.indexSymbols().filter { it !in misOk && it !in fresh }
         val results = withContext(Dispatchers.IO) {
             symbols.map { s ->
                 val r = runCatching { YahooApi.chart(s) }
@@ -497,7 +508,16 @@ object MarketData {
                 s to r
             }
         }
-        results.forEach { (s, r) -> r.getOrNull()?.let { AppState.applyIndex(s, it.quote.price, it.quote.prevClose, now) } }
+        results.forEach { (s, r) ->
+            r.getOrNull()?.let {
+                var prev = it.quote.prevClose
+                // 台股指數退回 Yahoo 時：昨收與近 12 小時內已知的昨收差太多，沿用已知值
+                if (s in twIdx) AppState.twIndices.firstOrNull { x -> x.symbol == s }?.let { old ->
+                    if (old.prev > 0 && now - old.updatedAt < 12 * 3600_000L && kotlin.math.abs(prev - old.prev) / old.prev > 0.002) prev = old.prev
+                }
+                AppState.applyIndex(s, it.quote.price, prev, now)
+            }
+        }
         val ok = results.count { it.second.isSuccess }
         AppState.setStatus("IDX", clock(now) + " 指數 $ok/${symbols.size}")
     }
