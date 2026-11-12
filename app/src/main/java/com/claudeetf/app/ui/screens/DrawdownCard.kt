@@ -166,7 +166,7 @@ fun DrawdownCard(q0: Quote) {
                         NumText(Fmt.num(w.depth, 2) + "%", 20.sp, c, FontWeight.Bold)
                     }
                     Label(ymd(w.peakT) + " → " + ymd(w.troughT) + "（下跌 " + yearsText(w.troughT - w.peakT) + "）", Modifier.padding(top = 4.dp))
-                    Label(w.recoverT?.let { "回到前高：" + ymd(it) + "（自高點共 " + yearsText(it - w.peakT) + "）" } ?: "尚未回到前高",
+                    Label(w.recoverT?.let { "回到前高：" + ymd(it) + "（低點後 " + yearsText(it - w.troughT) + "，自高點共 " + yearsText(it - w.peakT) + "）" } ?: "尚未回到前高",
                         color = if (w.recoverT == null) Trend.fg(-1.0) else C.Muted)
                 }
             }

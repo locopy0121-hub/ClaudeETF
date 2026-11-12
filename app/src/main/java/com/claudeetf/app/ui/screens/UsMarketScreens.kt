@@ -151,11 +151,13 @@ fun MarketScreen(nav: NavController) {
                         SmallCard("USD/TWD ›", Fmt.num(AppState.usdTwd, 2), Modifier.weight(1f).clickable { nav.navigate(Routes.FX) })
                     }
                 }
+                marketDrawdownEntry(nav)
             } else {
                 items(AppState.twIndices.chunked(2)) { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { row.forEach { ix -> IndexCard(ix, Modifier.weight(1f)) { nav.navigate(Routes.index(ix.symbol)) } } }
                 }
                 marketChangesEntry(nav)
+                marketDrawdownEntry(nav)
                 twPicksSection(pickSide, { pickSide = it }, pickBoard, { pickBoard = it }, ::open)
             }
             if (tab <= 1) boardSection(board, tab == 0, moverTab, { moverTab = it }, ::open)

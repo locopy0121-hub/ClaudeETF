@@ -135,24 +135,34 @@ object Drawdown {
         return done.count { it.depth < current } * 100.0 / done.size
     }
 
-    /** 依波段低點日期對應常見歷史事件（沒有對應時回傳「yyyy/M 修正」） */
-    fun eventName(w: Wave): String {
+    /**
+     * 依波段高點與低點日期對應重大歷史事件（名稱參考 YP-Finance「台股美股全球歷次大跌」）；
+     * 沒有對應時回傳 null。
+     */
+    fun eventOf(w: Wave): String? {
         val d = Instant.ofEpochMilli(w.troughT).atZone(ZoneId.of("UTC")).toLocalDate()
         val p = Instant.ofEpochMilli(w.peakT).atZone(ZoneId.of("UTC")).toLocalDate()
         val ym = d.year * 100 + d.monthValue
         val pym = p.year * 100 + p.monthValue
         return when {
-            pym in 199901..200112 && ym in 200003..200303 -> "網路泡沫"
-            ym in 200801..200906 -> "金融海嘯"
-            ym in 202002..202004 -> "2020 疫情"
-            ym in 202201..202301 -> "2022 升息"
-            ym in 201810..201901 -> "2018 Q4"
-            ym in 202503..202505 -> "2025 關稅"
-            ym in 201508..201603 -> "2015 股災"
-            ym in 201108..201112 -> "2011 歐債"
-            ym in 202407..202409 -> "2024 套利平倉"
-            ym in 199710..199810 -> "亞洲金融風暴"
-            else -> "${d.year}/${d.monthValue} 修正"
+            ym in 199707..199810 -> "亞洲金融風暴"
+            pym in 199901..200112 && ym in 200003..200303 -> "網路泡沫、911"
+            ym in 200301..200305 -> "SARS"
+            ym in 200404..200408 -> "319 槍擊案、中國宏觀調控"
+            ym in 200801..200906 -> "全球金融海嘯"
+            ym in 201005..201008 -> "歐債危機（希臘）"
+            ym in 201108..201201 -> "歐債危機、美債遭降評"
+            ym in 201508..201603 -> "中國股災、人民幣貶值"
+            ym in 201810..201901 -> "中美貿易戰"
+            ym in 202002..202004 -> "新冠疫情"
+            ym in 202201..202301 -> "美國快速升息、俄烏戰爭"
+            pym in 202406..202408 && ym in 202503..202505 -> "日圓套利平倉、美國對等關稅"
+            ym in 202407..202409 -> "日圓套利平倉"
+            ym in 202503..202505 -> "美國對等關稅"
+            else -> null
         }
     }
+
+    /** 事件名稱；沒有對應的重大事件時回傳「yyyy/M 修正」 */
+    fun eventName(w: Wave): String = eventOf(w) ?: Instant.ofEpochMilli(w.troughT).atZone(ZoneId.of("UTC")).toLocalDate().let { "${it.year}/${it.monthValue} 修正" }
 }

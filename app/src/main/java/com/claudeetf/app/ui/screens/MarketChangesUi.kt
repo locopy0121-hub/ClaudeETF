@@ -148,6 +148,20 @@ fun MarketChangesScreen(nav: NavController) {
     }
 }
 
+/** 市場：台股美股全球歷次大跌入口 */
+fun LazyListScope.marketDrawdownEntry(nav: NavController) {
+    item {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.Card).clickable { nav.navigate(Routes.MARKET_DD) }.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("歷次大跌與事件", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Label("台股、美股、全球長期走勢：每次跌多少、多久創新高")
+            }
+            Text("›", color = C.Muted, fontSize = 18.sp)
+        }
+    }
+}
+
 /** 市場 › 台股：異動紀錄入口 */
 fun LazyListScope.marketChangesEntry(nav: NavController) {
     item {

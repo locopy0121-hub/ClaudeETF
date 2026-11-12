@@ -411,6 +411,7 @@ fun AppRoot() {
             composable(Routes.ERRORS) { com.claudeetf.app.ui.screens.ErrorLogScreen(nav) }
             composable(Routes.MANUAL) { com.claudeetf.app.ui.screens.ManualScreen(nav) }
             composable(Routes.DATA_HEALTH) { com.claudeetf.app.ui.screens.DataHealthScreen(nav) }
+            composable(Routes.MARKET_DD) { com.claudeetf.app.ui.screens.MarketDrawdownScreen(nav) }
             composable(Routes.HOME) { HomeScreen(nav) }
             composable(Routes.WATCH) { WatchlistScreen(nav) }
             composable(
