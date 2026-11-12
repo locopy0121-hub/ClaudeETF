@@ -227,9 +227,8 @@ class MainActivity : ComponentActivity() {
                     runCatching {
                         com.claudeetf.app.data.remote.FugleStream.ensure(
                             MarketData.isTwIntraday() && AppState.twUseFugle, AppState.fugleKey,
-                            // 持股（即使不在自選）＋自選；串流內優先順序：正在看的個股 → 持股 → 星號股 → 其他
-                            (AppState.holdings.map { it.symbol }.filter { AppState.marketOf(it) == com.claudeetf.app.data.Market.TW } +
-                                AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol }).distinct(),
+                            // 富果只訂閱持股與星號股（正在看的個股另外加入）；其餘自選改用 Yahoo
+                            MarketData.fugleTier().toList(),
                         )
                     }
                     val now = System.currentTimeMillis()
