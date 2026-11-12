@@ -113,7 +113,7 @@ object AlertEngine {
         val ready = runCatching { com.claudeetf.app.data.AppUpdater.prefetch(context) }.getOrDefault(false)
         if (com.claudeetf.app.data.AppUpdater.shouldNotify(context)) {
             val r = com.claudeetf.app.data.AppUpdater.latest ?: return
-            if (ready) notify(context, 908, "ClaudeETF " + r.tag.removePrefix("v") + " 已下載完成", "點此開啟 App，按「立即安裝」即可更新。")
+            if (ready) notify(context, 908, "ClaudeETF " + r.tag.removePrefix("v") + " 已下載完成", "點此開啟 App，會直接進入安裝（安全防護掃描後按「安裝」）。")
             else notify(context, 908, "ClaudeETF 有新版本 " + r.tag.removePrefix("v"), "點此開啟 App，一鍵下載並安裝更新。")
         }
     }

@@ -104,6 +104,36 @@ object AppUpdater {
 
     /** 這次開啟 App 時使用者在系統確認畫面按了取消的版本：不再自動跳安裝，改顯示 App 視窗 */
     @Volatile private var abortedTag: String? = null
+    /** App 是否在前景（只有前景才能開系統安裝畫面） */
+    @Volatile var foreground = false
+        private set
+    /** 正在交給系統安裝的版本，避免重複送出 */
+    @Volatile private var installingTag: String? = null
+    /** 在背景時收到的系統安裝確認畫面，回到前景再開 */
+    private var pendingConfirm: Intent? = null
+
+    /** 能否自動進入安裝：開啟「下載完成直接安裝」、在前景、這版沒被取消過、沒有正在安裝 */
+    private fun canAutoInstall(context: Context): Boolean {
+        val tag = latest?.tag ?: return false
+        return autoInstall(context) && foreground && abortedTag != tag && installingTag != tag && canInstall(context)
+    }
+
+    /**
+     * 回到前景（MainActivity.onStart）：有背景時待開的安裝確認就開；
+     * 安裝檔已下載好就直接進入系統安裝（Google Play 安全防護掃描後按「安裝」即可）。
+     */
+    fun onForeground(context: Context) {
+        foreground = true
+        val app = context.applicationContext
+        pendingConfirm?.let { c -> pendingConfirm = null; runCatching { app.startActivity(c) }; return }
+        appScope.launch {
+            kotlinx.coroutines.delay(1_500L)
+            if (!foreground || AppState.locked) return@launch
+            if (readyFile(app) != null && canAutoInstall(app)) downloadAndInstall(app)
+        }
+    }
+
+    fun onBackground() { foreground = false }
 
     /** 下載完成後直接進入系統安裝確認（預設開） */
     fun autoInstall(context: Context): Boolean = context.getSharedPreferences("claudeetf_update", Context.MODE_PRIVATE).getBoolean("autoInstall", true)
@@ -147,7 +177,8 @@ object AppUpdater {
                 download(app, r, showProgress = true).also { f ->
                     refreshReady(app)
                     // 使用者按過「更新」：下載完成就直接安裝（關掉視窗也照樣執行）
-                    if (installWhenReady) { installWhenReady = false; runCatching { install(app, f) }.onFailure { message = "更新失敗：" + (it.message ?: it.javaClass.simpleName) } }
+                    // 開啟「下載完成直接安裝」且在前景：下載完立刻進入系統安裝（Play 安全防護掃描 → 按「安裝」）
+                    if (installWhenReady || canAutoInstall(app)) { installWhenReady = false; runCatching { install(app, f) }.onFailure { message = "更新失敗：" + (it.message ?: it.javaClass.simpleName) } }
                 }
             } catch (e: Exception) {
                 message = if (e.message == CANCELLED) "已取消下載" else "下載失敗：" + (e.message ?: e.javaClass.simpleName) + "，稍後會自動續傳"
@@ -351,13 +382,16 @@ object AppUpdater {
     /** 背景通知用：這一版是否已通知過（每版只通知一次） */
     /** 有新版：能預先下載就先下載完再提示「已下載，點擊安裝」；不能（非 Wi-Fi／關閉）就直接提示 */
     private fun afterCheckPopup(context: Context, prefs: android.content.SharedPreferences) {
-        if (!popupNew(context)) { if (hasUpdate(context)) appScope.launch { prefetch(context) }; return }
+        if (!popupNew(context)) {
+            if (hasUpdate(context)) appScope.launch { if (prefetch(context) && canAutoInstall(context)) downloadAndInstall(context) }
+            return
+        }
         if (!hasUpdate(context) || prefs.getString("skipped", "") == latest?.tag) { prompt = false; return }
         appScope.launch {
             prefetch(context)
             if (!hasUpdate(context) || prefs.getString("skipped", "") == latest?.tag) return@launch
             // 已下載且開啟「下載完成直接安裝」：不再先跳 App 自己的視窗，直接進系統確認（只按一次「更新」）
-            if (ready == latest?.tag && autoInstall(context) && abortedTag != latest?.tag) downloadAndInstall(context)
+            if (ready == latest?.tag && canAutoInstall(context)) downloadAndInstall(context)
             else prompt = true
         }
     }
@@ -477,6 +511,9 @@ object AppUpdater {
      * 工作階段失敗時改用傳統的系統安裝畫面。
      */
     private suspend fun install(context: Context, file: File) {
+        val tag = latest?.tag
+        if (tag != null && installingTag == tag) return
+        installingTag = tag
         val ok = runCatching { installSession(context, file) }.isSuccess
         if (!ok) installViaIntent(context, file)
     }
@@ -523,16 +560,20 @@ object AppUpdater {
         when (status) {
             android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 // 第一次（或系統要求）需要使用者確認
-                confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let { runCatching { context.startActivity(it) } }
+                // （Google Play 安全防護會在這個畫面掃描，掃描完按「安裝／更新」即可）；在背景時先存著，回到前景再開
+                confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)?.let { c ->
+                    if (foreground) runCatching { context.startActivity(c) }.onFailure { pendingConfirm = c } else pendingConfirm = c
+                }
             }
             android.content.pm.PackageInstaller.STATUS_SUCCESS -> message = "更新完成"
             // 使用者在確認畫面按了取消：不要再跳一次安裝畫面
-            android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> { message = "已取消更新"; abortedTag = latest?.tag }
+            android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> { message = "已取消更新"; abortedTag = latest?.tag; installingTag = null }
             // 簽章不符或空間不足：改用系統安裝畫面也一樣會失敗，直接告知原因
             android.content.pm.PackageInstaller.STATUS_FAILURE_CONFLICT,
-            android.content.pm.PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> message = "更新失敗：與已安裝版本簽章不符，請先移除舊版再安裝"
-            android.content.pm.PackageInstaller.STATUS_FAILURE_STORAGE -> message = "更新失敗：手機儲存空間不足"
+            android.content.pm.PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> { message = "更新失敗：與已安裝版本簽章不符，請先移除舊版再安裝"; installingTag = null }
+            android.content.pm.PackageInstaller.STATUS_FAILURE_STORAGE -> { message = "更新失敗：手機儲存空間不足"; installingTag = null }
             else -> {
+                installingTag = null
                 message = "更新失敗：" + (msg ?: "代碼 $status")
                 // 其他工作階段失敗：改用系統安裝畫面
                 File(context.cacheDir, "updates").listFiles()?.firstOrNull { it.name.endsWith(".apk") }?.let { runCatching { installViaIntent(context, it) } }

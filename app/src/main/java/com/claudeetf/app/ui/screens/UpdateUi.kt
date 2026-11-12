@@ -255,7 +255,7 @@ fun UpdateCard() {
         // ---- 下載與安裝
         Text("下載與安裝", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
         Choice("新版本預先下載", listOf(0 to "僅 Wi-Fi", 1 to "任何網路", 2 to "關閉"), mode) { mode = it; AppUpdater.setPrefetchMode(ctx, it) }
-        OptRow("下載完成直接安裝", "跳過 App 的提示視窗，直接出現系統的「更新」確認，只需按一次", auto) { auto = it; AppUpdater.setAutoInstall(ctx, it) }
+        OptRow("下載完成直接安裝", "下載完（或回到 App 時已下載好）直接進入系統安裝：Google Play 安全防護掃描完，按「安裝」即可", auto) { auto = it; AppUpdater.setAutoInstall(ctx, it) }
 
         val fgText = when (fg) { 0 -> "每次回到 App"; 15 -> "回到 App 時每 15 分鐘"; 60 -> "回到 App 時每小時"; 360 -> "回到 App 時每 6 小時"; else -> "回到 App 時每天" }
         Label(

@@ -109,6 +109,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         AppState.backgroundAt = System.currentTimeMillis()
+        com.claudeetf.app.data.AppUpdater.onBackground()
         AppState.flush()
         com.claudeetf.app.data.remote.FugleStream.stop()
     }
@@ -116,6 +117,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         com.claudeetf.app.alerts.MonitorService.start(applicationContext)
+        // 已下載好的新版：回到 App 直接進入系統安裝（Play 安全防護掃描後按「安裝」）
+        com.claudeetf.app.data.AppUpdater.onForeground(applicationContext)
         // 離開超過 1 分鐘重新上鎖
         if (AppState.appLock && AppState.backgroundAt > 0 && System.currentTimeMillis() - AppState.backgroundAt > 60_000) {
             AppState.locked = true
