@@ -46,19 +46,10 @@ object ReportExport {
     private class Block(val h: Float, val card: Boolean = true, val cont: Boolean = false, val draw: Canvas.(Float) -> Unit)
 
     /** 個股完整解析文字 */
-    fun pickDetail(p: TwPicks.Pick): String = buildString {
-        append("分析：").append(p.reasons.joinToString("；")).append("。")
-        append("\n建議：").append(p.entry).append("（K 線").append(p.dir).append("）")
-        if (p.entryReason.isNotBlank()) append(" ").append(p.entryReason)
-        if (p.stop != null || p.tp1 != null) {
-            append("\n操作參考：")
-            p.stop?.let { append("停損 ").append(Fmt.price(it)) }
-            p.tp1?.let { append(if (p.stop != null) " · " else "").append("目標 ").append(Fmt.price(it)) }
-            p.tp2?.let { append("／").append(Fmt.price(it)) }
-            p.ma60Gap?.let { append(" · 距 60 日均線 ").append("%+.1f".format(it)).append("%") }
+    fun pickDetail(p: TwPicks.Pick): String =
+        com.claudeetf.app.ui.screens.PickText.sections(p).joinToString("\n") { sec ->
+            "【" + sec.title + "】\n" + sec.lines.joinToString("\n") { "・$it" }
         }
-        p.signal?.let { append("\n策略訊號：").append(it) }
-    }
 
     private fun paint(size: Float, color: Int, bold: Boolean = false, mono: Boolean = false, align: Paint.Align = Paint.Align.LEFT) =
         TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -244,18 +235,18 @@ object ReportExport {
             val mx = list.maxOfOrNull { abs(it.score) }?.takeIf { it > 0 } ?: 1.0
             list.forEachIndexed { i, p ->
                 val detail = layout(pickDetail(p), 22f, TEXT2, (inner - 56f).toInt())
-                out += Block(76f + detail.height + 22f, cont = true) { y ->
+                out += Block(96f + detail.height + 22f, cont = true) { y ->
                     if (i > 0) drawLine(x0, y, x0 + inner, y, fill(GRID).apply { strokeWidth = 1.5f })
                     val rk = paint(24f, if (i < 3) android.graphics.Color.WHITE else tone, bold = true, align = Paint.Align.CENTER)
                     drawCircle(x0 + 20f, y + 34f, 20f, fill(tone).apply { alpha = if (i < 3) 255 else 50 })
                     drawText((i + 1).toString(), x0 + 20f, y + 43f, rk)
                     val nx = x0 + 56f
                     val np = paint(28f, TEXT, bold = true)
-                    val name = fit(p.name, np, 210f)
+                    val name = fit(p.name, np, 440f)
                     drawText(name, nx, y + 44f, np)
                     val stk = DailyReport.streakOf(r, p.symbol, bull)
                     val tag = p.symbol + " " + (if (p.otc) "櫃" else "市") + (if (p.zone >= 0) " · " + PriceBand.zoneNames[p.zone] else "") + (if (stk >= 2) " · 連 $stk 日" else "")
-                    drawText(tag, nx + np.measureText(name) + 12f, y + 44f, paint(22f, MUTED))
+                    drawText(tag, nx, y + 76f, paint(22f, MUTED))
                     // 分數條
                     val bx = x0 + 520f; val bw = 220f
                     drawRect(bx, y + 24f, bx + bw, y + 40f, fill(GRID))
@@ -263,7 +254,7 @@ object ReportExport {
                     drawText("%+.1f".format(p.score), bx + bw + 12f, y + 42f, paint(22f, tone, mono = true))
                     drawText(Fmt.price(p.price), x0 + inner, y + 32f, paint(24f, TEXT, mono = true, align = Paint.Align.RIGHT))
                     drawText("%+.2f".format(p.pct) + "%", x0 + inner, y + 62f, paint(22f, up(p.pct), mono = true, align = Paint.Align.RIGHT))
-                    save(); translate(nx, y + 76f); detail.draw(this); restore()
+                    save(); translate(nx, y + 96f); detail.draw(this); restore()
                 }
             }
         }

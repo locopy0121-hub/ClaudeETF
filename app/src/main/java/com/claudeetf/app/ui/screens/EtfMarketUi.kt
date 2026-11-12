@@ -121,29 +121,7 @@ fun LazyListScope.etfMarketSection(
     val picks = if (side == 0) TwPicks.etfBulls else TwPicks.etfBears
     if (picks.isEmpty() && !TwPicks.etfRunning && TwPicks.etfAtState > 0) item { Label(if (side == 0) "目前沒有明顯看漲的 ETF。" else "目前沒有明顯看跌的 ETF。") }
     picks.forEachIndexed { i, p ->
-        item(key = "etfp$side${p.symbol}") {
-            val tone = Trend.fg(if (side == 0) 1.0 else -1.0)
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).clickable { open(p.symbol) }.padding(10.dp),
-                verticalAlignment = Alignment.Top) {
-                Text((i + 1).toString(), color = if (i < 3) Color.White else tone, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.size(26.dp).clip(RoundedCornerShape(13.dp)).background(if (i < 3) tone else tone.copy(alpha = 0.15f)).wrapContentSize(Alignment.Center))
-                HGap(10.dp)
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(p.name, color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                        HGap(6.dp); NumText(p.symbol, 12.sp, C.Muted)
-                        if (p.zone >= 0) { HGap(4.dp); Text(com.claudeetf.app.data.PriceBand.zoneNames[p.zone], color = zoneColor(p.zone), fontSize = 10.sp, fontWeight = FontWeight.Bold) }
-                    }
-                    Text(com.claudeetf.app.util.ReportExport.pickDetail(p), color = C.Text2, fontSize = 11.sp, lineHeight = 16.sp)
-                }
-                HGap(8.dp)
-                Column(horizontalAlignment = Alignment.End) {
-                    NumText(Fmt.price(p.price), 14.sp)
-                    ChangePill(p.pct)
-                    Text("分數 " + "%+.1f".format(p.score), color = tone, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
+        item(key = "etfp$side${p.symbol}") { PickCard(i + 1, p, side == 0, showBoard = false) { open(p.symbol) } }
     }
     item { Label("資料：證交所、櫃買中心行情（自選中的 ETF 用即時價）；分析排除槓桿與反向型。僅供參考，非投資建議。") }
 }

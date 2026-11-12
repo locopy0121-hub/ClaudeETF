@@ -190,35 +190,7 @@ fun LazyListScope.twPicksSection(side: Int, onSide: (Int) -> Unit, board: Int, o
     }
     val list = TwPicks.list(otc = board == 1, bull = side == 0)
     if (list.isEmpty() && !TwPicks.running && TwPicks.at > 0) item { Label((if (board == 0) "上市" else "上櫃") + (if (side == 0) "目前沒有明顯看漲的個股。" else "目前沒有明顯看跌的個股。")) }
-    list.forEachIndexed { i, p -> item(key = "pick" + board + side + p.symbol) { PickRow(i + 1, p, side == 0) { open(p.symbol) } } }
+    list.forEachIndexed { i, p -> item(key = "pick" + board + side + p.symbol) { PickCard(i + 1, p, side == 0) { open(p.symbol) } } }
     item { Label("依公開行情計算的參考排序（K 線形態、量價、支撐壓力、均線趨勢、近 20 日動能、一年股價光譜），不是投資建議，請自行判斷風險。") }
 }
 
-@Composable
-private fun PickRow(rank: Int, p: TwPicks.Pick, bull: Boolean, onClick: () -> Unit) {
-    val tone = Trend.fg(if (bull) 1.0 else -1.0)
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).clickable(onClick = onClick).padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Text(rank.toString(), color = if (rank <= 3) Color.White else tone, fontSize = 13.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.size(26.dp).clip(RoundedCornerShape(13.dp)).background(if (rank <= 3) tone else tone.copy(alpha = 0.15f))
-                .wrapContentSize(Alignment.Center))
-        HGap(10.dp)
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(p.name, color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                HGap(6.dp); NumText(p.symbol, 12.sp, C.Muted); HGap(4.dp); Label(if (p.otc) "櫃" else "市")
-            }
-            Text(com.claudeetf.app.util.ReportExport.pickDetail(p), color = C.Text2, fontSize = 11.sp, lineHeight = 16.sp)
-        }
-        HGap(8.dp)
-        val lim = if (p.pct > -9.0 && p.pct < 9.0) 0 else limitDir(p.price, p.price / (1 + p.pct / 100), p.symbol)
-        Column(horizontalAlignment = Alignment.End) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (lim != 0) { LimitTag(lim, 10.sp); HGap(4.dp) }
-                LimitPrice(Fmt.price(p.price), 14.sp, C.Text, lim, FontWeight.Normal)
-            }
-            ChangePill(p.pct)
-            Text("分數 " + (if (p.score > 0) "+" else "") + "%.1f".format(p.score), color = tone, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
-    }
-}

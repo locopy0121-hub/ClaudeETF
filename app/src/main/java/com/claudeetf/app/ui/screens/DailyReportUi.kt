@@ -368,28 +368,10 @@ fun DailyReportScreen(nav: NavController) {
 @Composable
 private fun ReportPickRow(rank: Int, p: TwPicks.Pick, bull: Boolean, streak: Int = 0, onClick: () -> Unit) {
     val tone = Trend.fg(if (bull) 1.0 else -1.0)
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 7.dp), verticalAlignment = Alignment.Top) {
-        Text(rank.toString(), color = if (rank <= 3) Color.White else tone, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-            modifier = Modifier.size(24.dp).clip(RoundedCornerShape(12.dp)).background(if (rank <= 3) tone else tone.copy(alpha = 0.15f)).wrapContentSize(Alignment.Center))
-        HGap(8.dp)
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(p.name, color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                HGap(4.dp); NumText(p.symbol, 11.sp, C.Muted); HGap(4.dp); Label(if (p.otc) "櫃" else "市")
-                if (p.zone >= 0) { HGap(4.dp); Text(com.claudeetf.app.data.PriceBand.zoneNames[p.zone], color = zoneColor(p.zone), fontSize = 10.sp, fontWeight = FontWeight.Bold) }
-                if (streak >= 2) { HGap(4.dp); Text("連 $streak 日", color = tone, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(tone.copy(alpha = 0.15f)).padding(horizontal = 4.dp)) }
-            }
-            // 完整解析：分析理由、建議、操作參考、策略訊號（不截斷）
-            Text(com.claudeetf.app.util.ReportExport.pickDetail(p), color = C.Text2, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
-        }
-        HGap(6.dp)
-        Column(horizontalAlignment = Alignment.End) {
-            NumText(Fmt.price(p.price), 13.sp)
-            ChangePill(p.pct)
-            Text("%+.1f".format(p.score), color = tone, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
-    }
+    PickCard(rank, p, bull, flat = true, tags = {
+        if (streak >= 2) { HGap(4.dp); Text("連 $streak 日", color = tone, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(tone.copy(alpha = 0.15f)).padding(horizontal = 4.dp)) }
+    }, onOpen = onClick)
 }
 
 /** 指數折線（含月線虛線） */
@@ -601,7 +583,9 @@ fun DailyRankChip(symbol: String, small: Boolean = false) {
                 if (days >= 2) Text("已連續 $days 份報表列入" + (if (rk.bull) "看漲" else "看跌") + "名單", color = c, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
                 Text("綜合分數 " + "%+.1f".format(rk.pick.score) + " · 當日收盤 " + Fmt.price(rk.pick.price) + "（" + "%+.2f".format(rk.pick.pct) + "%）",
                     color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                Text(com.claudeetf.app.util.ReportExport.pickDetail(rk.pick), color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 8.dp))
+                Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PickText.sections(rk.pick).forEach { PickSection(it, c) }
+                }
                 Label("排行來自每日盤後報表（首頁 › 每日盤後報表），僅供參考。", Modifier.padding(top = 8.dp))
             }
         },
