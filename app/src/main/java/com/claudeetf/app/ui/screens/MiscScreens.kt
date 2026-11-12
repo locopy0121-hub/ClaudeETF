@@ -248,7 +248,7 @@ fun ErrorLogScreen(nav: NavController) {
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("錯誤紀錄", onBack = { nav.popBackStack() })
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item { Segmented(listOf("閃退" + (if (crash != null) "（有）" else ""), "載入錯誤（${errs.size}）"), tab) { tab = it } }
+            item { Segmented(listOf("閃退" + (if (crash != null) "（有）" else ""), "載入錯誤（${errs.size}）"), tab, onSelect = { tab = it }) }
             val text: String? = if (tab == 0) crash else errs.takeIf { it.isNotEmpty() }?.let { com.claudeetf.app.util.ErrorLog.text() }
             item {
                 Label(if (tab == 0) "App 異常結束時的紀錄（保留最近 5 次，新的在前）。"
