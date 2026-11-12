@@ -112,6 +112,7 @@ object FugleStream {
                 queue.addAll(add)
             }
             focusSwap()
+            prioritySwap(symbols)
             pump()
             ensureTrades()
         }
@@ -139,9 +140,34 @@ object FugleStream {
         ensureTrades()
     }
 
-    private fun prioritize(symbols: List<String>): List<String> {
-        val held = AppState.holdings.map { it.symbol }.toSet()
-        return symbols.sortedBy { s -> if (s == focus) 0 else if (s in held) 1 else 2 }
+    /** 訂閱優先順序：正在看的個股 0 → 持股 1 → 星號股 2 → 其他自選 3 */
+    private fun rank(s: String): Int {
+        if (s == focus) return 0
+        if (AppState.holdings.any { it.symbol == s }) return 1
+        if (AppState.isStarred(s)) return 2
+        return 3
+    }
+
+    private fun prioritize(symbols: List<String>): List<String> = symbols.distinct().sortedBy { rank(it) }
+
+    /**
+     * 已達方案上限：若有較高優先（持股、星號股）的代號沒在串流內，退訂一檔較低優先的換進來。
+     * 每次只換一檔，等回應後再換下一檔。
+     */
+    private fun prioritySwap(symbols: List<String>) {
+        if (!limitHit || focus.isNotBlank() && focus !in subscribed) return
+        val w = ws ?: return
+        synchronized(subscribed) {
+            if (awaiting != null) return
+            val want = prioritize(symbols).firstOrNull { it !in subscribed && rank(it) <= 2 } ?: return
+            val victim = subscribed.filter { rank(it) > rank(want) }.maxByOrNull { rank(it) } ?: return
+            subIds[victim]?.let { id -> w.send(JSONObject().put("event", "unsubscribe").put("data", JSONObject().put("id", id)).toString()) }
+                ?: w.send(JSONObject().put("event", "unsubscribe").put("data", JSONObject().put("channel", "aggregates").put("symbol", victim)).toString())
+            subscribed -= victim; subIds.remove(victim); rejected += victim
+            rejected.remove(want); queue.remove(want)
+            awaiting = want; awaitingAt = System.currentTimeMillis()
+            w.send(JSONObject().put("event", "subscribe").put("data", JSONObject().put("channel", "aggregates").put("symbol", want)).toString())
+        }
     }
 
     /** 已達訂閱上限而正在看的個股不在串流內：退訂一檔非持股、非焦點的代號換進來 */
@@ -151,8 +177,7 @@ object FugleStream {
         val w = ws ?: return
         synchronized(subscribed) {
             if (f in subscribed || f == awaiting) return
-            val held = AppState.holdings.map { it.symbol }.toSet()
-            val victim = subscribed.filter { it != f && it !in held }.lastOrNull() ?: subscribed.lastOrNull { it != f } ?: return
+            val victim = subscribed.filter { it != f }.maxByOrNull { rank(it) } ?: return
             subIds[victim]?.let { id -> w.send(JSONObject().put("event", "unsubscribe").put("data", JSONObject().put("id", id)).toString()) }
                 ?: w.send(JSONObject().put("event", "unsubscribe").put("data", JSONObject().put("channel", "aggregates").put("symbol", victim)).toString())
             subscribed -= victim; subIds.remove(victim); rejected += victim

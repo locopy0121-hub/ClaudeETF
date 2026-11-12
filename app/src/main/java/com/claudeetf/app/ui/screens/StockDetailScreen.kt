@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -196,6 +197,11 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar(q.symbol, onBack = { nav.popBackStack() }) {
             ScoreBadge(q)
+            // 星號股：富果即時串流（含成交量）優先於一般自選
+            if (q.market == Market.TW) IconButton(onClick = { AppState.toggleStar(q.symbol) }) {
+                Icon(Icons.Filled.Star, contentDescription = if (AppState.isStarred(q.symbol)) "取消星號" else "設為星號股",
+                    tint = if (AppState.isStarred(q.symbol)) androidx.compose.ui.graphics.Color(0xFFF2B544) else C.Muted.copy(alpha = 0.5f))
+            }
             if (!held) {
                 IconButton(onClick = { if (AppState.removeWatch(q.symbol)) nav.popBackStack() }) {
                     Icon(Icons.Filled.Close, contentDescription = "移出自選", tint = C.Muted)

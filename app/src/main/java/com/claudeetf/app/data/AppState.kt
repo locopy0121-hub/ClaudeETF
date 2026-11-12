@@ -320,6 +320,10 @@ object AppState {
 
     /** 持股、自選行情頁頂部的指數跑馬燈 */
     var tickerShow by mutableStateOf(true)
+    /** 星號股：富果即時串流（含成交量）的第二優先（持股之後） */
+    val starred = androidx.compose.runtime.mutableStateListOf<String>()
+    fun isStarred(symbol: String) = symbol in starred
+    fun toggleStar(symbol: String) { if (symbol in starred) starred.remove(symbol) else starred.add(symbol); save() }
     var tickerStyle by mutableStateOf(TickerStyle())
     fun updateTickerStyle(s: TickerStyle) { tickerStyle = s; save() }
     var tickerSymbols by mutableStateOf(listOf("^TWII", "^DJI", "^IXIC", "^GSPC", "^SOX"))
@@ -599,6 +603,7 @@ object AppState {
         monPnlStep = p.getFloat("monPnlStep", 0f).toDouble()
         monUs = p.getBoolean("monUs", false)
         tickerShow = p.getBoolean("tickerShow", true)
+        starred.clear(); starred.addAll(p.getString("starred", "")!!.split(",").filter { it.isNotBlank() })
         tickerStyle = TickerStyle.fromJson(p.getString("tickerStyle", null))
         tickerPinned = p.getBoolean("tickerPinned", true)
         tickerAuto = p.getBoolean("tickerAuto", true)
@@ -900,6 +905,7 @@ object AppState {
             .putBoolean("monOn", monOn).putInt("monInterval", monInterval).putFloat("monStepPct", monStepPct.toFloat())
             .putBoolean("monLimit", monLimit).putFloat("monPnlStep", monPnlStep.toFloat()).putBoolean("monUs", monUs)
             .putString("tickerStyle", tickerStyle.toJson())
+            .putString("starred", starred.joinToString(","))
             .putBoolean("tickerShow", tickerShow).putString("tickerSymbols", tickerSymbols.joinToString(","))
             .putBoolean("tickerPinned", tickerPinned).putBoolean("tickerAuto", tickerAuto).putBoolean("tickerSched", tickerSched)
             .putString("tickerWindows", tickerWindows.joinToString(",")).putBoolean("tickerWeekdays", tickerWeekdays)

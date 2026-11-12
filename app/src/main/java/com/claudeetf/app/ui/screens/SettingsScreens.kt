@@ -296,11 +296,15 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                             var showStates by remember { mutableStateOf(false) }
                             Text(if (showStates) "收合各檔狀態" else "查看各檔串流狀態 ›", color = C.Primary, fontSize = 12.sp,
                                 modifier = Modifier.clickable { showStates = !showStates }.padding(vertical = 4.dp))
+                            Label("串流（含即時成交量）優先順序：正在看的個股 → 持股 → 星號股 → 其他自選。免費方案約 5 檔，超過時自動把較低優先的換出；個股頁右上角 ★ 可設為星號股。")
                             if (showStates) {
-                                val syms = AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol }
+                                val held = AppState.holdings.map { it.symbol }.toSet()
+                                val syms = (AppState.holdings.map { it.symbol }.filter { AppState.marketOf(it) == com.claudeetf.app.data.Market.TW } +
+                                    AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol }).distinct()
+                                    .sortedBy { if (it in held) 0 else if (AppState.isStarred(it)) 1 else 2 }
                                 com.claudeetf.app.data.remote.FugleStream.symbolStates(syms).forEach { (s, st, ok) ->
                                     Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
-                                        Text(s + " " + (AppState.quote(s)?.name ?: ""), Modifier.weight(1f), color = C.Text, fontSize = 12.sp, maxLines = 1)
+                                        Text((if (s in held) "持 " else if (AppState.isStarred(s)) "★ " else "") + s + " " + (AppState.quote(s)?.name ?: ""), Modifier.weight(1f), color = C.Text, fontSize = 12.sp, maxLines = 1)
                                         Text(st, color = if (ok) C.Green else C.Muted, fontSize = 11.sp, maxLines = 1)
                                     }
                                 }
