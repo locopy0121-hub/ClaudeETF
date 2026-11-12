@@ -79,6 +79,7 @@ private fun monthsText(from: Long, to: Long): String {
     return if (m >= 24) Fmt.num(m / 12.0, 1) + " 年" else "$m 個月"
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun MarketDrawdownScreen(nav: NavController) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
