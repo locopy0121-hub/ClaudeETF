@@ -54,10 +54,9 @@ jobs:
           name: ClaudeETF-v1.${{ env.MINOR }}.${{ env.PATCH }}
           path: ${{ steps.apk.outputs.name }}
 
-      # 每次推送都會建置與測試；只有 commit 訊息含「[發布]」時才發布（約每五個階段發布一次）。
-      # 更新說明：彙整上次發布以來所有階段的 commit 訊息，去掉署名行與 [發布] 標記
+      # 每次推送都會建置、測試並發布線上更新。
+      # 更新說明：彙整上次發布以來的 commit 訊息，去掉署名行與 [發布] 標記
       - name: Release notes
-        if: contains(github.event.head_commit.message, '[發布]')
         run: |
           LAST=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           RANGE=${LAST:+$LAST..}HEAD
@@ -66,7 +65,6 @@ jobs:
 
       # 發布到 Releases，手機直接下載安裝；App 內線上更新也從這裡取得
       - uses: softprops/action-gh-release@v2
-        if: contains(github.event.head_commit.message, '[發布]')
         with:
           tag_name: v1.${{ env.MINOR }}.${{ env.PATCH }}
           name: ClaudeETF v1.${{ env.MINOR }}.${{ env.PATCH }}
