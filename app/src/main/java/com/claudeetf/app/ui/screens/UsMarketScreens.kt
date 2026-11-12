@@ -56,10 +56,18 @@ fun MarketScreen(nav: NavController) {
     val scope = rememberCoroutineScope()
     var board by remember { mutableStateOf<Load<MarketBoards.Board>>(Load.Loading) }
     var global by remember { mutableStateOf<Load<List<Pair<String, MarketBoards.GlobalItem>>>>(Load.Loading) }
+    var etfSnap by remember { mutableStateOf<Load<com.claudeetf.app.data.EtfMarket.Snapshot>>(Load.Loading) }
+    var etfSide by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(tab, reload) {
         if (tab == 1) com.claudeetf.app.data.TwPicks.start()
         if (tab == 2) {
+            com.claudeetf.app.data.TwPicks.startEtf()
+            etfSnap = Load.Loading
+            etfSnap = runCatching { com.claudeetf.app.data.EtfMarket.load(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            return@LaunchedEffect
+        }
+        if (tab == 3) {
             global = Load.Loading
             global = runCatching { MarketBoards.global(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
             return@LaunchedEffect
@@ -87,8 +95,10 @@ fun MarketScreen(nav: NavController) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { Segmented(listOf("美股", "台股", "全球"), tab, { tab = it; moverTab = 0 }) }
+            item { Segmented(listOf("美股", "台股", "ETF", "全球"), tab, { tab = it; moverTab = 0 }) }
             if (tab == 2) {
+                etfMarketSection(etfSnap, moverTab, { moverTab = it }, etfSide, { etfSide = it }, ::open)
+            } else if (tab == 3) {
                 when (val g = global) {
                     is Load.Loading -> item { Label("載入全球市場中…", Modifier.padding(vertical = 16.dp)) }
                     is Load.Err -> item { Text("全球市場載入失敗：" + g.message, color = C.Red, fontSize = 13.sp) }
@@ -148,7 +158,7 @@ fun MarketScreen(nav: NavController) {
                 marketChangesEntry(nav)
                 twPicksSection(pickSide, { pickSide = it }, pickBoard, { pickBoard = it }, ::open)
             }
-            if (tab != 2) boardSection(board, tab == 0, moverTab, { moverTab = it }, ::open)
+            if (tab <= 1) boardSection(board, tab == 0, moverTab, { moverTab = it }, ::open)
             item {
                 Text(
                     "財經行事曆 ›", color = C.Primary, fontSize = 14.sp,

@@ -112,6 +112,26 @@ object TwPicks {
     const val UNIVERSE_ETF = 80
     @Volatile var etfAll: List<Pick> = emptyList(); private set
     @Volatile private var etfAt = 0L
+    /** 市場頁 ETF 排行（看漲／看跌各 15 檔）與進度 */
+    var etfBulls by mutableStateOf<List<Pick>>(emptyList()); private set
+    var etfBears by mutableStateOf<List<Pick>>(emptyList()); private set
+    var etfRunning by mutableStateOf(false); private set
+    var etfDone by mutableIntStateOf(0); private set
+    var etfTotal by mutableIntStateOf(0); private set
+    var etfAtState by mutableLongStateOf(0L); private set
+
+    fun startEtf(force: Boolean = false) {
+        if (etfRunning) return
+        if (!force && etfAll.isNotEmpty() && !staleAt(etfAt)) {
+            if (etfBulls.isEmpty() && etfBears.isEmpty()) {
+                etfBulls = etfAll.filter { it.score > 0.3 }.sortedByDescending { it.score }.take(15)
+                etfBears = etfAll.filter { it.score < -0.3 }.sortedBy { it.score }.take(15)
+                etfAtState = etfAt
+            }
+            return
+        }
+        scope.launch { try { analyzeEtfs(force) } catch (_: Exception) { } finally { etfRunning = false } }
+    }
 
     /**
      * 台股 ETF 分析（盤後報表用）：上市櫃 ETF 依成交值取前 80 檔（成交 ≥ 200 張），
@@ -127,7 +147,7 @@ object TwPicks {
             }.sortedByDescending { (q, _) -> q.value ?: (q.price * (q.volume ?: 0.0)) }.take(UNIVERSE_ETF)
         }
         if (universe.isEmpty()) return etfAll
-        kotlinx.coroutines.withContext(Dispatchers.Main) { done = 0; total = universe.size }
+        kotlinx.coroutines.withContext(Dispatchers.Main) { etfRunning = true; etfDone = 0; etfTotal = universe.size }
         val gate = Semaphore(4)
         val cnt = AtomicInteger(0)
         val picks = kotlinx.coroutines.coroutineScope {
@@ -137,13 +157,18 @@ object TwPicks {
                         val q = Quote(rq.symbol, rq.name ?: rq.symbol, Market.TW, rq.price, rq.prevClose, isEtf = true,
                             source = if (isOtc) QuoteSource.TPEX else QuoteSource.TWSE)
                         val p = runCatching { score(q, isOtc) }.getOrNull()
-                        done = cnt.incrementAndGet()
+                        etfDone = cnt.incrementAndGet()
                         p
                     }
                 }
             }.awaitAll().filterNotNull()
         }
         if (picks.isNotEmpty()) { etfAll = picks; etfAt = System.currentTimeMillis() }
+        kotlinx.coroutines.withContext(Dispatchers.Main) {
+            etfBulls = etfAll.filter { it.score > 0.3 }.sortedByDescending { it.score }.take(15)
+            etfBears = etfAll.filter { it.score < -0.3 }.sortedBy { it.score }.take(15)
+            etfAtState = etfAt; etfRunning = false
+        }
         return etfAll
     }
 
