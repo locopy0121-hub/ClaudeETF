@@ -52,8 +52,8 @@ object TwPicks {
     }
 
     /** 分析檔數：上市、上櫃各取成交值前 N 名 */
-    const val UNIVERSE_TSE = 120
-    const val UNIVERSE_OTC = 100
+    val UNIVERSE_TSE get() = AnalysisConfig.cfg.tse
+    val UNIVERSE_OTC get() = AnalysisConfig.cfg.otc
 
     /** 上市 */
     var bulls by mutableStateOf<List<Pick>>(emptyList()); private set
@@ -109,7 +109,7 @@ object TwPicks {
     }
 
     /** ETF 分析檔數（成交值前 N 檔，排除槓桿 L／反向 R） */
-    const val UNIVERSE_ETF = 80
+    val UNIVERSE_ETF get() = AnalysisConfig.cfg.etf
     @Volatile var etfAll: List<Pick> = emptyList(); private set
     @Volatile private var etfAt = 0L
     /** 市場頁 ETF 排行（看漲／看跌各 15 檔）與進度 */
@@ -124,8 +124,8 @@ object TwPicks {
         if (etfRunning) return
         if (!force && etfAll.isNotEmpty() && !staleAt(etfAt)) {
             if (etfBulls.isEmpty() && etfBears.isEmpty()) {
-                etfBulls = etfAll.filter { it.score > 0.3 }.sortedByDescending { it.score }.take(15)
-                etfBears = etfAll.filter { it.score < -0.3 }.sortedBy { it.score }.take(15)
+                etfBulls = etfAll.filter { it.score > AnalysisConfig.cfg.etfThreshold }.sortedByDescending { it.score }.take(AnalysisConfig.cfg.etfTop)
+                etfBears = etfAll.filter { it.score < -AnalysisConfig.cfg.etfThreshold }.sortedBy { it.score }.take(AnalysisConfig.cfg.etfTop)
                 etfAtState = etfAt
             }
             return
@@ -143,7 +143,7 @@ object TwPicks {
             val tse = runCatching { TwseApi.latestAll() }.getOrDefault(emptyMap())
             val otc = runCatching { TpexApi.latestAll() }.getOrDefault(emptyMap())
             (tse.values.map { it to false } + otc.values.map { it to true }).filter { (q, _) ->
-                q.symbol.startsWith("00") && !q.symbol.endsWith("L") && !q.symbol.endsWith("R") && q.price > 0 && (q.volume ?: 0.0) >= 200_000
+                q.symbol.startsWith("00") && !q.symbol.endsWith("L") && !q.symbol.endsWith("R") && q.price > 0 && (q.volume ?: 0.0) >= AnalysisConfig.cfg.etfMinLots * 1000.0
             }.sortedByDescending { (q, _) -> q.value ?: (q.price * (q.volume ?: 0.0)) }.take(UNIVERSE_ETF)
         }
         if (universe.isEmpty()) return etfAll
@@ -165,8 +165,8 @@ object TwPicks {
         }
         if (picks.isNotEmpty()) { etfAll = picks; etfAt = System.currentTimeMillis() }
         kotlinx.coroutines.withContext(Dispatchers.Main) {
-            etfBulls = etfAll.filter { it.score > 0.3 }.sortedByDescending { it.score }.take(15)
-            etfBears = etfAll.filter { it.score < -0.3 }.sortedBy { it.score }.take(15)
+            etfBulls = etfAll.filter { it.score > AnalysisConfig.cfg.etfThreshold }.sortedByDescending { it.score }.take(AnalysisConfig.cfg.etfTop)
+            etfBears = etfAll.filter { it.score < -AnalysisConfig.cfg.etfThreshold }.sortedBy { it.score }.take(AnalysisConfig.cfg.etfTop)
             etfAtState = etfAt; etfRunning = false
         }
         return etfAll
@@ -202,7 +202,7 @@ object TwPicks {
             val otc = runCatching { TpexApi.latestAll() }.getOrDefault(emptyMap())
             val d = (tse.values.firstOrNull()?.date ?: otc.values.firstOrNull()?.date)?.toString() ?: ""
             fun top(m: Collection<com.claudeetf.app.data.remote.RemoteQuote>, n: Int) = m.filter { q ->
-                Regex("^[1-9]\\d{3}$").matches(q.symbol) && q.price >= 10 && (q.volume ?: 0.0) >= 1_000_000
+                Regex("^[1-9]\\d{3}$").matches(q.symbol) && q.price >= AnalysisConfig.cfg.minPrice && (q.volume ?: 0.0) >= AnalysisConfig.cfg.minLots * 1000.0
             }.sortedByDescending { q -> q.value ?: (q.price * (q.volume ?: 0.0)) }.take(n)
             (top(tse.values, UNIVERSE_TSE).map { it to false } + top(otc.values, UNIVERSE_OTC).map { it to true }) to d
         }
@@ -225,8 +225,8 @@ object TwPicks {
         }
         if (picks.isEmpty()) { error = "分析結果為空（K 線資料暫時無法取得）"; return }
         all = picks
-        fun bull(l: List<Pick>) = l.filter { it.score > 0.6 }.sortedByDescending { it.score }.take(10)
-        fun bear(l: List<Pick>) = l.filter { it.score < -0.6 }.sortedBy { it.score }.take(10)
+        fun bull(l: List<Pick>) = l.filter { it.score > AnalysisConfig.cfg.threshold }.sortedByDescending { it.score }.take(AnalysisConfig.cfg.top)
+        fun bear(l: List<Pick>) = l.filter { it.score < -AnalysisConfig.cfg.threshold }.sortedBy { it.score }.take(AnalysisConfig.cfg.top)
         val (o, t) = picks.partition { it.otc }
         bulls = bull(t); bears = bear(t); bullsOtc = bull(o); bearsOtc = bear(o)
         at = System.currentTimeMillis(); dataDate = date
@@ -256,8 +256,9 @@ object TwPicks {
         val tail = cs.takeLast(250)
         val band = PriceBand.compute(tail.map { it.t }, tail.map { it.c }, q.price, true)
         val zone = band?.zone ?: -1
-        var s = r.score + clamp((last / ma60 - 1) * 8, 1.5) + clamp(mom20 * 6, 1.0) + r.entry.level * 0.35
-        s += when (zone) { 0 -> 0.6; 1 -> 0.35; 4 -> -0.35; 5 -> -0.7; else -> 0.0 }
+        val w = AnalysisConfig.cfg
+        var s = r.score * w.wKline + clamp((last / ma60 - 1) * 8, 1.5) * w.wMa60 + clamp(mom20 * 6, 1.0) * w.wMom + r.entry.level * 0.35 * w.wEntry
+        s += (when (zone) { 0 -> 0.6; 1 -> 0.35; 4 -> -0.35; 5 -> -0.7; else -> 0.0 }) * w.wZone
         val reasons = ArrayList<String>()
         reasons += "K 線" + r.dir.label + "（" + r.entry.label + "）"
         reasons += "近 20 日 " + (if (mom20 >= 0) "+" else "") + "%.1f".format(mom20 * 100) + "%，" + (if (last >= ma60) "站上" else "跌破") + " 60 日均線"

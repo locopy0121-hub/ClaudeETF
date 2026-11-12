@@ -301,7 +301,7 @@ private fun WStep(label: String, v: Int, min: Int, max: Int, step: Int, unit: St
 
 /** 點一下調一格；按住不放連續調整（先停 0.4 秒，之後每 0.06 秒一格） */
 @Composable
-private fun RepeatBtn(t: String, enabled: Boolean, onStep: () -> Unit) {
+fun RepeatBtn(t: String, enabled: Boolean, onStep: () -> Unit) {
     val cur by rememberUpdatedState(onStep)
     val en by rememberUpdatedState(enabled)
     Text(t, color = if (enabled) C.Primary else C.Border, fontSize = 18.sp,

@@ -341,10 +341,11 @@ object EntryAdvisor {
         }
         if (src.isEmpty()) return null
 
-        // ---- 權重正規化：單一來源最多 18%（避免單一因素主導）
-        var ws = src.map { it.weight }
+        // ---- 權重正規化：各面向套用「分析參數」倍數；單一來源占比上限預設 18%（避免單一因素主導）
+        val acfg = AnalysisConfig.cfg
+        var ws = src.map { it.weight * acfg.groupWeight(it.group) }.map { if (it <= 0.0) 1e-6 else it }
         repeat(4) {
-            val sum = ws.sum(); val cap = sum * 0.18
+            val sum = ws.sum(); val cap = sum * acfg.cap
             ws = ws.map { minOf(it, cap) }
         }
         val wsum = ws.sum()
@@ -371,10 +372,10 @@ object EntryAdvisor {
         val kLevel = k?.entry?.level ?: 0
         val zone = inv?.band?.zone
         var level = when {
-            total >= 0.85 && agree >= 0.6 -> 2
-            total >= 0.3 -> 1
-            total > -0.3 -> 0
-            total > -0.85 -> -1
+            total >= acfg.strongTh && agree >= 0.6 -> 2
+            total >= acfg.entryTh -> 1
+            total > -acfg.entryTh -> 0
+            total > -acfg.strongTh -> -1
             else -> -2
         }
         if (level == 2 && kLevel <= -1) { level = 1; guards += "短線 K 線仍偏空，降為分批" }

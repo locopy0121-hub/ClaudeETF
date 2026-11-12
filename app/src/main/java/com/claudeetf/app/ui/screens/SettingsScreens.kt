@@ -628,6 +628,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
             }
             if (section == "monitor") item { MonitorSettings() }
             if (section == "kcond") item { KCondSettings() }
+            if (section == "analysis") item { AnalysisSettings() }
             if (section == "ai") item { AiSettings() }
             if (section == "widget") item { WidgetSettings() }
             if (section == "accounts") {
@@ -1172,6 +1173,7 @@ internal val SETTINGS_SECTIONS = listOf(
     ),
     "分析與提醒" to listOf(
         SettingsEntry("kcond", "🕯️", "K 棒分析條件"),
+        SettingsEntry("analysis", "🎛️", "分析參數（進階）"),
         SettingsEntry("ai", "🤖", "AI 個股體檢（Agnes／Claude…）"),
         SettingsEntry("alerts", "🔔", "提醒"),
         SettingsEntry("monitor", "📡", "盤中持股監控"),
@@ -1198,6 +1200,7 @@ private val SETTINGS_KEYWORDS = mapOf(
     "widget" to "小工具 桌面 widget 透明 字級",
     "pages" to "首頁 卡片 排序 跑馬燈 指數 時段 字條 加權指數 字級 字體",
     "stock" to "個股頁 進場 徽章 角色 OS 泡泡 動畫 先投 預計投入 金額 買賣點 K棒訊號 投資分析指數 位置 大小",
+    "analysis" to "分析 參數 進階 權重 門檻 推薦 排行 檔數 盤後報表 進場建議 上限 篩選 成交量",
     "kcond" to "K棒 條件 國安基金 RSI KD 均線 乖離 爆量 52週",
     "ai" to "AI Agnes Claude OpenAI Gemini DeepSeek 體檢 金鑰 API 模型 籌碼 估值 分析",
     "alerts" to "提醒 通知 價格 漲跌 除息 財報",
@@ -1234,6 +1237,7 @@ private fun SettingsMenu(nav: NavController, version: String) {
         "ledger" -> "交易紀錄 ${AppState.trades.size} 筆"
         "backup" -> "匯出、匯入與備份"
         "alerts" -> "${AppState.alerts.count { it.enabled }} 項開啟"
+        "analysis" -> if (com.claudeetf.app.data.AnalysisConfig.isDefault) "預設值" else "已自訂"
         "kcond" -> com.claudeetf.app.data.KlineConditions.enabled().size.let { if (it == 0) "未開啟" else "$it 項條件" } + (if (AppState.kcondNotify) " · 達成通知" else "")
         "widget" -> listOf("跟隨 App", "深色", "淺色", "透明")[AppState.widgetStyle.theme.coerceIn(0, 3)] + " · " +
             (if (AppState.widgetStyle.source == 0) "持股" else "自選") + " ${AppState.widgetStyle.rows} 列"

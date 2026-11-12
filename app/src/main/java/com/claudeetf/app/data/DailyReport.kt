@@ -201,8 +201,8 @@ object DailyReport {
         return null
     }
 
-    const val TOP = 25
-    const val TOP_ETF = 15
+    val TOP get() = AnalysisConfig.cfg.reportTop
+    val TOP_ETF get() = AnalysisConfig.cfg.reportEtfTop
     val HIST_LABELS = listOf("≤-9", "-9", "-6", "-3", "-1", "0", "+1", "+3", "+6", "+9", "≥9")
 
     var latest by mutableStateOf<Report?>(null); private set
