@@ -56,7 +56,11 @@ object DailyReport {
         val etfBulls: List<TwPicks.Pick> = emptyList(), val etfBears: List<TwPicks.Pick> = emptyList(), val etfAnalyzed: Int = 0,
         /** 前一份報表推薦名單到本日收盤的實際表現 */
         val perf: Perf? = null,
+        /** 三大法人：買賣超金額（億元，以收盤價估算）與外資、投信買超／賣超前十 */
+        val instDate: String = "", val foreignYi: Double = 0.0, val trustYi: Double = 0.0, val dealerYi: Double = 0.0,
+        val fBuy: List<Mover> = emptyList(), val fSell: List<Mover> = emptyList(), val tBuy: List<Mover> = emptyList(), val tSell: List<Mover> = emptyList(),
     ) {
+        val hasInst: Boolean get() = instDate.isNotEmpty()
         val hasEtf: Boolean get() = etfUp + etfDown + etfFlat > 0
         val moodLabel: String get() = when (mood) { 2 -> "強勢偏多"; 1 -> "偏多"; -1 -> "偏空"; -2 -> "弱勢偏空"; else -> "中性震盪" }
 
@@ -79,6 +83,9 @@ object DailyReport {
             .put("eb", JSONArray().apply { etfBulls.forEach { put(it.toJson()) } })
             .put("ex", JSONArray().apply { etfBears.forEach { put(it.toJson()) } })
             .put("en", etfAnalyzed).put("pf", perf?.toJson() ?: JSONObject.NULL)
+            .put("id", instDate).put("fy", foreignYi).put("ty", trustYi).put("dy", dealerYi)
+            .put("fb", JSONArray().apply { fBuy.forEach { put(it.toJson()) } }).put("fs", JSONArray().apply { fSell.forEach { put(it.toJson()) } })
+            .put("tb", JSONArray().apply { tBuy.forEach { put(it.toJson()) } }).put("ts", JSONArray().apply { tSell.forEach { put(it.toJson()) } })
 
         companion object {
             fun of(o: JSONObject): Report {
@@ -97,6 +104,8 @@ object DailyReport {
                     o.optInt("eu"), o.optInt("ed"), o.optInt("ef"), o.optDouble("ev", 0.0),
                     movers("eg"), movers("el"), movers("ea"), picks("eb"), picks("ex"), o.optInt("en"),
                     o.optJSONObject("pf")?.let { Perf.of(it) },
+                    o.optString("id"), o.optDouble("fy", 0.0), o.optDouble("ty", 0.0), o.optDouble("dy", 0.0),
+                    movers("fb"), movers("fs"), movers("tb"), movers("ts"),
                 )
             }
         }
@@ -293,6 +302,23 @@ object DailyReport {
                 Perf(pr.date, group(pr.bulls, nowPx, true), group(pr.bears, nowPx, false), group(pr.etfBulls, nowPx, true), group(pr.etfBears, nowPx, false), 0.0)
             }
 
+            // ---- 三大法人（證交所＋櫃買；金額以收盤價估算）
+            withContext(Dispatchers.Main) { stage = "取得三大法人買賣超…" }
+            val inst = withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.TwInstitutional.latest() }.getOrDefault(emptyMap()) }
+            val byCode = all.associateBy { it.first.symbol }
+            val instRows = inst.mapNotNull { (code, d) -> byCode[code]?.let { Triple(it, d, it.first.price) } }.filter { it.third > 0 }
+            fun yi(sh: Long, px: Double) = sh * px / 1e8
+            val foreignYi = instRows.sumOf { yi(it.second.foreign, it.third) }
+            val trustYi = instRows.sumOf { yi(it.second.trust, it.third) }
+            val dealerYi = instRows.sumOf { yi(it.second.dealer, it.third) }
+            fun mvNet(t: Triple<Pair<RemoteQuote, Boolean>, com.claudeetf.app.data.remote.TwInstitutional.Day, Double>, sh: Long) =
+                Mover(t.first.first.symbol, t.first.first.name ?: t.first.first.symbol, t.first.second, t.third, pct(t.first.first), yi(sh, t.third))
+            val fBuy = instRows.sortedByDescending { yi(it.second.foreign, it.third) }.take(10).filter { it.second.foreign > 0 }.map { mvNet(it, it.second.foreign) }
+            val fSell = instRows.sortedBy { yi(it.second.foreign, it.third) }.take(10).filter { it.second.foreign < 0 }.map { mvNet(it, it.second.foreign) }
+            val tBuy = instRows.sortedByDescending { yi(it.second.trust, it.third) }.take(10).filter { it.second.trust > 0 }.map { mvNet(it, it.second.trust) }
+            val tSell = instRows.sortedBy { yi(it.second.trust, it.third) }.take(10).filter { it.second.trust < 0 }.map { mvNet(it, it.second.trust) }
+            val instDate = inst.values.firstOrNull()?.date?.toString() ?: ""
+
             withContext(Dispatchers.Main) { stage = "取得指數與類股…" }
             val (ix, ox, sectors) = withContext(Dispatchers.IO) {
                 Triple(
@@ -351,11 +377,15 @@ object DailyReport {
                     (perf.bear?.let { x -> "；看跌名單平均 " + "%+.2f".format(x.avg) + "%、下跌比例 " + "%.0f".format(x.winRate) + "%" } ?: "") +
                     "（同期加權 " + "%+.2f".format(perf.market) + "%）。"
             }
+            if (instDate.isNotEmpty()) sum += "三大法人（" + instDate.substring(5).replace("-", "/") + "，以收盤價估算）：外資 " + "%+,.1f".format(foreignYi) + " 億、投信 " +
+                "%+,.1f".format(trustYi) + " 億、自營商 " + "%+,.1f".format(dealerYi) + " 億" +
+                (fBuy.take(3).takeIf { it.isNotEmpty() }?.let { l -> "；外資買超前三：" + l.joinToString("、") { it.name } } ?: "") + "。"
             sum += "市場氣氛：" + when (mood) { 2 -> "強勢偏多"; 1 -> "偏多"; -1 -> "偏空"; -2 -> "弱勢偏空"; else -> "中性震盪" } + "。"
 
             val r = Report(date, System.currentTimeMillis(), twii, twii - twPrev, twPct, ixs.takeLast(60), otcIdx, otcPct,
                 up, down, flat, limitUp, limitDown, tseValue, otcValue, hist, sec, gainers, losers, actives, bulls, bears, picks.size, mood, sum,
-                etfUp, etfDown, etfFlat, etfValue, etfGainers, etfLosers, etfActives, etfBulls, etfBears, etfPicks.size, perf)
+                etfUp, etfDown, etfFlat, etfValue, etfGainers, etfLosers, etfActives, etfBulls, etfBears, etfPicks.size, perf,
+                instDate, foreignYi, trustYi, dealerYi, fBuy, fSell, tBuy, tSell)
             withContext(Dispatchers.IO) {
                 runCatching { File(dir, "$date.json").writeText(r.toJson().toString()) }
                 // 保留 120 份

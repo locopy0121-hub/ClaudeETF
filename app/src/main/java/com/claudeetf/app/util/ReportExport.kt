@@ -174,6 +174,31 @@ object ReportExport {
                 drawText(DailyReport.HIST_LABELS.getOrElse(i) { "" }, x0 + i * bw + bw / 2, ht + hh + 30f, paint(20f, MUTED, align = Paint.Align.CENTER))
             }
         }
+        // ---- 三大法人
+        if (r.hasInst) {
+            out += Block(330f + 10 * 46f) { y ->
+                drawText("三大法人買賣超（億元，收盤價估算）", x0, y + 56f, paint(34f, TEXT, bold = true))
+                val mx = listOf(r.foreignYi, r.trustYi, r.dealerYi).maxOf { abs(it) }.takeIf { it > 0 } ?: 1.0
+                listOf("外資" to r.foreignYi, "投信" to r.trustYi, "自營商" to r.dealerYi).forEachIndexed { i, (n, v) ->
+                    val yy = y + 96f + i * 48f
+                    drawText(n, x0, yy + 22f, paint(26f, TEXT))
+                    val bx = x0 + 120f; val bw = inner - 120f - 170f; val mid = bx + bw / 2
+                    val len = (bw / 2 * abs(v) / mx).toFloat()
+                    if (v >= 0) drawRect(mid, yy + 4f, mid + len, yy + 28f, fill(up(v))) else drawRect(mid - len, yy + 4f, mid, yy + 28f, fill(up(v)))
+                    drawText("%+,.1f".format(v), x0 + inner, yy + 24f, paint(24f, up(v), mono = true, align = Paint.Align.RIGHT))
+                }
+                val cw = inner / 2
+                listOf("外資買超" to r.fBuy, "外資賣超" to r.fSell).forEachIndexed { k, (t, l) ->
+                    val cx = x0 + k * cw
+                    drawText(t, cx, y + 280f, paint(26f, MUTED, bold = true))
+                    l.take(10).forEachIndexed { i, m ->
+                        val yy = y + 322f + i * 46f
+                        drawText(fit(m.name, paint(24f, TEXT), cw - 170f), cx, yy, paint(24f, TEXT))
+                        drawText("%+,.2f".format(m.valueYi) + "億", cx + cw - 20f, yy, paint(22f, up(m.valueYi), mono = true, align = Paint.Align.RIGHT))
+                    }
+                }
+            }
+        }
         // ---- 類股
         if (r.sectors.isNotEmpty()) {
             val list = if (r.sectors.size <= 16) r.sectors else r.sectors.take(8) + r.sectors.takeLast(8)

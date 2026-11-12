@@ -104,6 +104,7 @@ fun DailyReportScreen(nav: NavController) {
     var pickSide by remember { mutableIntStateOf(0) }
     var moverTab by remember { mutableIntStateOf(0) }
     var etfMover by remember { mutableIntStateOf(0) }
+    var instTab by remember { mutableIntStateOf(0) }
     var etfSide by remember { mutableIntStateOf(0) }
     var showAll by remember { mutableStateOf(false) }
     var autoOn by remember { mutableStateOf(DailyReport.autoOn) }
@@ -237,6 +238,26 @@ fun DailyReportScreen(nav: NavController) {
                         Text("漲跌幅分布（個股與 ETF，%）", color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
                         Histogram(r.hist, Modifier.fillMaxWidth().height(120.dp).padding(top = 6.dp))
                         Row(Modifier.fillMaxWidth()) { DailyReport.HIST_LABELS.forEach { Text(it, Modifier.weight(1f), color = C.Muted, fontSize = 9.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1) } }
+                    }
+                }
+                // ---- 三大法人
+                if (r.hasInst) item {
+                    Card(padding = 14.dp) {
+                        Text("三大法人買賣超", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Label(dateShort(r.instDate) + " · 上市櫃合計，金額以收盤價估算（億元）")
+                        val mx = listOf(r.foreignYi, r.trustYi, r.dealerYi).maxOf { kotlin.math.abs(it) }.takeIf { it > 0 } ?: 1.0
+                        listOf("外資" to r.foreignYi, "投信" to r.trustYi, "自營商" to r.dealerYi).forEach { (n, v) -> InstBar(n, v, mx) }
+                        Segmented(listOf("外資買超", "外資賣超", "投信買超", "投信賣超"), instTab, { instTab = it })
+                        (when (instTab) { 0 -> r.fBuy; 1 -> r.fSell; 2 -> r.tBuy; else -> r.tSell }).forEachIndexed { i, m ->
+                            Row(Modifier.fillMaxWidth().clickable { open(m.symbol) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("${i + 1}", Modifier.width(22.dp), color = C.Muted, fontSize = 12.sp)
+                                Column(Modifier.weight(1f)) {
+                                    Text(m.name, color = C.Text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Label(m.symbol + " · " + (if (m.otc) "櫃" else "市") + " · " + Fmt.price(m.price) + "（" + "%+.2f".format(m.pct) + "%）")
+                                }
+                                NumText("%+,.2f".format(m.valueYi) + " 億", 13.sp, Trend.fg(m.valueYi), FontWeight.Bold)
+                            }
+                        }
                     }
                 }
                 // ---- 類股
@@ -582,4 +603,20 @@ fun DailyRankChip(symbol: String, small: Boolean = false) {
         },
         confirmButton = { Text("關閉", color = C.Primary, modifier = Modifier.clickable { info = false }.padding(10.dp)) },
     )
+}
+
+
+@Composable
+private fun InstBar(name: String, v: Double, mx: Double) {
+    val c = Trend.fg(v)
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(name, Modifier.width(56.dp), color = C.Text, fontSize = 13.sp)
+        BoxWithConstraints(Modifier.weight(1f).height(12.dp)) {
+            val half = maxWidth / 2
+            val len = half * (kotlin.math.abs(v) / mx).toFloat().coerceIn(0f, 1f)
+            Box(Modifier.offset(x = if (v >= 0) half else half - len).width(len).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(c))
+            Box(Modifier.offset(x = half).width(1.dp).fillMaxHeight().background(C.Border))
+        }
+        Text("%+,.1f".format(v) + " 億", Modifier.width(84.dp), color = c, fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+    }
 }
