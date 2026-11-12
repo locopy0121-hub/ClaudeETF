@@ -65,6 +65,7 @@ object Routes {
     const val SEARCH = "search"
     const val ERRORS = "errors"
     const val MANUAL = "manual"
+    const val DATA_HEALTH = "data_health"
     const val REBALANCE = "rebalance"
     const val COMPARE = "compare"
 

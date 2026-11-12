@@ -642,9 +642,11 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 item { UpdateCard() }
                 item { ReleaseHistoryCard() }
                 item { ManualCard(nav) }
+                item { SettingRow("資料來源診斷", "逐一檢查各資料來源 ›") { nav.navigate(Routes.DATA_HEALTH) } }
                 item { SettingRow("錯誤紀錄", listOfNotNull(if (com.claudeetf.app.util.CrashLog.read(context) != null) "有閃退" else null, com.claudeetf.app.util.ErrorLog.entries.size.takeIf { it > 0 }?.let { "載入錯誤 $it" }).joinToString(" · ").ifBlank { "無" } + " ›") { nav.navigate(Routes.ERRORS) } }
                 item { SettingRow("重新看使用引導", "›") { nav.navigate(Routes.WELCOME) } }
             }
+            if (section == "source") item { SettingRow("資料來源診斷", "檢查各來源是否正常、資料日期 ›") { nav.navigate(Routes.DATA_HEALTH) } }
             if (section == "source") item { Label("金鑰以手機安全晶片加密保存，不會上傳到其他地方。", Modifier.padding(4.dp)) }
         }
     }
@@ -1207,7 +1209,7 @@ private val SETTINGS_KEYWORDS = mapOf(
     "backup" to "備份 匯入 匯出 雲端",
     "security" to "安全 鎖 指紋 密碼 隱藏金額",
     "chat" to "群聊 聊天",
-    "about" to "使用說明書 操作說明書 說明書 手冊 PDF 下載 關於 更新 版本 線上更新",
+    "about" to "資料來源診斷 診斷 錯誤紀錄 使用說明書 操作說明書 說明書 手冊 PDF 下載 關於 更新 版本 線上更新",
 )
 
 
