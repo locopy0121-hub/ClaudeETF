@@ -86,12 +86,12 @@ object AiAnalysis {
         val local = StockMetrics.localReport(m)
         val cf = cacheFile(sym, m.date)
         if (!force) withContext(Dispatchers.IO) { runCatching { StockMetrics.StockAnalysisReport.parse(cf.readText(), "ai") }.getOrNull() }?.let { cached ->
-            withContext(Dispatchers.Main) { states[sym] = State(m, cached, null, false) }
+            withContext(Dispatchers.Main) { states[sym] = State(m, cached, null, false); EntryAdvisor.applyAi(sym, cached) }
             return
         }
         val chain = AiProviders.chain()
         if (!useAi || chain.isEmpty()) {
-            withContext(Dispatchers.Main) { states[sym] = State(m, local, if (chain.isEmpty()) "未設定 AI 服務金鑰，顯示本地規則體檢" else null, false) }
+            withContext(Dispatchers.Main) { states[sym] = State(m, local, if (chain.isEmpty()) "未設定 AI 服務金鑰，顯示本地規則體檢" else null, false); EntryAdvisor.applyAi(sym, local) }
             return
         }
         val errors = ArrayList<String>()
@@ -108,6 +108,7 @@ object AiAnalysis {
                 dir().listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 7 * 86_400_000L }?.forEach { it.delete() }
                 State(m, rep, if (errors.isNotEmpty()) "已改用備援服務（" + errors.joinToString("；") + "）" else null, false)
             } else State(m, local, "AI 解讀失敗（" + errors.joinToString("；") + "），改顯示本地規則體檢", false)
+            EntryAdvisor.applyAi(sym, states[sym]?.report)
         }
     }
 

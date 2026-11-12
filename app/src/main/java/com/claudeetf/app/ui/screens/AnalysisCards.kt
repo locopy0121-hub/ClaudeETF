@@ -537,7 +537,7 @@ fun EntryAdviceBody(a: com.claudeetf.app.data.EntryAdvisor.Advice, compact: Bool
 
 /** 個股頁 › 分析：綜合進場建議卡（整合 K 線、投資分析、光譜、分析師、籌碼、波動等所有來源） */
 @Composable
-fun EntryAdviceCard(q0: Quote, onKline: () -> Unit = {}, onBand: () -> Unit = {}) {
+fun EntryAdviceCard(q0: Quote, onKline: () -> Unit = {}, onBand: () -> Unit = {}, onAi: () -> Unit = {}) {
     val q = AppState.quote(q0.symbol) ?: q0
     val a = adviceFor(q, full = true)
     var busy by remember { mutableStateOf(false) }
@@ -560,6 +560,18 @@ fun EntryAdviceCard(q0: Quote, onKline: () -> Unit = {}, onBand: () -> Unit = {}
                 }.padding(6.dp))
         }
         if (a == null) { Label("正在整合 K 線、投資分析、光譜、分析師、籌碼與波動資料…", Modifier.padding(top = 8.dp)); return@Card }
+        // 與 AI 體檢比對
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable(onClick = onAi).padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            val cs = a.consensus
+            Column(Modifier.weight(1f)) {
+                Text(if (cs == null) "尚未與 AI 體檢比對" else "已與" + cs.aiSource + "比對：" + cs.agreement, color = if (cs?.agreement == "分歧") Color(0xFFF2B544) else C.Text,
+                    fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(cs?.let { "系統「" + it.sysLabel + "」× " + it.aiSource + "「" + it.aiSignal + "」→ 最終「" + a.entry.label + "」" } ?: "AI 體檢完成後，進場建議會依兩者比對結果調整",
+                    color = C.Text2, fontSize = 12.sp)
+            }
+            Text("AI ›", color = C.Primary, fontSize = 13.sp)
+        }
         EntryAdviceBody(a)
         // K 棒策略的明確進場時機（普通股／ETF 分流引擎）
         com.claudeetf.app.data.KlineAnalysis.latestDaily[q.symbol]?.let { k ->

@@ -184,3 +184,42 @@ fun AiSettings() {
     Label("金鑰以手機安全晶片加密保存。同一檔同一交易日只呼叫一次（結果快取），按「AI 重新分析」才會再呼叫。Claude 啟用 Prompt Caching；其他服務使用 OpenAI 相容介面。", Modifier.padding(top = 8.dp))
     }
 }
+
+
+/** 個股頁 › AI：系統綜合建議 × AI 體檢 比對結果（最終進場建議） */
+@Composable
+fun ConsensusCard(q0: Quote) {
+    val q = AppState.quote(q0.symbol) ?: q0
+    val a = adviceFor(q, full = true)
+    val st = AiAnalysis.states[q.symbol]
+    Card(padding = 14.dp) {
+        Text("進場建議比對", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Label("App 系統分析（K 線、光譜、估值、籌碼、波動等 15 項以上指標）與 AI 體檢兩者比對，方向一致才給進場建議。")
+        val cs = a?.consensus
+        if (a == null || cs == null) {
+            Label(if (st?.loading == true || a == null) "分析中…" else "AI 體檢尚未完成", Modifier.padding(top = 8.dp)); return@Card
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(10.dp)) {
+                Label("App 系統")
+                Text(cs.sysLabel, color = entryColor(cs.sysLevel), fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Label("先投 ${cs.sysRatio}%")
+            }
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(10.dp)) {
+                Label(cs.aiSource.substringBefore("（"))
+                Text(cs.aiSignal, color = entryColor(cs.aiLevel), fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Label("信心 ${cs.aiConfidence}")
+            }
+        }
+        val agreeColor = when (cs.agreement) { "分歧" -> Color(0xFFF2B544); "一致偏多" -> Trend.fg(1.0); "一致偏空" -> Trend.fg(-1.0); else -> C.Text2 }
+        Text("比對：" + cs.agreement, color = agreeColor, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("最終建議", color = C.Text, fontSize = 13.sp); HGap(8.dp)
+            EntryTag(a.entry); HGap(8.dp)
+            Text("先投 ${a.ratio}%", color = entryColor(a.entry.level), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(cs.note, color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 6.dp))
+        if (cs.aiVerdict.isNotBlank()) Text(cs.aiSource + "：" + cs.aiVerdict, color = C.Muted, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 4.dp))
+        Label("比對規則：兩者偏多取較保守的等級；一方中性則觀望待確認、比例減半；方向相反視為分歧，暫以保守為主。持股卡片、自選、行情牆與進場徽章都使用比對後的最終建議。", Modifier.padding(top = 6.dp))
+    }
+}

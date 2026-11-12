@@ -45,7 +45,72 @@ object EntryAdvisor {
         val plan: KlineAnalysis.Plan?,
         val complete: Boolean,
         val at: Long,
+        /** 與 AI（或規則體檢）比對後的結果；null＝尚未比對 */
+        val consensus: Consensus? = null,
     )
+
+    /** 系統綜合建議 × AI 體檢 比對 */
+    data class Consensus(
+        val sysLevel: Int, val sysLabel: String, val sysRatio: Int,
+        val aiLevel: Int, val aiSignal: String, val aiConfidence: Int, val aiSource: String, val aiVerdict: String,
+        /** 一致偏多／一致偏空／一致觀望／部分一致／分歧 */
+        val agreement: String, val note: String,
+    )
+
+    /** 系統計算的原始建議（比對前），AI 結果更新時用來重新比對 */
+    private val bases = java.util.concurrent.ConcurrentHashMap<String, Advice>()
+
+    /** AI 整體訊號 → 等級（信心低於 50 往中性靠一級） */
+    fun aiLevel(signal: String, confidence: Int): Int {
+        val l = when (signal) { "強勢多頭" -> 2; "多頭回檔" -> 1; "轉弱防守" -> -1; "偏空警示" -> -2; else -> 0 }
+        return if (confidence < 50 && l != 0) l - Integer.signum(l) else l
+    }
+
+    /**
+     * 比對規則（兩者都同意才給進場）：
+     *   兩者偏多 → 取較保守的等級；兩者偏空 → 取較偏空的等級，不投入；
+     *   一方偏多、一方中性 → 觀望待確認，比例減半；一方偏空、一方中性 → 暫不進場；
+     *   方向相反 → 分歧，系統偏多時觀望、系統偏空時暫不進場，比例大幅降低。
+     */
+    fun reconcile(base: Advice, rep: StockMetrics.StockAnalysisReport?): Advice {
+        if (rep == null) return base
+        val s = base.entry.level
+        val a = aiLevel(rep.overallSignal, rep.confidence)
+        val src = if (rep.source == "local") "規則體檢" else ("AI（" + rep.model.ifBlank { "AI" } + "）")
+        val (lv, label, ratio, agree) = when {
+            s >= 1 && a >= 1 -> Quad(minOf(s, a), if (minOf(s, a) >= 2) "建議進場" else "可分批進場",
+                (base.ratio * if (a >= s) 1.0 else 0.8).toInt(), "一致偏多")
+            s <= -1 && a <= -1 -> Quad(minOf(s, a), if (minOf(s, a) <= -2) "不宜進場" else "暫不進場", 0, "一致偏空")
+            s == 0 && a == 0 -> Quad(0, base.entry.label, base.ratio, "一致觀望")
+            s >= 1 && a == 0 -> Quad(0, "觀望待確認", base.ratio / 2, "部分一致")
+            s == 0 && a >= 1 -> Quad(0, base.entry.label.takeIf { it != "觀望" } ?: "觀望待確認", base.ratio, "部分一致")
+            s <= -1 && a == 0 || s == 0 && a <= -1 -> Quad(-1, "暫不進場", minOf(base.ratio, 5), "部分一致")
+            s >= 1 && a <= -1 -> Quad(0, "分歧觀望", minOf(base.ratio * 3 / 10, 10), "分歧")
+            else -> Quad(-1, "暫不進場（分歧）", minOf(base.ratio, 5), "分歧")
+        }
+        val r = (Math.round(ratio / 5.0) * 5).toInt().coerceIn(0, 100)
+        val note = when (agree) {
+            "一致偏多" -> "系統與$src 都偏多，取較保守的「$label」。"
+            "一致偏空" -> "系統與$src 都偏空，不建議投入。"
+            "一致觀望" -> "系統與$src 都認為方向未明。"
+            "分歧" -> "系統「" + base.entry.label + "」與$src「" + rep.overallSignal + "」方向相反，暫以保守為主。"
+            else -> "系統「" + base.entry.label + "」、$src「" + rep.overallSignal + "」，待兩者一致再加碼。"
+        }
+        val tip = when { lv >= 1 -> base.entry.holderTip; lv == 0 -> "續抱觀察"; else -> "暫不加碼" }
+        return base.copy(
+            entry = KlineAnalysis.Entry(label, lv, note + " " + base.entry.reason, tip),
+            ratio = r,
+            consensus = Consensus(s, base.entry.label, base.ratio, a, rep.overallSignal, rep.confidence, src, rep.verdict, agree, note),
+        )
+    }
+
+    private data class Quad(val a: Int, val b: String, val c: Int, val d: String)
+
+    /** AI 體檢結果出爐（或更新）時重新比對 */
+    fun applyAi(symbol: String, rep: StockMetrics.StockAnalysisReport?) {
+        val b = bases[symbol] ?: return
+        results[symbol] = reconcile(b, rep)
+    }
 
     val results = androidx.compose.runtime.mutableStateMapOf<String, Advice>()
 
@@ -89,7 +154,8 @@ object EntryAdvisor {
         val dv = divs[q.symbol]?.takeIf { System.currentTimeMillis() - it.first < 86_400_000L }?.second
             ?: if (full && !(inv?.etf != null || k?.etf == true)) runCatching { StockInfoRepo.dividends(q) }.getOrNull()?.also { divs[q.symbol] = System.currentTimeMillis() to it } else null
         val a = withContext(Dispatchers.Default) { compute(q, k, kw, inv, mac, dv) } ?: return results[q.symbol]
-        withContext(Dispatchers.Main) { results[q.symbol] = a }
+        bases[q.symbol] = a
+        withContext(Dispatchers.Main) { results[q.symbol] = reconcile(a, AiAnalysis.states[q.symbol]?.report) }
         return a
     }
 
