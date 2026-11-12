@@ -3,8 +3,6 @@ package com.claudeetf.app.data
 import android.content.Context
 import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -100,14 +98,30 @@ object AiAnalysis {
         var rep: StockMetrics.StockAnalysisReport? = null
         val n = votes()
         for (p in chain) {
-            // 同一份數據平行分析 n 次取共識（AI 每次回答會有差異，多數決＋信心取中位數讓結果穩定）
-            val rs = withContext(Dispatchers.IO) {
-                kotlinx.coroutines.coroutineScope { (1..n).map { async { runCatching { call(p, m) } } }.awaitAll() }
+            // 同一份數據依序分析 n 次取共識（AI 每次回答會有差異，多數決＋信心取中位數讓結果穩定）。
+            // 依序並間隔呼叫，避免免費方案的頻率上限；遇到上限（429）時先等待重試，已有結果就停止追加。
+            val limited = (rateLimitedUntil[p.id] ?: 0L) > System.currentTimeMillis()
+            val want = if (limited) 1 else n
+            val ok = ArrayList<StockMetrics.StockAnalysisReport>()
+            var lastErr: Throwable? = null
+            withContext(Dispatchers.IO) {
+                var i = 0; var retry = 0
+                while (i < want) {
+                    if (i > 0 || retry > 0) kotlinx.coroutines.delay(if (retry > 0) 4_000L * retry else 1_200L)
+                    val r = runCatching { call(p, m) }
+                    val e = r.exceptionOrNull()
+                    if (e == null) { ok += r.getOrThrow(); i++; retry = 0; continue }
+                    lastErr = e
+                    if (isRateLimit(e)) {
+                        rateLimitedUntil[p.id] = System.currentTimeMillis() + 10 * 60_000L
+                        if (ok.isNotEmpty() || retry >= 2) break
+                        retry++
+                    } else { if (ok.isNotEmpty()) break; i++ }
+                }
             }
-            val ok = rs.mapNotNull { it.getOrNull() }
-            rep = consensus(ok, n)
+            rep = consensus(ok, want)
             if (rep != null) break
-            errors += p.name + "：" + (rs.firstNotNullOfOrNull { it.exceptionOrNull() }?.message ?: "未知錯誤")
+            errors += p.name + "：" + friendlyAi(lastErr)
             com.claudeetf.app.util.ErrorLog.record("AI 體檢", sym + " " + errors.last())
         }
         withContext(Dispatchers.Main) {
@@ -115,8 +129,37 @@ object AiAnalysis {
                 runCatching { cf.writeText(rep.toJson().toString()) }
                 dir().listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 7 * 86_400_000L }?.forEach { it.delete() }
                 State(m, rep, if (errors.isNotEmpty()) "已改用備援服務（" + errors.joinToString("；") + "）" else null, false)
-            } else State(m, local, "AI 解讀失敗（" + errors.joinToString("；") + "），改顯示本地規則體檢", false)
+            } else {
+                // 失敗時優先沿用最近一次的 AI 結果（7 天內），沒有才用本地規則體檢
+                val prev = runCatching {
+                    dir().listFiles()?.filter { it.name.startsWith(sym.replace(Regex("[^A-Za-z0-9]"), "_") + "_") }?.maxByOrNull { it.lastModified() }
+                        ?.let { StockMetrics.StockAnalysisReport.parse(it.readText(), "ai") }
+                }.getOrNull()
+                if (prev != null) State(m, prev, "AI 暫時無法分析（" + errors.joinToString("；") + "），沿用上次的 AI 結果", false)
+                else State(m, local, "AI 暫時無法分析（" + errors.joinToString("；") + "），改顯示本地規則體檢", false)
+            }
             EntryAdvisor.applyAi(sym, states[sym]?.report)
+        }
+    }
+
+    /** 被頻率上限擋下的服務：10 分鐘內每次只呼叫 1 次 */
+    private val rateLimitedUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun isRateLimit(e: Throwable) = e.message?.let { it.startsWith("HTTP 429") || it.contains("rate limit", true) } == true
+
+    /** AI 服務錯誤轉成中文說明 */
+    fun friendlyAi(e: Throwable?): String {
+        val msg = e?.message ?: return "未知錯誤"
+        return when {
+            isRateLimit(e) -> "請求太頻繁，已達服務的頻率上限（免費方案限制較嚴），請稍後再試"
+            msg.startsWith("HTTP 401") -> "金鑰無效或已過期，請到設置重新輸入"
+            msg.startsWith("HTTP 402") || msg.contains("quota", true) || msg.contains("insufficient", true) -> "額度不足，請確認帳戶餘額或方案"
+            msg.startsWith("HTTP 403") -> "沒有使用此模型的權限"
+            msg.startsWith("HTTP 404") -> "找不到模型或網址，請確認模型名稱"
+            msg.startsWith("HTTP 5") -> "服務暫時故障，稍後再試"
+            e is java.net.SocketTimeoutException || msg.contains("timeout", true) -> "連線逾時，稍後再試"
+            e is java.net.UnknownHostException -> "無法連線（請檢查網路）"
+            else -> msg.take(80)
         }
     }
 
@@ -207,7 +250,7 @@ object AiAnalysis {
             client.newCall(req).execute().use { r ->
                 val t = r.body?.string().orEmpty()
                 if (r.isSuccessful) "連線成功（$model）"
-                else "失敗 HTTP ${r.code}：" + (runCatching { JSONObject(t).optJSONObject("error")?.optString("message") }.getOrNull() ?: t.take(120))
+                else "失敗：" + friendlyAi(IllegalStateException("HTTP ${r.code} " + (runCatching { JSONObject(t).optJSONObject("error")?.optString("message") }.getOrNull() ?: t.take(120))))
             }
         }.getOrElse { "失敗：" + (it.message ?: it.javaClass.simpleName) }
     }
