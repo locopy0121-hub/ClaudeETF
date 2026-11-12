@@ -171,6 +171,49 @@ fun DrawdownCard(q0: Quote) {
                 }
             }
         }
+        // 跌深進場回測
+        val dips = remember(stats) { hist?.let { h ->
+            val closes = if (withDiv && h.adjCloses.size == h.closes.size) h.adjCloses else h.closes
+            Drawdown.dipBacktest(h.times, closes.map { it.toDouble() })
+        } ?: emptyList() }
+        if (dips.isNotEmpty()) {
+            Text("跌深進場回測", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
+            Label("每一波自前高跌到門檻的第一天以收盤價買進，之後的表現（" + (if (withDiv) "含息" else "未含息") + "）：")
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                Label("跌幅", Modifier.width(52.dp)); Label("次數", Modifier.width(36.dp)); Label("1 年後", Modifier.weight(1f)); Label("3 年後", Modifier.weight(1f)); Label("回前高", Modifier.width(64.dp))
+            }
+            Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(C.Border))
+            dips.forEach { d ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
+                    Text("≥ ${d.threshold}%", Modifier.width(52.dp), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    NumText(d.count.toString(), 14.sp, C.Primary, FontWeight.Bold, modifier = Modifier.width(36.dp))
+                    Column(Modifier.weight(1f)) {
+                        if (d.avg1y == null) Label("樣本不足") else {
+                            NumText("%+.1f".format(d.avg1y) + "%", 13.sp, Trend.fg(d.avg1y), FontWeight.Bold)
+                            Label("勝率 " + Fmt.num(d.win1y ?: 0.0, 0) + "%（${d.n1y}）")
+                        }
+                    }
+                    Column(Modifier.weight(1f)) {
+                        if (d.avg3y == null) Label("樣本不足") else {
+                            NumText("%+.1f".format(d.avg3y) + "%", 13.sp, Trend.fg(d.avg3y), FontWeight.Bold)
+                            Label("勝率 " + Fmt.num(d.win3y ?: 0.0, 0) + "%（${d.n3y}）")
+                        }
+                    }
+                    Column(Modifier.width(64.dp)) {
+                        Text(d.avgRecoverYears?.let { if (it < 1) Fmt.num(it * 12, 0) + " 個月" else Fmt.num(it, 1) + " 年" } ?: "—", color = C.Text, fontSize = 12.sp)
+                        Label("${d.recovered}/${d.count} 已回")
+                    }
+                }
+                d.avgFurther?.let { Label("　進場後平均再跌 " + Fmt.num(it, 1) + "%", Modifier.padding(start = 52.dp)) }
+            }
+            s.waves.firstOrNull { it.ongoing }?.let { w ->
+                Drawdown.deeperShare(s.waves, w.depth)?.let { pct ->
+                    Text("目前自前高 " + Fmt.num(w.depth, 1) + "%：歷史上 " + Fmt.num(pct, 0) + "% 的波段跌得比現在更深",
+                        color = Trend.fg(-1.0), fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+            Label("勝率＝持有期滿仍為正報酬的比例，括號為樣本數；最近的事件尚未滿 1／3 年不計入。歷史回測不代表未來表現。", Modifier.padding(top = 4.dp))
+        }
         Label("波段＝自前波高點跌至低點、回到前高為一波；長空頭中若自低點翻倍後又下跌 20% 以上，另計為新的一波（如網路泡沫與 2008 金融海嘯分開）。資料來源 Yahoo Finance（已還原分割）；歷史統計不代表未來表現。",
             Modifier.padding(top = 10.dp))
     }
