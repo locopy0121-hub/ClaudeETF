@@ -559,13 +559,14 @@ private fun TrendCard(upTo: String) {
 
 /** 個股標籤列：最新盤後報表的排行（例如「看漲 14」）；點一下看完整解析 */
 @Composable
-fun DailyRankChip(symbol: String) {
+fun DailyRankChip(symbol: String, small: Boolean = false) {
     val rk = DailyReport.rankOf(symbol) ?: return
     var info by remember { mutableStateOf(false) }
     val c = Trend.fg(if (rk.bull) 1.0 else -1.0)
-    Text((if (rk.bull) "看漲 " else "看跌 ") + rk.rank, color = c, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(c.copy(alpha = 0.15f))
-            .border(1.dp, c.copy(alpha = 0.6f), RoundedCornerShape(8.dp)).clickable { info = true }.padding(horizontal = 10.dp, vertical = 5.dp))
+    Text((if (rk.bull) "看漲 " else "看跌 ") + rk.rank, color = c, fontSize = if (small) 11.sp else 13.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(if (small) 5.dp else 8.dp)).background(c.copy(alpha = 0.15f))
+            .border(1.dp, c.copy(alpha = 0.6f), RoundedCornerShape(if (small) 5.dp else 8.dp)).clickable { info = true }
+            .padding(horizontal = if (small) 6.dp else 10.dp, vertical = if (small) 1.dp else 5.dp))
     if (info) androidx.compose.material3.AlertDialog(
         onDismissRequest = { info = false }, containerColor = C.Card,
         title = { Text("盤後報表排行", color = C.Text, fontSize = 16.sp) },

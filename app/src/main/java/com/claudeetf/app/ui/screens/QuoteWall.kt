@@ -129,6 +129,7 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
             "pct" -> "" to Fmt.num(abs(pct), 2) + "%"
             "entry" -> entry?.entry?.label?.let { "" to it }
             "limit" -> limitText?.let { "" to it }
+            "rank" -> com.claudeetf.app.data.DailyReport.rankOf(h.symbol)?.let { "" to (if (it.bull) "看漲 " else "看跌 ") + it.rank }
             "band" -> band?.zoneName?.let { p("光譜") to it }
             "mv" -> p("市值") to mask(Fmt.num(AppState.marketValueTwd(h)))
             "day" -> p("今日") to mask(sg(chg * h.shares * fx, 0))
@@ -150,11 +151,13 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
         "ret" -> Trend.fg(ret ?: 0.0)
         "entry" -> entryColor(entry?.entry?.level ?: 0)
         "band" -> band?.let { zoneColor(it.zone) } ?: C.Text2
+        "rank" -> Trend.fg(if (com.claudeetf.app.data.DailyReport.rankOf(h.symbol)?.bull == false) -1.0 else 1.0)
         else -> C.Text2
     }
     fun level(i: WallItem): Color = when (i.id) {
         "entry" -> entryColor(entry?.entry?.level ?: 0)
         "band" -> band?.let { zoneColor(it.zone) } ?: trend
+        "rank" -> Trend.fg(if (com.claudeetf.app.data.DailyReport.rankOf(h.symbol)?.bull == false) -1.0 else 1.0)
         else -> trend
     }
     // 反白格子裡的漲跌停標籤（底色依漲跌）改成白底、漲跌色字，才不會和格子同色
@@ -432,8 +435,8 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                                 upd { it.copy(lh = if (v in 1..69) (if (v > it.lh) 70 else 0) else v) } }
 
                             WSub("配色")
-                            WChips("文字顏色", COLOR_OPTS + (if (i.id == "entry" || i.id == "band") listOf(6 to "依等級") else emptyList()), i.color) { v -> upd { it.copy(color = v) } }
-                            WChips("標籤底色", BG_OPTS.filter { it.first != 2 || i.id == "entry" || i.id == "band" }, i.bg) { v -> upd { it.copy(bg = v) } }
+                            WChips("文字顏色", COLOR_OPTS + (if (i.id == "entry" || i.id == "band" || i.id == "rank") listOf(6 to "依等級") else emptyList()), i.color) { v -> upd { it.copy(color = v) } }
+                            WChips("標籤底色", BG_OPTS.filter { it.first != 2 || i.id == "entry" || i.id == "band" || i.id == "rank" }, i.bg) { v -> upd { it.copy(bg = v) } }
                             if (i.bg != 0) WStep("底色濃度", i.ba, 10, 100, 5, "%") { v -> upd { it.copy(ba = v) } }
                             if (i.id in LABELED) {
                                 WToggle("顯示前綴文字（例如「市值」）", i.label) { v -> upd { it.copy(label = v) } }

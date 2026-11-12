@@ -419,6 +419,7 @@ internal fun HoldingRow(
     @Composable fun has(id: String): Boolean = when (id) {
         "today" -> q != null && q.price > 0 && q.prevClose > 0
         "entry", "tip" -> entry != null
+        "rank" -> com.claudeetf.app.data.DailyReport.rankOf(h.symbol) != null
         "price" -> q != null && q.price > 0
         "change" -> q != null && q.price > 0 && q.prevClose > 0
         "weight" -> AppState.holdings.sumOf { AppState.marketValueTwd(it) } > 0
@@ -451,6 +452,7 @@ internal fun HoldingRow(
                     Text("占持股 " + Fmt.num(AppState.marketValueTwd(h) / total * 100, 1) + "%", color = C.Muted, fontSize = sz(id, 12), fontWeight = w, maxLines = 1)
                 }
                 "entry" -> entry?.let { EntryTag(it, animLevel = st.entryAnim) }
+                "rank" -> DailyRankChip(h.symbol, small = true)
                 "tip" -> entry?.let {
                     Text(it.holderTip, color = C.Muted, fontSize = sz(id, 10), fontWeight = w, maxLines = 1,
                         overflow = if (st.marquee) TextOverflow.Clip else TextOverflow.Ellipsis,

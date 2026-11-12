@@ -63,6 +63,7 @@ data class HoldStyle(
             "name" to "名稱",
             "today" to "今日損益",
             "entry" to "進場建議標籤",
+            "rank" to "盤後報表排行（看漲／看跌名次）",
             "tip" to "持有建議文字",
             "shares" to "股數・均價",
             "cost" to "總成本",
@@ -81,7 +82,7 @@ data class HoldStyle(
         val DEFAULT_INLINE = setOf("code", "name", "tip", "pct")
         val ZONE_NAMES = listOf("左欄", "中欄", "右欄")
         /** 不能整塊改色的項目（本身有底色） */
-        val NO_RECOLOR = setOf("entry", "market", "pct", "price")
+        val NO_RECOLOR = setOf("entry", "market", "pct", "price", "rank")
 
         fun fromJson(s: String?): HoldStyle {
             if (s.isNullOrBlank()) return HoldStyle()
