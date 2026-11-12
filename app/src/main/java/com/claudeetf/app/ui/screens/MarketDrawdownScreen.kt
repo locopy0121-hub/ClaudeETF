@@ -2,6 +2,7 @@ package com.claudeetf.app.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -109,62 +110,72 @@ fun MarketDrawdownScreen(nav: NavController) {
         TopBar("台股美股全球歷次大跌", onBack = { nav.popBackStack() })
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item { Segmented(DD_MARKETS.map { it.name } + "個股", tab, onSelect = { tab = it }) }
-            if (stockTab) {
-                item {
-                    Card(padding = 12.dp) {
-                        Text("選擇個股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        androidx.compose.material3.OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
-                            placeholder = { Text("輸入代號或名稱，例如 2330、台積電、NVDA", fontSize = 13.sp) })
-                        StockSuggestions(query, maxHeight = 260.dp, onPick = { it ->
+            item {
+                Card(padding = 12.dp) {
+                    if (stockTab) {
+                        // 目前選擇
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Label("個股", Modifier.width(56.dp))
+                            Text(pick, color = C.Primary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            HGap(6.dp)
+                            Text(m.note.substringBefore("（"), color = C.Text, fontSize = 14.sp, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        }
+                        CompactField(query, { query = it }, "搜尋代號或名稱（2330、NVDA）", Modifier.fillMaxWidth().padding(top = 8.dp))
+                        StockSuggestions(query, maxHeight = 240.dp, onPick = { it ->
                             pick = it.symbol; pickName = it.name.takeIf { n -> !n.startsWith("（") } ?: ""
                             pickYahoo = if (it.market == com.claudeetf.app.data.Market.US) it.symbol else yahooOf(it.symbol, it.board == "櫃")
                             query = ""
                         })
-                        val quick = (com.claudeetf.app.data.AppState.holdings.map { it.symbol } + com.claudeetf.app.data.AppState.quotes.map { it.symbol }).distinct().take(20)
+                        val quick = (com.claudeetf.app.data.AppState.holdings.map { it.symbol } + com.claudeetf.app.data.AppState.quotes.map { it.symbol }).distinct().take(30)
                         if (query.isBlank() && quick.isNotEmpty()) {
-                            Label("持股與自選")
-                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                quick.forEach { sym ->
+                            Label("持股與自選（左右滑動）", Modifier.padding(top = 8.dp))
+                            androidx.compose.foundation.lazy.LazyRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(quick) { sym ->
                                     val on = sym == pick
                                     val q = com.claudeetf.app.data.AppState.quote(sym)
-                                    Text((q?.name ?: sym).take(6), color = if (on) C.Text else C.Text2, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg).clickable {
+                                    // 台股顯示名稱、美股顯示代號，避免英文名稱被截斷
+                                    val label = if (sym.first().isDigit()) (q?.name ?: sym) else sym
+                                    Text(label, color = if (on) C.Text else C.Text2, fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, maxLines = 1,
+                                        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Selected else C.Bg).clickable {
                                             pick = sym; pickName = q?.name ?: ""
                                             pickYahoo = q?.let { StockInfoRepoBridge.yahoo(it) } ?: yahooOf(sym, null)
-                                        }.padding(horizontal = 10.dp, vertical = 5.dp))
+                                        }.padding(horizontal = 12.dp, vertical = 6.dp))
                                 }
                             }
                         }
+                        Box(Modifier.fillMaxWidth().padding(vertical = 10.dp).height(1.dp).background(C.Border))
                     }
-                }
-            }
-            item {
-                Card(padding = 12.dp) {
-                    Text("條件設定", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    // 起始金額
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Label("起始金額", Modifier.width(64.dp))
-                        androidx.compose.material3.OutlinedTextField(amountText, { v -> amountText = v.filter { it.isDigit() || it == '.' }.take(8) },
-                            Modifier.width(140.dp), singleLine = true, suffix = { Text("萬") },
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
-                        HGap(8.dp)
+                        Label("起始金額", Modifier.width(56.dp))
+                        CompactField(amountText, { v -> amountText = v.filter { it.isDigit() || it == '.' }.take(8) }, "100", Modifier.width(84.dp), numeric = true)
+                        Text(" 萬", color = C.Text2, fontSize = 13.sp)
+                        Spacer(Modifier.weight(1f))
                         listOf("10", "100", "1000").forEach { v ->
-                            Text(v + " 萬", color = if (amountText == v) C.Text else C.Muted, fontSize = 12.sp,
-                                modifier = Modifier.padding(end = 4.dp).clip(RoundedCornerShape(10.dp)).background(if (amountText == v) C.Selected else C.Bg)
-                                    .clickable { amountText = v }.padding(horizontal = 8.dp, vertical = 4.dp))
+                            val on = amountText == v
+                            Text(v, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(start = 4.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.Selected else C.Bg)
+                                    .clickable { amountText = v }.padding(horizontal = 9.dp, vertical = 5.dp))
                         }
                     }
-                    Label("起點", Modifier.padding(top = 6.dp))
-                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(if (stockTab) "掛牌起" else "最早", "2003 年", "近 10 年", "近 5 年", "近 3 年", "近 1 年", "自訂日期").forEachIndexed { i, n ->
-                            val on = i == startMode
-                            Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
-                                    .clickable { startMode = i }.padding(horizontal = 10.dp, vertical = 5.dp))
+                    // 起點
+                    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Label("起點", Modifier.width(56.dp))
+                        androidx.compose.foundation.lazy.LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(listOf(if (stockTab) "掛牌起" else "最早", "2003 年", "近 10 年", "近 5 年", "近 3 年", "近 1 年", "自訂").withIndex().toList()) { (i, n) ->
+                                val on = i == startMode
+                                Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, maxLines = 1,
+                                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
+                                        .clickable { startMode = i }.padding(horizontal = 10.dp, vertical = 5.dp))
+                            }
                         }
                     }
-                    if (startMode == 6) androidx.compose.material3.OutlinedTextField(customDate, { v -> customDate = v.filter { it.isDigit() || it == '/' || it == '-' }.take(10) },
-                        Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true, label = { Text("起始日（例如 2020/01/02）") })
-                    Label("結果計算到最新收盤；資料最早日晚於起點時，自最早可得日起算。")
+                    if (startMode == 6) Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Label("起始日", Modifier.width(56.dp))
+                        CompactField(customDate, { v -> customDate = v.filter { it.isDigit() || it == '/' || it == '-' }.take(10) }, "2020/01/02", Modifier.width(140.dp))
+                    }
+                    Label("計算到最新收盤；起點早於資料最早日時，自最早可得日起算。", Modifier.padding(top = 8.dp))
                 }
             }
             when (val d = data) {
@@ -213,21 +224,14 @@ fun MarketDrawdownScreen(nav: NavController) {
                             val yrs = (t.last() - t.first()) / (365.25 * 86_400_000.0)
                             val cagr = if (yrs >= 1) ((c.last() / c.first()).pow(1 / yrs) - 1) * 100 else null
                             val worst = waves.minByOrNull { it.depth }
-                            Row(Modifier.padding(top = 8.dp)) {
-                                Column(Modifier.weight(1f)) {
-                                    Label("年化報酬")
-                                    Text(cagr?.let { (if (it >= 0) "+" else "") + Fmt.num(it, 1) + "%" } ?: "未滿 1 年", color = cagr?.let { Trend.fg(it) } ?: C.Muted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                }
-                                Column(Modifier.weight(1f)) {
-                                    Label("期間最大跌幅")
-                                    Text(worst?.let { Fmt.num(it.depth, 1) + "%" } ?: "—", color = Trend.fg(-1.0), fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                    worst?.let { Label(ymdDash(it.peakT) + " → " + ymdDash(it.troughT)) }
-                                }
-                                Column(Modifier.weight(1f)) {
-                                    Label("期間")
-                                    Text(Fmt.num(yrs, 1) + " 年", color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                    Label("${t.size} 個交易日")
-                                }
+                            Row(Modifier.padding(top = 10.dp)) {
+                                Metric("年化報酬", cagr?.let { (if (it >= 0) "+" else "") + Fmt.num(it, 1) + "%" } ?: "未滿 1 年", cagr?.let { Trend.fg(it) } ?: C.Muted, null, Modifier.weight(1f))
+                                Metric("期間", Fmt.num(yrs, 1) + " 年", C.Text, "${t.size} 個交易日", Modifier.weight(1f))
+                            }
+                            worst?.let { w ->
+                                Metric("期間最大跌幅", Fmt.num(w.depth, 1) + "%", Trend.fg(-1.0),
+                                    ymdDash(w.peakT) + " → " + ymdDash(w.troughT) + (w.recoverT?.let { " · " + monthsText(w.troughT, it) + "後回到前高" } ?: " · 尚未回到前高"),
+                                    Modifier.padding(top = 8.dp))
                             }
                             worst?.let { Label("最大跌幅時 " + Fmt.num(amount, 0) + " 萬最低剩約 " + Fmt.num(amount * it.trough / c.first(), 1) + " 萬", Modifier.padding(top = 4.dp)) }
                         }
@@ -348,4 +352,33 @@ private fun DdChart(t: List<Long>, c: List<Double>, waves: List<Drawdown.Wave>, 
 /** 由報價取得 Yahoo 代號（上市 .TW、上櫃 .TWO、美股原代號） */
 private object StockInfoRepoBridge {
     fun yahoo(q: com.claudeetf.app.data.Quote): String = com.claudeetf.app.data.StockInfoRepo.yahooSymbol(q)
+}
+
+@Composable
+private fun Metric(title: String, value: String, color: Color, sub: String?, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Label(title)
+        Text(value, color = color, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        sub?.let { Label(it) }
+    }
+}
+
+/** 精簡輸入框：高度 40dp，不像 Material 輸入框佔大量空間 */
+@Composable
+private fun CompactField(value: String, onChange: (String) -> Unit, hint: String, modifier: Modifier = Modifier, numeric: Boolean = false) {
+    androidx.compose.foundation.text.BasicTextField(
+        value, onChange, singleLine = true,
+        textStyle = androidx.compose.ui.text.TextStyle(color = C.Text, fontSize = 15.sp),
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(C.Primary),
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            keyboardType = if (numeric) androidx.compose.ui.text.input.KeyboardType.Decimal else androidx.compose.ui.text.input.KeyboardType.Text),
+        modifier = modifier.height(40.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg)
+            .border(1.dp, C.Border, RoundedCornerShape(10.dp)).padding(horizontal = 12.dp),
+        decorationBox = { inner ->
+            Box(Modifier.fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
+                if (value.isEmpty()) Text(hint, color = C.Muted, fontSize = 14.sp, maxLines = 1)
+                inner()
+            }
+        },
+    )
 }
