@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,12 +56,13 @@ private val DD_MARKETS = listOf(
 private object MarketDdData {
     private val cache = HashMap<String, Pair<Long, Pair<String, YahooExtra.History>>>()
     suspend fun load(m: DdMarket): Pair<String, YahooExtra.History> = withContext(Dispatchers.IO) {
-        synchronized(cache) { cache[m.name]?.takeIf { System.currentTimeMillis() - it.first < 6 * 3600_000L }?.let { return@withContext it.second } }
+        val key = m.name + m.symbols.joinToString()
+        synchronized(cache) { cache[key]?.takeIf { System.currentTimeMillis() - it.first < 6 * 3600_000L }?.let { return@withContext it.second } }
         var last: Throwable? = null
         for (s in m.symbols) {
             val h = runCatching { YahooExtra.history(s, "max", intervalOverride = "1d") }.onFailure { last = it }.getOrNull()
-            if (h != null && h.closes.size > 500) {
-                synchronized(cache) { cache[m.name] = System.currentTimeMillis() to (s to h) }
+            if (h != null && h.closes.size > 60) {
+                synchronized(cache) { cache[key] = System.currentTimeMillis() to (s to h) }
                 return@withContext s to h
             }
         }
@@ -79,18 +81,59 @@ private fun monthsText(from: Long, to: Long): String {
 
 @Composable
 fun MarketDrawdownScreen(nav: NavController) {
-    var tab by remember { mutableIntStateOf(0) }
-    var from2003 by remember { mutableStateOf(true) }
-    var data by remember(tab) { mutableStateOf<Load<Pair<String, YahooExtra.History>>>(Load.Loading) }
-    val m = DD_MARKETS[tab]
-    LaunchedEffect(tab, ErrorLog.retryTick) {
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var from2003 by rememberSaveable { mutableStateOf(true) }
+    // 個股：代號、名稱、Yahoo 代號
+    var pick by rememberSaveable { mutableStateOf(com.claudeetf.app.data.AppState.holdings.firstOrNull()?.symbol ?: "0050") }
+    var pickName by rememberSaveable { mutableStateOf("") }
+    var pickYahoo by rememberSaveable { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
+    val stockTab = tab == DD_MARKETS.size
+    fun yahooOf(sym: String, otc: Boolean?): String =
+        if (sym.first().isDigit()) sym + if (otc ?: com.claudeetf.app.data.StockDirectory.isOtc(sym)) ".TWO" else ".TW" else sym
+    val m = if (stockTab) {
+        val y = pickYahoo.ifBlank { yahooOf(pick, null) }
+        val alt = if (y.endsWith(".TW")) listOf(y, y.removeSuffix(".TW") + ".TWO") else if (y.endsWith(".TWO")) listOf(y, y.removeSuffix(".TWO") + ".TW") else listOf(y)
+        DdMarket(pick, alt, true, (pickName.ifBlank { com.claudeetf.app.data.AppState.quote(pick)?.name ?: pick }) + "（$pick，還原股價含息；資料自掛牌或 Yahoo 最早可得日起）")
+    } else DD_MARKETS[tab]
+    var data by remember(tab, pick) { mutableStateOf<Load<Pair<String, YahooExtra.History>>>(Load.Loading) }
+    LaunchedEffect(tab, pick, ErrorLog.retryTick) {
         data = Load.Loading
         data = runCatching { MarketDdData.load(m) }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("台股美股全球歷次大跌", onBack = { nav.popBackStack() })
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item { Segmented(DD_MARKETS.map { it.name }, tab, onSelect = { tab = it }) }
+            item { Segmented(DD_MARKETS.map { it.name } + "個股", tab, onSelect = { tab = it }) }
+            if (stockTab) {
+                item {
+                    Card(padding = 12.dp) {
+                        Text("選擇個股", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        androidx.compose.material3.OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
+                            placeholder = { Text("輸入代號或名稱，例如 2330、台積電、NVDA", fontSize = 13.sp) })
+                        StockSuggestions(query, maxHeight = 260.dp, onPick = { it ->
+                            pick = it.symbol; pickName = it.name.takeIf { n -> !n.startsWith("（") } ?: ""
+                            pickYahoo = if (it.market == com.claudeetf.app.data.Market.US) it.symbol else yahooOf(it.symbol, it.board == "櫃")
+                            query = ""
+                        })
+                        val quick = (com.claudeetf.app.data.AppState.holdings.map { it.symbol } + com.claudeetf.app.data.AppState.quotes.map { it.symbol }).distinct().take(20)
+                        if (query.isBlank() && quick.isNotEmpty()) {
+                            Label("持股與自選")
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                quick.forEach { sym ->
+                                    val on = sym == pick
+                                    val q = com.claudeetf.app.data.AppState.quote(sym)
+                                    Text((q?.name ?: sym).take(6), color = if (on) C.Text else C.Text2, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg).clickable {
+                                            pick = sym; pickName = q?.name ?: ""
+                                            pickYahoo = q?.let { StockInfoRepoBridge.yahoo(it) } ?: yahooOf(sym, null)
+                                        }.padding(horizontal = 10.dp, vertical = 5.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Label("起點", Modifier.padding(end = 8.dp))
@@ -119,9 +162,10 @@ fun MarketDrawdownScreen(nav: NavController) {
                     val fromHigh = (c.last() / c[hi] - 1) * 100
                     item {
                         Card(padding = 14.dp) {
+                            if (stockTab) Text(m.note.substringBefore("（"), color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             Label("累積報酬（" + (if (sym == "^TWII") "未含息" else "含息") + "）")
                             Text((if (total >= 0) "+" else "") + Fmt.num(total, 0) + "%", color = Trend.fg(total), fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                            Label("${dateOf(t.first()).year} 年初投入 100 萬，現在約 " + Fmt.num(100 * c.last() / c.first(), 0) + " 萬")
+                            Label(ymdDash(t.first()) + " 投入 100 萬，現在約 " + Fmt.num(100 * c.last() / c.first(), 0) + " 萬")
                         }
                     }
                     item {
@@ -140,7 +184,7 @@ fun MarketDrawdownScreen(nav: NavController) {
                     }
                     item {
                         Card(padding = 12.dp) {
-                            Text(m.name + "：${dateOf(t.first()).year} 年投入 100 萬的變化", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text((if (stockTab) m.note.substringBefore("（") else m.name) + "：${dateOf(t.first()).year} 年投入 100 萬的變化", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(10.dp).background(Color(0xFFE5A93B))); HGap(4.dp); Label("走勢（對數座標）"); HGap(10.dp)
                                 Box(Modifier.size(10.dp).background(Color(0x66E5484D))); HGap(4.dp); Label("跌幅 ≥ 20%"); HGap(10.dp)
@@ -235,4 +279,9 @@ private fun DdChart(t: List<Long>, c: List<Double>, waves: List<Drawdown.Wave>, 
             drawContext.canvas.nativeCanvas.drawText(Fmt.num(wv.depth, 0) + "%", x(wv.troughT) - 20f, (y(v) + 26f).coerceAtMost(h - 2f), lp)
         }
     }
+}
+
+/** 由報價取得 Yahoo 代號（上市 .TW、上櫃 .TWO、美股原代號） */
+private object StockInfoRepoBridge {
+    fun yahoo(q: com.claudeetf.app.data.Quote): String = com.claudeetf.app.data.StockInfoRepo.yahooSymbol(q)
 }
