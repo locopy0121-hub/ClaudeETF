@@ -642,11 +642,11 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 item { UpdateCard() }
                 item { ReleaseHistoryCard() }
                 item {
-                    // 操作說明書：每次發布新版時一併更新，附在最新 Release
+                    // 操作說明書：大版本更新或需要時更新，固定放在「manual」Release
                     SettingRow("操作說明書（PDF）", "開啟 ›") {
                         runCatching {
                             context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse("https://github.com/locopy0121-hub/ClaudeETF/releases/latest/download/ClaudeETF-Manual.pdf"))
+                                android.net.Uri.parse("https://github.com/locopy0121-hub/ClaudeETF/releases/download/manual/ClaudeETF-Manual.pdf"))
                                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
                         }
                     }

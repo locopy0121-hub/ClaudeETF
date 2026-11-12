@@ -61,10 +61,13 @@ jobs:
           LAST=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           RANGE=${LAST:+$LAST..}HEAD
           git log --reverse --format='%B%n' $RANGE | grep -vE '^(Co-Authored-By|Claude-Session):' | sed 's/ *\[發布\]//' | cat -s > notes.md
-          printf '\n---\n版本 1.%s.%s（建置 #%s）\n下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。App 內「設置 › 關於 › 檢查更新」可線上更新；操作說明書見附件 ClaudeETF-Manual.pdf（App 內「設置 › 關於與更新 › 操作說明書」）。\n' "${{ env.MINOR }}" "${{ env.PATCH }}" "${{ github.run_number }}" >> notes.md
+          printf '\n---\n版本 1.%s.%s（建置 #%s）\n下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。App 內「設置 › 關於 › 檢查更新」可線上更新。\n' "${{ env.MINOR }}" "${{ env.PATCH }}" "${{ github.run_number }}" >> notes.md
 
-      # 操作說明書：每次建置由 docs/manual/manual.html 產生 PDF（填入版本與日期），附在 Release
+      # 操作說明書：只在大版本更新或需要時（commit 訊息含「[說明書]」）由 docs/manual/manual.html 產生 PDF，
+      # 發布到固定的「manual」Release（App 內連結固定不變）
       - name: Manual PDF
+        id: manual
+        if: contains(github.event.head_commit.message, '[說明書]')
         continue-on-error: true
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk >/dev/null
@@ -80,6 +83,15 @@ jobs:
           prerelease: false
           make_latest: true
           body_path: notes.md
-          files: |
-            ${{ steps.apk.outputs.name }}
-            ClaudeETF-Manual.pdf
+          files: ${{ steps.apk.outputs.name }}
+
+      - uses: softprops/action-gh-release@v2
+        if: contains(github.event.head_commit.message, '[說明書]')
+        continue-on-error: true
+        with:
+          tag_name: manual
+          name: 台美股資產 操作說明書
+          prerelease: false
+          make_latest: false
+          body: "App 操作說明書（PDF）。大版本更新或功能有重大變更時更新；App 內「設置 › 關於與更新 › 操作說明書」可直接開啟。"
+          files: ClaudeETF-Manual.pdf

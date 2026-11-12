@@ -21,8 +21,8 @@ Android 原生 App：Kotlin＋Jetpack Compose（Material3）。只在 GitHub Act
 - API 金鑰只由使用者在「設置 › 分析與提醒 › AI 個股體檢」為每家服務輸入並加密保存，嚴禁寫死在程式或 Repo。
 
 ## 4. 操作說明書
-- `docs/manual/manual.html` 為 App 操作說明書原稿（`{{VERSION}}`、`{{DATE}}` 由 CI 填入），每次建置由 GitHub Actions 轉成 `ClaudeETF-Manual.pdf` 附在 Release。
-- **新增或變更功能時，必須同步更新說明書對應章節**（頁面、設定項目、分析方法、常見問題）。
+- `docs/manual/manual.html` 為 App 操作說明書原稿（`{{VERSION}}`、`{{DATE}}` 由 CI 填入）。
+- **只在大版本更新或使用者要求時更新**：更新原稿對應章節，commit 訊息加上「[說明書]」，CI 才會轉成 `ClaudeETF-Manual.pdf` 並發布到固定的 `manual` Release（App 內連結 `releases/download/manual/ClaudeETF-Manual.pdf`）。一般小版本不更新說明書。
 
 ## 5. 測試
 - 純函數（指標、型態、規則）需有 JVM 單元測試（`app/src/test`），CI 會先跑測試。
