@@ -79,11 +79,14 @@ private fun monthsText(from: Long, to: Long): String {
     return if (m >= 24) Fmt.num(m / 12.0, 1) + " 年" else "$m 個月"
 }
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MarketDrawdownScreen(nav: NavController) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var from2003 by rememberSaveable { mutableStateOf(true) }
+    // 條件：起點（0 最早／掛牌、1 2003 年、2 近 10 年、3 近 5 年、4 近 3 年、5 近 1 年、6 自訂日期）、起始金額（萬）
+    var startMode by rememberSaveable { mutableIntStateOf(1) }
+    var customDate by rememberSaveable { mutableStateOf("2020/01/01") }
+    var amountText by rememberSaveable { mutableStateOf("100") }
     // 個股：代號、名稱、Yahoo 代號
     var pick by rememberSaveable { mutableStateOf(com.claudeetf.app.data.AppState.holdings.firstOrNull()?.symbol ?: "0050") }
     var pickName by rememberSaveable { mutableStateOf("") }
@@ -136,14 +139,32 @@ fun MarketDrawdownScreen(nav: NavController) {
                 }
             }
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Label("起點", Modifier.padding(end = 8.dp))
-                    listOf(true to "2003 年起", false to "全部歷史").forEach { (v, n) ->
-                        val on = v == from2003
-                        Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                            modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Card)
-                                .clickable { from2003 = v }.padding(horizontal = 10.dp, vertical = 4.dp))
+                Card(padding = 12.dp) {
+                    Text("條件設定", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Label("起始金額", Modifier.width(64.dp))
+                        androidx.compose.material3.OutlinedTextField(amountText, { v -> amountText = v.filter { it.isDigit() || it == '.' }.take(8) },
+                            Modifier.width(140.dp), singleLine = true, suffix = { Text("萬") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                        HGap(8.dp)
+                        listOf("10", "100", "1000").forEach { v ->
+                            Text(v + " 萬", color = if (amountText == v) C.Text else C.Muted, fontSize = 12.sp,
+                                modifier = Modifier.padding(end = 4.dp).clip(RoundedCornerShape(10.dp)).background(if (amountText == v) C.Selected else C.Bg)
+                                    .clickable { amountText = v }.padding(horizontal = 8.dp, vertical = 4.dp))
+                        }
                     }
+                    Label("起點", Modifier.padding(top = 6.dp))
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(if (stockTab) "掛牌起" else "最早", "2003 年", "近 10 年", "近 5 年", "近 3 年", "近 1 年", "自訂日期").forEachIndexed { i, n ->
+                            val on = i == startMode
+                            Text(n, color = if (on) C.Text else C.Muted, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(if (on) C.Selected else C.Bg)
+                                    .clickable { startMode = i }.padding(horizontal = 10.dp, vertical = 5.dp))
+                        }
+                    }
+                    if (startMode == 6) androidx.compose.material3.OutlinedTextField(customDate, { v -> customDate = v.filter { it.isDigit() || it == '/' || it == '-' }.take(10) },
+                        Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true, label = { Text("起始日（例如 2020/01/02）") })
+                    Label("結果計算到最新收盤；資料最早日晚於起點時，自最早可得日起算。")
                 }
             }
             when (val d = data) {
@@ -152,10 +173,32 @@ fun MarketDrawdownScreen(nav: NavController) {
                 is Load.Ok -> {
                     val (sym, h) = d.value
                     val raw = if (m.useAdj && h.adjCloses.size == h.closes.size) h.adjCloses else h.closes
-                    val startMs = if (from2003) LocalDate.of(2003, 1, 1).atStartOfDay(TPE).toInstant().toEpochMilli() else Long.MIN_VALUE
+                    val today = LocalDate.now(TPE)
+                    val startDate: LocalDate? = when (startMode) {
+                        1 -> LocalDate.of(2003, 1, 1); 2 -> today.minusYears(10); 3 -> today.minusYears(5); 4 -> today.minusYears(3); 5 -> today.minusYears(1)
+                        6 -> runCatching { LocalDate.parse(customDate.replace('/', '-').split('-').let { p -> "%04d-%02d-%02d".format(p[0].toInt(), p[1].toInt(), p[2].toInt()) }) }.getOrNull()
+                        else -> null
+                    }
+                    val amount = amountText.toDoubleOrNull()?.takeIf { it > 0 } ?: 100.0
+                    val startMs = startDate?.atStartOfDay(TPE)?.toInstant()?.toEpochMilli() ?: Long.MIN_VALUE
                     val idx = h.times.indices.filter { h.times[it] >= startMs && raw[it] > 0 }
-                    if (idx.size < 60) { item { Label("資料不足") }; return@LazyColumn }
-                    val t = idx.map { h.times[it] }; val c = idx.map { raw[it].toDouble() }
+                    if (idx.size < 20) { item { Label("起點之後的資料不足（至少需要 20 個交易日）") }; return@LazyColumn }
+                    val t = ArrayList(idx.map { h.times[it] }); val c = ArrayList(idx.map { raw[it].toDouble() })
+                    // Yahoo 台股日 K 常晚一天：用 App 內最新收盤補上最後一根
+                    run {
+                        val lastDay = dateOf(t.last())
+                        val exp = com.claudeetf.app.data.MarketData.expectedCloseDay()
+                        val px = when {
+                            sym == "^TWII" -> com.claudeetf.app.data.AppState.twIndices.firstOrNull { it.symbol == "^TWII" }?.value
+                            stockTab && (sym.endsWith(".TW") || sym.endsWith(".TWO")) -> com.claudeetf.app.data.AppState.quote(pick)?.price
+                            else -> null
+                        }
+                        if (px != null && px > 0 && lastDay < exp && (sym == "^TWII" || !m.useAdj || t.size > 0)) {
+                            // 還原股價：以最後一根的還原比例換算
+                            val ratio = if (m.useAdj) c.last() / (h.closes.getOrNull(idx.last())?.toDouble()?.takeIf { it > 0 } ?: c.last()) else 1.0
+                            t += exp.atTime(13, 30).atZone(TPE).toInstant().toEpochMilli(); c += px * ratio
+                        }
+                    }
                     val waves = Drawdown.waves(t, c)
                     val shown = waves.filter { -it.depth >= 20 || (Drawdown.eventOf(it) != null && -it.depth >= 10) }
                     val total = (c.last() / c.first() - 1) * 100
@@ -166,7 +209,27 @@ fun MarketDrawdownScreen(nav: NavController) {
                             if (stockTab) Text(m.note.substringBefore("（"), color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                             Label("累積報酬（" + (if (sym == "^TWII") "未含息" else "含息") + "）")
                             Text((if (total >= 0) "+" else "") + Fmt.num(total, 0) + "%", color = Trend.fg(total), fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                            Label(ymdDash(t.first()) + " 投入 100 萬，現在約 " + Fmt.num(100 * c.last() / c.first(), 0) + " 萬")
+                            Label(ymdDash(t.first()) + " 投入 " + Fmt.num(amount, if (amount < 10) 1 else 0) + " 萬，" + ymdDash(t.last()) + " 約 " + Fmt.num(amount * c.last() / c.first(), if (amount * c.last() / c.first() < 10) 2 else 0) + " 萬")
+                            val yrs = (t.last() - t.first()) / (365.25 * 86_400_000.0)
+                            val cagr = if (yrs >= 1) ((c.last() / c.first()).pow(1 / yrs) - 1) * 100 else null
+                            val worst = waves.minByOrNull { it.depth }
+                            Row(Modifier.padding(top = 8.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    Label("年化報酬")
+                                    Text(cagr?.let { (if (it >= 0) "+" else "") + Fmt.num(it, 1) + "%" } ?: "未滿 1 年", color = cagr?.let { Trend.fg(it) } ?: C.Muted, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Label("期間最大跌幅")
+                                    Text(worst?.let { Fmt.num(it.depth, 1) + "%" } ?: "—", color = Trend.fg(-1.0), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                    worst?.let { Label(ymdDash(it.peakT) + " → " + ymdDash(it.troughT)) }
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Label("期間")
+                                    Text(Fmt.num(yrs, 1) + " 年", color = C.Text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                    Label("${t.size} 個交易日")
+                                }
+                            }
+                            worst?.let { Label("最大跌幅時 " + Fmt.num(amount, 0) + " 萬最低剩約 " + Fmt.num(amount * it.trough / c.first(), 1) + " 萬", Modifier.padding(top = 4.dp)) }
                         }
                     }
                     item {
@@ -185,13 +248,13 @@ fun MarketDrawdownScreen(nav: NavController) {
                     }
                     item {
                         Card(padding = 12.dp) {
-                            Text((if (stockTab) m.note.substringBefore("（") else m.name) + "：${dateOf(t.first()).year} 年投入 100 萬的變化", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text((if (stockTab) m.note.substringBefore("（") else m.name) + "：${ymdDash(t.first())} 投入 ${Fmt.num(amount, if (amount < 10) 1 else 0)} 萬的變化", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(10.dp).background(Color(0xFFE5A93B))); HGap(4.dp); Label("走勢（對數座標）"); HGap(10.dp)
                                 Box(Modifier.size(10.dp).background(Color(0x66E5484D))); HGap(4.dp); Label("跌幅 ≥ 20%"); HGap(10.dp)
                                 Box(Modifier.size(10.dp).background(Color(0x55888888))); HGap(4.dp); Label("未達 20% 的重大事件")
                             }
-                            DdChart(t, c, shown, Modifier.fillMaxWidth().height(240.dp).padding(top = 8.dp))
+                            DdChart(t, c, shown, amount, Modifier.fillMaxWidth().height(240.dp).padding(top = 8.dp))
                         }
                     }
                     item {
@@ -216,7 +279,7 @@ fun MarketDrawdownScreen(nav: NavController) {
                             Label("・" + m.note)
                             Label("・「N 個月後創新高」從低點起算到收盤再度回到前高為止。")
                             Label("・波段＝前高跌到低點、回到前高為一波；長空頭中自低點翻倍後又跌 20% 以上另計一波。")
-                            Label("・圖表為對數座標，同樣的漲跌幅在圖上高度相同；金額以起點投入 100 萬換算，未扣除稅費與匯差。")
+                            Label("・圖表為對數座標，同樣的漲跌幅在圖上高度相同；金額以起始金額換算，未扣除稅費與匯差。")
                             Label("・事件名稱參考 YP-Finance「台股美股全球歷次大跌」。歷史表現不代表未來，僅供參考。")
                         }
                     }
@@ -228,7 +291,7 @@ fun MarketDrawdownScreen(nav: NavController) {
 
 /** 對數座標走勢＋大跌區間底色＋低點跌幅標籤 */
 @Composable
-private fun DdChart(t: List<Long>, c: List<Double>, waves: List<Drawdown.Wave>, modifier: Modifier) {
+private fun DdChart(t: List<Long>, c: List<Double>, waves: List<Drawdown.Wave>, amount: Double, modifier: Modifier) {
     val line = Color(0xFFE5A93B)
     val red = Color(0x55E5484D)
     val gray = Color(0x44888888)
@@ -237,7 +300,7 @@ private fun DdChart(t: List<Long>, c: List<Double>, waves: List<Drawdown.Wave>, 
     val down = Trend.fg(-1.0)
     Canvas(modifier) {
         val base = c.first()
-        val vals = c.map { 100 * it / base }
+        val vals = c.map { amount * it / base }
         val lo = ln(vals.min() * 0.9); val hi = ln(vals.max() * 1.1)
         val left = 46f; val w = size.width - left; val h = size.height - 18f
         val t0 = t.first(); val t1 = t.last(); val span = (t1 - t0).coerceAtLeast(1).toFloat()
@@ -245,11 +308,11 @@ private fun DdChart(t: List<Long>, c: List<Double>, waves: List<Drawdown.Wave>, 
         fun y(v: Double) = (h * (1 - (ln(v) - lo) / (hi - lo))).toFloat()
         val paint = android.graphics.Paint().apply { color = label.toArgb(); textSize = 22f; isAntiAlias = true }
         // 格線：100、200、500、1000…萬
-        val steps = generateSequence(10.0) { it * 10 }.takeWhile { it < 1e7 }.flatMap { sequenceOf(it, it * 2, it * 5) }
+        val steps = generateSequence(0.01) { it * 10 }.takeWhile { it < 1e7 }.flatMap { sequenceOf(it, it * 2, it * 5) }
         steps.filter { ln(it) in lo..hi }.forEach { v ->
             val yy = y(v)
             drawLine(grid, Offset(left, yy), Offset(size.width, yy), 1f)
-            drawContext.canvas.nativeCanvas.drawText(Fmt.num(v, 0) + " 萬", 0f, yy + 7f, paint)
+            drawContext.canvas.nativeCanvas.drawText(Fmt.num(v, if (v < 10) 1 else 0) + " 萬", 0f, yy + 7f, paint)
         }
         // 年份
         val y0 = dateOf(t0).year; val y1 = dateOf(t1).year
@@ -276,8 +339,8 @@ private fun DdChart(t: List<Long>, c: List<Double>, waves: List<Drawdown.Wave>, 
         // 低點跌幅標籤
         val lp = android.graphics.Paint().apply { color = down.toArgb(); textSize = 22f; isAntiAlias = true; isFakeBoldText = true }
         waves.forEach { wv ->
-            val v = 100 * wv.trough / base
-            drawContext.canvas.nativeCanvas.drawText(Fmt.num(wv.depth, 0) + "%", x(wv.troughT) - 20f, (y(v) + 26f).coerceAtMost(h - 2f), lp)
+            val v = amount * wv.trough / base
+            drawContext.canvas.nativeCanvas.drawText(Fmt.num(wv.depth, 0) + "%", (x(wv.troughT) - 20f).coerceIn(left, size.width - 56f), (y(v) + 26f).coerceAtMost(h - 2f), lp)
         }
     }
 }
