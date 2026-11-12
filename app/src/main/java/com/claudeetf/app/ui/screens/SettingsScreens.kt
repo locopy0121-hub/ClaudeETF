@@ -296,7 +296,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                             var showStates by remember { mutableStateOf(false) }
                             Text(if (showStates) "收合各檔狀態" else "查看各檔串流狀態 ›", color = C.Primary, fontSize = 12.sp,
                                 modifier = Modifier.clickable { showStates = !showStates }.padding(vertical = 4.dp))
-                            Label("盤中分層：持股用富果即時（串流＋成交量）→ 星號股也用富果 → 其餘自選用 Yahoo（約每 15 秒）。富果免費方案約 5 檔串流，超過時以持股優先，其餘以富果 REST 輪流；個股頁右上角 ★ 可設為星號股。")
+                            Label("盤中台股全部用富果：串流（含即時成交量）優先順序為正在看的個股 → 持股 → 星號股 → 其他自選。免費方案約 5 檔串流，超過時其餘以富果 REST 輪流更新（持股、星號股排前面）；個股頁右上角 ★ 可設為星號股。")
                             if (showStates) {
                                 val held = AppState.holdings.map { it.symbol }.toSet()
                                 val syms = (AppState.holdings.map { it.symbol }.filter { AppState.marketOf(it) == com.claudeetf.app.data.Market.TW } +

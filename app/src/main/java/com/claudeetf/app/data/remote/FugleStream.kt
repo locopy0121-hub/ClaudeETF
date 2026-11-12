@@ -74,7 +74,6 @@ object FugleStream {
             symbols.map { s ->
                 val last = synchronized(lastData) { lastData[s] }
                 when {
-                    s !in com.claudeetf.app.data.MarketData.fugleTier() -> Triple(s, "Yahoo 報價（非持股、非星號）", false)
                     !authed -> Triple(s, "串流未連線" + (if (AppState.streamStatus.isNotBlank()) "：" + AppState.streamStatus else ""), false)
                     s in subscribed && last != null && now - last < 10 * 60_000 ->
                         Triple(s, "● 同步中 · 最後推播 " + java.time.Instant.ofEpochMilli(last).atZone(tpe).format(fmt), true)
@@ -290,8 +289,9 @@ object FugleStream {
                 authFailedKey = ""
                 retry = 0
                 connectedAt = System.currentTimeMillis()
-                // 只訂閱持股、星號股與正在看的個股；其餘自選用 Yahoo
-                val syms = com.claudeetf.app.data.MarketData.fugleTier().toList()
+                // 持股、星號股優先，其餘台股自選依序排隊
+                val syms = (com.claudeetf.app.data.MarketData.fugleTier().toList() +
+                    AppState.quotes.filter { it.market == com.claudeetf.app.data.Market.TW }.map { it.symbol }).distinct()
                 main.post { AppState.streamStatus = "富果串流已連線" }
                 synchronized(subscribed) { queue.addAll(prioritize(syms)) }
                 pump()

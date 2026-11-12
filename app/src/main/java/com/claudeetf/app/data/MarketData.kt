@@ -83,9 +83,9 @@ object MarketData {
         isTwTodayPending() -> "已收盤：沿用今日最後成交價，14:30 後改用證交所／櫃買收盤資料"
         !isTwIntraday() -> "證交所／櫃買收盤資料（盤後）"
         !AppState.twUseFugle -> "盤中以證交所即時為主（約每 5 秒）" + if (AppState.fugleKey.isNotBlank()) "，失敗時改用富果" else ""
-        AppState.fugleKey.isBlank() -> "尚未填富果金鑰，暫用證交所即時（填入後盤中持股與星號股用富果）"
-        com.claudeetf.app.data.remote.FugleStream.connected -> "盤中：持股與星號股用富果即時串流，其餘自選用 Yahoo（約每 15 秒）"
-        else -> "盤中：持股與星號股用富果（串流連線中，暫以 REST 輪流），其餘自選用 Yahoo"
+        AppState.fugleKey.isBlank() -> "尚未填富果金鑰，暫用證交所即時（填入後盤中僅用富果）"
+        com.claudeetf.app.data.remote.FugleStream.connected -> "盤中僅用富果：串流優先持股與星號股，其餘以富果 REST 輪流更新"
+        else -> "盤中僅用富果：串流連線中，暫以富果 REST 輪流更新"
     }
 
     private fun clock(ms: Long): String =
@@ -121,24 +121,10 @@ object MarketData {
      * 台股：盤中（08:30–13:35）富果優先、其餘或失敗改用證交所 MIS 即時；盤後用證交所／櫃買收盤資料。
      * live = true 時為即時輪詢（不寫入磁碟、富果只輪流抓幾檔）。
      */
-    @Volatile private var lastYahooTwAt = 0L
-
-    /** 富果分層：持股（台股）＋星號股＋個股頁正在看的代號 */
+    /** 富果優先群：持股（台股）＋星號股＋個股頁正在看的代號 */
     fun fugleTier(): Set<String> =
         (AppState.holdings.map { it.symbol }.filter { AppState.marketOf(it) == Market.TW } + AppState.starred +
             listOf(com.claudeetf.app.data.remote.FugleStream.focus).filter { it.isNotBlank() }).toSet()
-
-    /** 台股其餘自選：Yahoo 批次報價（上市 .TW、上櫃 .TWO 都查，取有回應的；名稱保留中文） */
-    private suspend fun yahooTw(list: List<String>, now: Long) {
-        val req = list.flatMap { listOf("$it.TW", "$it.TWO") }
-        val res = withContext(Dispatchers.IO) { runCatching { com.claudeetf.app.data.remote.YahooExtra.quotes(req) } }.getOrNull() ?: return
-        res.groupBy { it.symbol.substringBefore(".") }.forEach { (code, l) ->
-            if (code !in list) return@forEach
-            val q = l.filter { it.price > 0 }.maxByOrNull { it.time } ?: return@forEach
-            AppState.applyRemote(RemoteQuote(code, null, q.price, q.prevClose, q.open, q.high, q.low, q.volume),
-                QuoteSource.YAHOO, if (q.time > 0) minOf(q.time, now) else now, live = true)
-        }
-    }
 
     suspend fun refreshTw(live: Boolean = false) {
         val symbols = AppState.quotes.filter { it.market == Market.TW }.map { it.symbol }
@@ -196,17 +182,11 @@ object MarketData {
             }
 
             if (fugleOnly) {
-                // 分層：持股、星號股、正在看的個股 → 富果（串流推播，未涵蓋的用富果 REST 輪流）；其餘自選 → Yahoo 批次報價
-                val tier = fugleTier()
+                // 全部台股自選都用富果：串流推播（優先順序：正在看的個股 → 持股 → 星號股 → 其他），未涵蓋的用富果 REST 輪流
                 symbols.filter { com.claudeetf.app.data.remote.FugleStream.isStreaming(it) }.forEach { fugle += it }
-                fugleRest(symbols.filter { it in tier && it !in fugle })
-                val others = symbols.filter { it !in tier && it !in fugle }
-                if (others.isNotEmpty() && (!live || now - lastYahooTwAt > 15_000)) {
-                    lastYahooTwAt = now
-                    yahooTw(others, now)
-                }
-                // 已用 Yahoo 更新、尚未輪到的其餘自選維持 Yahoo 上一筆
-                others.filter { AppState.quote(it)?.source == QuoteSource.YAHOO }.forEach { fugle += it }
+                val tier = fugleTier()
+                // REST 輪流時持股與星號股排在前面
+                fugleRest(symbols.filter { it !in fugle }.sortedBy { if (it in tier) 0 else 1 })
                 // 輪詢中尚未輪到的代號維持富果上一筆資料，不以證交所覆蓋
                 symbols.filter { AppState.quote(it)?.source.let { src -> src == QuoteSource.FUGLE || src == QuoteSource.FUGLE_STREAM } }.forEach { fugle += it }
                 // 指數也用富果（加權 IX0001、櫃買 IX0043），每 30 秒一次
