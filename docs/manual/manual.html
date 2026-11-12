@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant"><head><meta charset="utf-8"><title>台美股資產 App 操作說明書</title>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>台美股資產 App 操作說明書</title>
 <style>
 @page { size: A4; margin: 16mm 15mm 18mm 15mm;
   @bottom-center { content: "台美股資產 操作說明書　·　第 " counter(page) " / " counter(pages) " 頁"; font-family: "Noto Sans CJK TC", sans-serif; font-size: 8pt; color: #8a93a3; } }
@@ -30,6 +30,17 @@ tr:nth-child(even) td { background: #f7f9fd; }
 .toc b { color: #1a4f9c; }
 .small { font-size: 9pt; color: #6b7a90; }
 .up { color: #d93a3a; font-weight: 700; } .down { color: #2e9a3e; font-weight: 700; }
+/* 手機 App 內閱讀（螢幕版）：去掉列印分頁、縮小封面、表格可橫向捲動 */
+@media screen {
+  body { font-size: 15px; padding: 14px; background: #fff; }
+  h1 { font-size: 21px; page-break-before: auto; margin-top: 26px; }
+  h2 { font-size: 17px; } h3 { font-size: 15px; }
+  table { display: block; overflow-x: auto; font-size: 13px; }
+  .cover { height: auto; padding: 40px 0 30px; }
+  .cover .t1 { font-size: 28px; } .cover .t2 { font-size: 17px; } .cover .t3 { font-size: 13px; margin-top: 20px; }
+  .toc { columns: 1; font-size: 14px; }
+  .k { font-size: 13px; }
+}
 </style></head><body>
 
 <div class="cover">
@@ -70,7 +81,7 @@ tr:nth-child(even) td { background: #f7f9fd; }
 <li><b>安裝：</b>從 GitHub Releases 下載最新 APK 直接安裝；簽章固定，可直接覆蓋更新，資料保留。</li>
 <li><b>線上更新：</b><span class="path">設置 › 關於與更新 › 檢查更新</span>。新版會在背景單一下載（可續傳、自動校驗），完成後可自動安裝。</li>
 <li><b>更新說明：</b>每一版的更新內容以中文條列顯示在更新視窗與 Releases 頁。</li>
-<li><b>操作說明書：</b>大版本更新或功能有重大變更時更新，App 內可從 <span class="path">設置 › 關於與更新 › 操作說明書</span> 開啟。</li>
+<li><b>操作說明書：</b>大版本更新或功能有重大變更時更新，每版 App 都內建對應版本的說明書：<span class="path">設置 › 關於與更新 › 使用說明書</span>，按「閱讀說明書」可離線閱讀（隨 App 更新自動同步），按「下載 PDF」可存到手機「下載」資料夾。</li>
 <li><b>更新頻率設定：</b>可設定前景／背景檢查間隔、是否通知、是否彈出提示。</li>
 </ul>
 <h2>1.2 畫面結構</h2>
@@ -286,7 +297,7 @@ tr:nth-child(even) td { background: #f7f9fd; }
 <table><tr><th style="width:24%">項目</th><th>說明</th></tr>
 <tr><td>安全</td><td>App 鎖定與相關安全設定。</td></tr>
 <tr><td>群聊</td><td>近距離／網路群聊設定。</td></tr>
-<tr><td>關於與更新</td><td>版本、檢查更新、更新頻率與開關、下載進度、<b>操作說明書（PDF）</b>：開啟最新版說明書（大版本更新或功能有重大變更時更新）。</td></tr>
+<tr><td>關於與更新</td><td>版本、檢查更新、更新頻率與開關、下載進度、<b>使用說明書</b>：「閱讀說明書」離線閱讀本版內建說明書（隨每次更新同步）；「下載 PDF」下載最新 PDF 版（顯示最後更新日期）。</td></tr>
 </table>
 
 <!-- ================= 9 ================= -->

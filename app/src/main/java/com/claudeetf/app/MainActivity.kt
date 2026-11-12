@@ -405,6 +405,7 @@ fun AppRoot() {
             composable(Routes.WELCOME) { com.claudeetf.app.ui.screens.WelcomeScreen(nav) }
             composable(Routes.SEARCH) { com.claudeetf.app.ui.screens.SearchScreen(nav) }
             composable(Routes.ERRORS) { com.claudeetf.app.ui.screens.ErrorLogScreen(nav) }
+            composable(Routes.MANUAL) { com.claudeetf.app.ui.screens.ManualScreen(nav) }
             composable(Routes.HOME) { HomeScreen(nav) }
             composable(Routes.WATCH) { WatchlistScreen(nav) }
             composable(

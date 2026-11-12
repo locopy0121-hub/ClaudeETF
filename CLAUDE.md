@@ -22,7 +22,8 @@ Android 原生 App：Kotlin＋Jetpack Compose（Material3）。只在 GitHub Act
 
 ## 4. 操作說明書
 - `docs/manual/manual.html` 為 App 操作說明書原稿（`{{VERSION}}`、`{{DATE}}` 由 CI 填入）。
-- **只在大版本更新或使用者要求時更新**：更新原稿對應章節，commit 訊息加上「[說明書]」，CI 才會轉成 `ClaudeETF-Manual.pdf` 並發布到固定的 `manual` Release（App 內連結 `releases/download/manual/ClaudeETF-Manual.pdf`）。一般小版本不更新說明書。
+- **只在大版本更新或使用者要求時更新**：更新原稿對應章節，commit 訊息加上「[說明書]」，CI 才會轉成 `ClaudeETF-Manual.pdf` 並發布到固定的 `manual` Release（App 內「下載 PDF」連結 `releases/download/manual/ClaudeETF-Manual.pdf`）。一般小版本不更新說明書。
+- 每次建置 CI 都會把原稿填入版本後打包為 `app/src/main/assets/manual.html`（已列入 .gitignore，勿手動提交），App 內「設置 › 關於與更新 › 使用說明書 › 閱讀說明書」以 WebView 離線閱讀，與 App 版本同步。
 
 ## 5. 測試
 - 純函數（指標、型態、規則）需有 JVM 單元測試（`app/src/test`），CI 會先跑測試。

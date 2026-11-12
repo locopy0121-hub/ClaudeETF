@@ -64,6 +64,7 @@ object Routes {
     fun alerts(symbol: String = "") = "$ALERTS?s=$symbol"
     const val SEARCH = "search"
     const val ERRORS = "errors"
+    const val MANUAL = "manual"
     const val REBALANCE = "rebalance"
     const val COMPARE = "compare"
 

@@ -33,6 +33,13 @@ jobs:
           echo "MINOR=1" >> "$GITHUB_ENV"
           echo "PATCH=$(( ${{ github.run_number }} - 176 ))" >> "$GITHUB_ENV"
 
+      # 把說明書原稿（填入版本與日期）打包進 APK，App 內「設置 › 關於與更新 › 使用說明書」離線閱讀，與版本同步
+      - name: Bundle manual
+        run: |
+          mkdir -p app/src/main/assets
+          sed -e "s/{{VERSION}}/v1.${MINOR}.${PATCH}/g" -e "s|{{DATE}}|$(TZ=Asia/Taipei date +%Y/%m/%d)|g" \
+            docs/manual/manual.html > app/src/main/assets/manual.html
+
       # 先跑單元測試（金額捨去、升降單位、K 線分析），失敗就不發布
       - name: Unit tests
         run: |
