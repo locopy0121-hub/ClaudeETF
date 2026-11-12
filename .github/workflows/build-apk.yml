@@ -61,7 +61,16 @@ jobs:
           LAST=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           RANGE=${LAST:+$LAST..}HEAD
           git log --reverse --format='%B%n' $RANGE | grep -vE '^(Co-Authored-By|Claude-Session):' | sed 's/ *\[發布\]//' | cat -s > notes.md
-          printf '\n---\n版本 1.%s.%s（建置 #%s）\n下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。App 內「設置 › 關於 › 檢查更新」可線上更新。\n' "${{ env.MINOR }}" "${{ env.PATCH }}" "${{ github.run_number }}" >> notes.md
+          printf '\n---\n版本 1.%s.%s（建置 #%s）\n下載下方 APK 直接安裝；簽章固定，可直接覆蓋更新。App 內「設置 › 關於 › 檢查更新」可線上更新；操作說明書見附件 ClaudeETF-Manual.pdf（App 內「設置 › 關於與更新 › 操作說明書」）。\n' "${{ env.MINOR }}" "${{ env.PATCH }}" "${{ github.run_number }}" >> notes.md
+
+      # 操作說明書：每次建置由 docs/manual/manual.html 產生 PDF（填入版本與日期），附在 Release
+      - name: Manual PDF
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk >/dev/null
+          sed -e "s/{{VERSION}}/v1.${{ env.MINOR }}.${{ env.PATCH }}/g" -e "s/{{DATE}}/$(TZ=Asia/Taipei date +'%Y 年 %-m 月 %-d 日')/g" docs/manual/manual.html > /tmp/manual.html
+          google-chrome --headless=new --no-sandbox --disable-gpu --no-pdf-header-footer --print-to-pdf="$PWD/ClaudeETF-Manual.pdf" file:///tmp/manual.html
+          ls -la ClaudeETF-Manual.pdf
 
       # 發布到 Releases，手機直接下載安裝；App 內線上更新也從這裡取得
       - uses: softprops/action-gh-release@v2
@@ -71,4 +80,6 @@ jobs:
           prerelease: false
           make_latest: true
           body_path: notes.md
-          files: ${{ steps.apk.outputs.name }}
+          files: |
+            ${{ steps.apk.outputs.name }}
+            ClaudeETF-Manual.pdf

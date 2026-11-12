@@ -641,6 +641,16 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 item { SettingRow("版本", version) }
                 item { UpdateCard() }
                 item { ReleaseHistoryCard() }
+                item {
+                    // 操作說明書：每次發布新版時一併更新，附在最新 Release
+                    SettingRow("操作說明書（PDF）", "開啟 ›") {
+                        runCatching {
+                            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://github.com/locopy0121-hub/ClaudeETF/releases/latest/download/ClaudeETF-Manual.pdf"))
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    }
+                }
                 item { SettingRow("錯誤紀錄", if (com.claudeetf.app.util.CrashLog.read(context) != null) "有紀錄 ›" else "無 ›") { nav.navigate(Routes.ERRORS) } }
                 item { SettingRow("重新看使用引導", "›") { nav.navigate(Routes.WELCOME) } }
             }
@@ -1206,7 +1216,7 @@ private val SETTINGS_KEYWORDS = mapOf(
     "backup" to "備份 匯入 匯出 雲端",
     "security" to "安全 鎖 指紋 密碼 隱藏金額",
     "chat" to "群聊 聊天",
-    "about" to "關於 更新 版本 線上更新",
+    "about" to "操作說明書 說明書 手冊 關於 更新 版本 線上更新",
 )
 
 

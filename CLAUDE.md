@@ -20,5 +20,9 @@ Android 原生 App：Kotlin＋Jetpack Compose（Material3）。只在 GitHub Act
 - 降級容錯：無網路、未設金鑰或 API 失敗時，一律顯示本地指標與本地規則體檢（`StockMetrics.localReport()`），不得拋出未捕獲例外。
 - API 金鑰只由使用者在「設置 › 分析與提醒 › AI 個股體檢」為每家服務輸入並加密保存，嚴禁寫死在程式或 Repo。
 
-## 4. 測試
+## 4. 操作說明書
+- `docs/manual/manual.html` 為 App 操作說明書原稿（`{{VERSION}}`、`{{DATE}}` 由 CI 填入），每次建置由 GitHub Actions 轉成 `ClaudeETF-Manual.pdf` 附在 Release。
+- **新增或變更功能時，必須同步更新說明書對應章節**（頁面、設定項目、分析方法、常見問題）。
+
+## 5. 測試
 - 純函數（指標、型態、規則）需有 JVM 單元測試（`app/src/test`），CI 會先跑測試。
