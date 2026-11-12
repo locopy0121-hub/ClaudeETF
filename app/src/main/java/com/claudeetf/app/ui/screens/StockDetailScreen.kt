@@ -194,9 +194,9 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
         }
     }
 
-    // 進場建議需與 AI 體檢比對：開啟個股頁即載入（同一交易日有快取，不重複呼叫 AI）
-    LaunchedEffect(q.symbol) {
-        if (com.claudeetf.app.data.AiAnalysis.states[q.symbol]?.report == null)
+    // 進場建議需與 AI 體檢比對：AI 功能開啟時，開啟個股頁即載入（同一交易日有快取，不重複呼叫 AI）
+    LaunchedEffect(q.symbol, AppState.aiOn) {
+        if (AppState.aiOn && com.claudeetf.app.data.AiAnalysis.states[q.symbol]?.report == null)
             runCatching { com.claudeetf.app.data.AiAnalysis.load(q, useAi = com.claudeetf.app.data.AiAnalysis.hasAny()) }
     }
     Column(Modifier.fillMaxSize().background(C.Bg)) {
@@ -240,16 +240,16 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { PriceHeader(q, session) }
-            item { LiveSignalStrip(q) { tabIdx = 0; ovSub = 4 } }
+            item { LiveSignalStrip(q) { tabIdx = 0; ovSub = subIdx("K線") } }
             // 關閉即時訊號時，K 棒摘要仍放在導覽列上方
-            if (!AppState.showLiveSignal) item { KlineSummaryStrip(q) { tabIdx = 0; ovSub = 4 } }
+            if (!AppState.showLiveSignal) item { KlineSummaryStrip(q) { tabIdx = 0; ovSub = subIdx("K線") } }
             item { Segmented(tabs.map { it.label }, tabIdx, { tabIdx = it }) }
             when (tab) {
                 Tab.OVERVIEW -> {
                     // 概覽再分子分頁：點選或在內容區左右滑動切換
                     item { OverviewSubTabs(ovSub) { ovSub = it } }
-                    when (ovSub) {
-                        0 -> {
+                    when (OVERVIEW_SUBS.getOrNull(ovSub)) {
+                        "行情" -> {
                             item { LiveInfo(q) }
                             tradingSection(q, trading)
                             if (q.market == Market.TW && AppState.tape[q.symbol].orEmpty().isNotEmpty()) item { TapeCard(q) }
@@ -262,7 +262,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                                 item { VolumeProfileCard(q, h, start, opt.label) }
                             }
                         }
-                        1 -> {
+                        "圖表" -> {
                             // 圖表：區間、走勢／K 線、均線、副圖、三關價與漲跌停、走勢圖
                             item { Segmented(ranges.map { it.label }, range, { range = it }) }
                             item {
@@ -278,20 +278,20 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                                 ChartBlock(
                                     liveMerge(history, range, q), range, q, chartType, mas, sub,
                                     levels = if (ranges[range].fetch == "1d" && AppState.showKeyLevels) AppState.keyPrices[q.symbol]?.let { KeyLevelsUi.lines(it) } ?: emptyList() else emptyList(),
-                                    onKline = { tabIdx = 0; ovSub = 4 },
+                                    onKline = { tabIdx = 0; ovSub = subIdx("K線") },
                                 )
                             }
                         }
-                        2 -> {
-                            item { EntryAdviceCard(q, onKline = { ovSub = 4 }, onBand = { ovSub = 5 }, onAi = { ovSub = 3 }) }
+                        "分析" -> {
+                            item { EntryAdviceCard(q, onKline = { ovSub = subIdx("K線") }, onBand = { ovSub = subIdx("光譜") }, onAi = { ovSub = subIdx("AI") }) }
                             item { AnalysisCard(q) }
                             peersSection(nav, peers, peerExtras)
                         }
-                        3 -> { item { ConsensusCard(q) }; item { AiCheckupCard(q) } }
-                        4 -> item { KlineAnalysisCard(q) }
-                        5 -> item { PriceBandCard(q) }
-                        6 -> { item { YearlyReturnsCard(q) }; item { DrawdownCard(q) }; item { NextDividendCard(q, compact = true) } }
-                        7 -> overviewMine(q)
+                        "AI" -> { item { ConsensusCard(q) }; item { AiCheckupCard(q) } }
+                        "K線" -> item { KlineAnalysisCard(q) }
+                        "光譜" -> item { PriceBandCard(q) }
+                        "報酬" -> { item { YearlyReturnsCard(q) }; item { DrawdownCard(q) }; item { NextDividendCard(q, compact = true) } }
+                        "我的" -> overviewMine(q)
                         else -> overviewBasic(q, fund)
                     }
                 }
@@ -309,7 +309,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             val first = listState.firstVisibleItemIndex
             val off = listState.firstVisibleItemScrollOffset
             if (AppState.entryFloatPin || first == 0) PlacedEntryFloat(if (AppState.entryFloatPin) 0f else off.toFloat()) { m ->
-                EntryFloatBadge(q, m) { tabIdx = 0; ovSub = 4 }
+                EntryFloatBadge(q, m) { tabIdx = 0; ovSub = subIdx("K線") }
             }
         }
         }
@@ -783,7 +783,10 @@ private fun LazyListScope.infoList(items: List<InfoItem>) {
 }
 
 /** 概覽子分頁 */
-private val OVERVIEW_SUBS = listOf("行情", "圖表", "分析", "AI", "K線", "光譜", "報酬", "我的", "基本")
+private val ALL_SUBS = listOf("行情", "圖表", "分析", "AI", "K線", "光譜", "報酬", "我的", "基本")
+/** AI 分析功能關閉時不顯示「AI」分頁 */
+private val OVERVIEW_SUBS: List<String> get() = if (AppState.aiOn) ALL_SUBS else ALL_SUBS - "AI"
+private fun subIdx(name: String) = OVERVIEW_SUBS.indexOf(name).coerceAtLeast(0)
 
 @Composable
 private fun OverviewSubTabs(sel: Int, onSelect: (Int) -> Unit) {

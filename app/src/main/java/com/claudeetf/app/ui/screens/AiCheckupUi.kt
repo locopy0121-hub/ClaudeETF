@@ -130,12 +130,17 @@ fun AiSettings() {
     Column(Modifier.fillMaxWidth()) {
     Card(padding = 14.dp) {
         Text("AI 個股體檢", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        OptToggle("啟用 AI 分析功能", AppState.aiOn) { AppState.updateAiOn(it) }
+        if (!AppState.aiOn) {
+            Label("關閉中：個股頁不顯示「AI」分頁、不呼叫任何 AI 服務，進場建議只用 App 系統分析。已儲存的金鑰保留在手機安全儲存區，開啟後即可沿用。")
+            return@Card
+        }
         Label("個股頁 › 分析 的「AI 多維度體檢」：指標全部在手機計算，只把算好的數字交給 AI 解讀。可設定多家服務，依下列順序使用（Agnes AI 優先），前一家失敗自動改用下一家；都沒設定時用本地規則體檢。")
         val chain = AiProviders.chain()
         Text(if (chain.isEmpty()) "目前：本地規則體檢（未設定任何 AI 服務）" else "目前使用順序：" + chain.joinToString(" → ") { it.name },
             color = if (chain.isEmpty()) C.Muted else C.Primary, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
     }
-    AiProviders.ALL.forEachIndexed { idx, p ->
+    if (AppState.aiOn) AiProviders.ALL.forEachIndexed { idx, p ->
         val on = open == p.id
         val has = AppState.aiKey(p.id).isNotBlank()
         val enabled = AppState.aiEnabled[p.id] != false
@@ -150,15 +155,34 @@ fun AiSettings() {
                 HGap(8.dp); Text(if (on) "▲" else "▼", color = C.Muted, fontSize = 12.sp)
             }
             if (on) {
-                var key by remember(p.id) { mutableStateOf(AppState.aiKey(p.id)) }
+                var key by remember(p.id) { mutableStateOf("") }
                 var model by remember(p.id) { mutableStateOf(AiProviders.modelOf(p)) }
                 var url by remember(p.id) { mutableStateOf(AppState.aiCustomUrl) }
                 if (p.id == "custom") OutlinedTextField(url, { url = it; AppState.updateAiCustomUrl(it) }, singleLine = true,
                     label = { Text("API 網址（例如 https://xxx/v1）") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = fieldColors())
-                OutlinedTextField(key, { key = it; AppState.updateAi(p.id, key = it) }, singleLine = true,
-                    label = { Text("API 金鑰（" + p.keyHint + "）") }, visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = fieldColors())
+                // 金鑰：已儲存時只顯示「已儲存」，不回填、不顯示內容；更換時輸入新金鑰後按儲存
+                var editing by remember(p.id) { mutableStateOf(!has) }
+                if (has && !editing) {
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("🔒 API 金鑰：已儲存", Modifier.weight(1f), color = C.Green, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("更換", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { key = ""; editing = true }.padding(horizontal = 8.dp, vertical = 4.dp))
+                        Text("刪除", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { AppState.clearAiKey(p.id); key = ""; editing = true; testMsg.remove(p.id) }
+                            .padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                } else {
+                    OutlinedTextField(key, { key = it }, singleLine = true,
+                        label = { Text("輸入 API 金鑰（" + p.keyHint + "）") }, visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = fieldColors())
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("儲存", color = if (key.isNotBlank()) C.OnPrimary else C.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (key.isNotBlank()) C.Primary else C.Bg)
+                                .clickable(enabled = key.isNotBlank()) { AppState.updateAi(p.id, key = key); key = ""; editing = false }
+                                .padding(horizontal = 14.dp, vertical = 6.dp))
+                        if (has) { HGap(8.dp); Text("取消", color = C.Text2, fontSize = 13.sp, modifier = Modifier.clickable { key = ""; editing = false }.padding(6.dp)) }
+                    }
+                }
                 OutlinedTextField(model, { model = it; AppState.updateAi(p.id, model = it) }, singleLine = true,
                     label = { Text("模型") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = fieldColors())
                 if (p.models.isNotEmpty()) Row(Modifier.padding(top = 6.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
@@ -181,7 +205,7 @@ fun AiSettings() {
             }
         }
     }
-    Label("金鑰以手機安全晶片加密保存。同一檔同一交易日只呼叫一次（結果快取），按「AI 重新分析」才會再呼叫。Claude 啟用 Prompt Caching；其他服務使用 OpenAI 相容介面。", Modifier.padding(top = 8.dp))
+    if (AppState.aiOn) Label("金鑰以手機安全晶片（Android Keystore）加密存在 App 私有儲存區，不會顯示，也不會隨備份或匯出外流。同一檔同一交易日只呼叫一次（結果快取），按「AI 重新分析」才會再呼叫。Claude 啟用 Prompt Caching；其他服務使用 OpenAI 相容介面。", Modifier.padding(top = 8.dp))
     }
 }
 

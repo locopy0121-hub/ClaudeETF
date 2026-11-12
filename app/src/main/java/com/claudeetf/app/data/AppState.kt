@@ -557,6 +557,8 @@ object AppState {
         runCatching { org.json.JSONObject(p.getString("aiModels", "{}") ?: "{}").let { o -> o.keys().forEach { k -> aiModels[k] = o.optString(k) } } }
         runCatching { org.json.JSONObject(p.getString("aiEnabled", "{}") ?: "{}").let { o -> o.keys().forEach { k -> aiEnabled[k] = o.optBoolean(k, true) } } }
         aiCustomUrl = p.getString("aiCustomUrl", "") ?: ""
+        // 舊版沒有總開關：已存過金鑰的視為開啟
+        aiOn = if (p.contains("aiOn")) p.getBoolean("aiOn", false) else aiKeys.values.any { it.isNotBlank() }
         twIntradaySource = p.getString("twIntradaySource", "fugle") ?: "fugle"
         twOfficialClose = p.getBoolean("twOfficialClose", true)
         kcondNotify = p.getBoolean("kcondNotify", false)
@@ -917,6 +919,7 @@ object AppState {
             .putString("aiModels", org.json.JSONObject(aiModels.toMap() as Map<*, *>).toString())
             .putString("aiEnabled", org.json.JSONObject(aiEnabled.toMap() as Map<*, *>).toString())
             .putString("aiCustomUrl", aiCustomUrl)
+            .putBoolean("aiOn", aiOn)
             .putBoolean("tickerShow", tickerShow).putString("tickerSymbols", tickerSymbols.joinToString(","))
             .putBoolean("tickerPinned", tickerPinned).putBoolean("tickerAuto", tickerAuto).putBoolean("tickerSched", tickerSched)
             .putString("tickerWindows", tickerWindows.joinToString(",")).putBoolean("tickerWeekdays", tickerWeekdays)
@@ -1055,6 +1058,11 @@ object AppState {
     val aiModels = androidx.compose.runtime.mutableStateMapOf<String, String>()
     val aiEnabled = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
     var aiCustomUrl by mutableStateOf("")
+    /** AI 分析總開關：關閉時不顯示 AI 分頁、不呼叫 AI、進場建議不做 AI 比對 */
+    var aiOn by mutableStateOf(false)
+    fun updateAiOn(on: Boolean) { aiOn = on; save() }
+    /** 刪除某家服務的金鑰（安全儲存區一併清除） */
+    fun clearAiKey(id: String) { aiKeys.remove(id); saveSecret("aiKey_$id", ""); save() }
     fun aiKey(id: String) = aiKeys[id].orEmpty()
     fun updateAi(id: String, key: String? = null, model: String? = null, enabled: Boolean? = null) {
         key?.let { aiKeys[id] = it.trim(); saveSecret("aiKey_$id", it.trim()) }

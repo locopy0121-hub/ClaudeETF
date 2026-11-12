@@ -560,8 +560,8 @@ fun EntryAdviceCard(q0: Quote, onKline: () -> Unit = {}, onBand: () -> Unit = {}
                 }.padding(6.dp))
         }
         if (a == null) { Label("正在整合 K 線、投資分析、光譜、分析師、籌碼與波動資料…", Modifier.padding(top = 8.dp)); return@Card }
-        // 與 AI 體檢比對
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable(onClick = onAi).padding(10.dp),
+        // 與 AI 體檢比對（AI 分析功能開啟時）
+        if (AppState.aiOn) Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable(onClick = onAi).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             val cs = a.consensus
             Column(Modifier.weight(1f)) {

@@ -73,7 +73,7 @@ object EntryAdvisor {
      *   方向相反 → 分歧，系統偏多時觀望、系統偏空時暫不進場，比例大幅降低。
      */
     fun reconcile(base: Advice, rep: StockMetrics.StockAnalysisReport?): Advice {
-        if (rep == null) return base
+        if (rep == null || !AppState.aiOn) return base
         val s = base.entry.level
         val a = aiLevel(rep.overallSignal, rep.confidence)
         val src = if (rep.source == "local") "規則體檢" else ("AI（" + rep.model.ifBlank { "AI" } + "）")

@@ -65,7 +65,7 @@ object AiAnalysis {
     private var skill: String? = null
 
     fun init(c: Context) { if (!::ctx.isInitialized) ctx = c.applicationContext }
-    fun hasAny() = AiProviders.chain().isNotEmpty()
+    fun hasAny() = AppState.aiOn && AiProviders.chain().isNotEmpty()
 
     private fun dir() = File(ctx.filesDir, "ai_analysis").apply { mkdirs() }
     private fun cacheFile(sym: String, date: String) = File(dir(), sym.replace(Regex("[^A-Za-z0-9]"), "_") + "_" + date + ".json")
