@@ -34,6 +34,7 @@ object MarketData {
     // 證交所／櫃買為盤後日資料，同一天內不重複下載
     private var closeCache: Map<String, Pair<RemoteQuote, QuoteSource>> = emptyMap()
     private var closeCacheKey = ""
+    private var closeCacheAt = 0L
 
     fun isTwIntraday(now: ZonedDateTime = ZonedDateTime.now(TPE)): Boolean {
         val t = now.withZoneSameInstant(TPE)
@@ -57,6 +58,13 @@ object MarketData {
     fun lastTradingDay(now: ZonedDateTime = ZonedDateTime.now(TPE)): java.time.LocalDate {
         var d = now.toLocalDate()
         if (now.toLocalTime() < LocalTime.of(9, 0)) d = d.minusDays(1)
+        while (d.dayOfWeek == DayOfWeek.SATURDAY || d.dayOfWeek == DayOfWeek.SUNDAY) d = d.minusDays(1)
+        return d
+    }
+
+    /** 應已公布收盤資料的最近交易日：平日 14:30 後為今天，否則往前找平日（不含國定假日） */
+    fun expectedCloseDay(now: ZonedDateTime = ZonedDateTime.now(TPE)): java.time.LocalDate {
+        var d = if (now.toLocalTime() >= LocalTime.of(14, 30)) now.toLocalDate() else now.toLocalDate().minusDays(1)
         while (d.dayOfWeek == DayOfWeek.SATURDAY || d.dayOfWeek == DayOfWeek.SUNDAY) d = d.minusDays(1)
         return d
     }
@@ -341,7 +349,7 @@ object MarketData {
         lastOfficialTry = now
         val data = withContext(Dispatchers.IO) {
             val twse = runCatching { TwseApi.miIndex(day) }.getOrDefault(emptyMap())
-            val tpex = if (need.any { it !in twse }) runCatching { TpexApi.dayAll() }.getOrDefault(emptyMap()).filterValues { it.date == day } else emptyMap()
+            val tpex = if (need.any { it !in twse }) runCatching { TpexApi.latestAll() }.getOrDefault(emptyMap()).filterValues { it.date == day } else emptyMap()
             tpex.mapValues { it.value to QuoteSource.TPEX } + twse.mapValues { it.value to QuoteSource.TWSE }
         }
         var n = 0
@@ -375,11 +383,15 @@ object MarketData {
     private fun closeData(): Map<String, Pair<RemoteQuote, QuoteSource>> {
         val nowT = ZonedDateTime.now(TPE)
         val key = nowT.toLocalDate().toString() + "-" + (nowT.toLocalTime() >= LocalTime.of(14, 30))
-        if (key == closeCacheKey && closeCache.isNotEmpty()) return closeCache
-        val twse = TwseApi.dayAll().mapValues { it.value to QuoteSource.TWSE }
-        val tpex = runCatching { TpexApi.dayAll().mapValues { it.value to QuoteSource.TPEX } }.getOrDefault(emptyMap())
+        // 已是最新交易日的資料才長期快取；仍是前一日（盤後官方資料尚未公布）時 10 分鐘後重抓
+        val fresh = closeCache.values.firstOrNull { it.second == QuoteSource.TWSE }?.first?.date?.let { it >= expectedCloseDay() } == true
+        if (key == closeCacheKey && closeCache.isNotEmpty() && (fresh || System.currentTimeMillis() - closeCacheAt < 10 * 60_000L)) return closeCache
+        // 用「最新交易日」版本：上市 14:00 後改取當日 MI_INDEX（OpenAPI 常到隔天才更新），上櫃取當日網站資料
+        val twse = TwseApi.latestAll().mapValues { it.value to QuoteSource.TWSE }
+        val tpex = runCatching { TpexApi.latestAll().mapValues { it.value to QuoteSource.TPEX } }.getOrDefault(emptyMap())
         closeCache = tpex + twse
         closeCacheKey = key
+        closeCacheAt = System.currentTimeMillis()
         return closeCache
     }
 

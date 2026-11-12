@@ -134,8 +134,12 @@ object DataHealth {
         Check("台銀匯率", "臺灣銀行牌告") {
             val f = BotFxApi.usd(); Level.OK to "美元即期 買 ${Fmt.num(f.spotBuy, 3)}／賣 ${Fmt.num(f.spotSell, 3)}"
         },
-        Check("新聞", "Yahoo 股市 RSS") {
-            val n = YahooExtra.news("2330.TW"); if (n.isEmpty()) Level.WARN to "沒有新聞" else Level.OK to "${n.size} 則 · 最新「${n.first().title.take(18)}」"
+        Check("市場新聞", "已啟用的 RSS 來源") {
+            val n = RssNews.merged(20); if (n.isEmpty()) Level.FAIL to "沒有新聞" else Level.OK to "${n.size} 則 · 最新「${n.first().title.take(18)}」（${n.first().publisher}）"
+        },
+        Check("個股新聞", "Yahoo 股市／Google 新聞") {
+            val q = com.claudeetf.app.data.Quote("2330", "台積電", com.claudeetf.app.data.Market.TW, 0.0, 0.0)
+            val n = RssNews.stock(q); if (n.isEmpty()) Level.WARN to "2330 沒有相關新聞" else Level.OK to "2330 · ${n.size} 則 · 最新「${n.first().title.take(18)}」"
         },
     )
 

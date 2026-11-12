@@ -25,27 +25,35 @@ object TwIsin {
             val cs = runCatching { Charset.forName("MS950") }.getOrElse { Charset.forName("Big5") }
             val out = ArrayList<Sec>(4000)
             var section = ""
-            java.util.Scanner(conn.inputStream.reader(cs).buffered(64 * 1024)).use { sc ->
-                sc.useDelimiter("(?i)</tr>")
-                while (sc.hasNext()) {
-                    val row = sc.next()
-                    val tds = TD.findAll(row).map { it.groupValues[1].replace(TAG, "").replace("&nbsp;", " ").trim() }.toList()
-                    if (tds.size == 1 || (tds.isNotEmpty() && tds.size < 5)) { section = tds.first().trim(); continue }
-                    if (tds.size < 5) continue
-                    val first = tds[0].replace('　', ' ').trim()
-                    val code = first.substringBefore(' ').trim()
-                    val name = first.substringAfter(' ', "").trim()
-                    if (name.isEmpty() || !CODE.matches(code)) continue
-                    val type = when {
-                        section.contains("ETF", true) || (code.startsWith("00") && !section.contains("ETN", true)) -> "ETF"
-                        section.contains("ETN", true) -> "ETN"
-                        section.contains("特別股") -> "特別股"
-                        section.contains("存託") -> "TDR"
-                        section.contains("受益") -> "受益證券"
-                        else -> "股票"
-                    }
-                    out += Sec(code, name, tds.getOrElse(2) { "" }, tds.getOrElse(3) { "" }, tds.getOrElse(4) { "" }, type)
+            // 整頁讀入後以 indexOf 切列：先只看第一格代號，不符合（權證等數萬列）就跳過，避免逐列跑正規表示式
+            val text = conn.inputStream.reader(cs).buffered(256 * 1024).use { it.readText() }
+            val low = text.lowercase()
+            var pos = 0
+            while (true) {
+                val end = low.indexOf("</tr>", pos)
+                if (end < 0) break
+                val rowStart = pos
+                pos = end + 5
+                val td0 = low.indexOf("<td", rowStart).takeIf { it in 0 until end } ?: continue
+                val tdCount = run { var c = 0; var i = td0; while (i in 0 until end) { c++; i = low.indexOf("<td", i + 3) }; c }
+                val c0 = text.indexOf('>', td0) + 1
+                val c1 = low.indexOf("</td", c0).takeIf { it in c0..end } ?: end
+                val firstCell = text.substring(c0, c1).replace(TAG, "").replace("&nbsp;", " ").trim()
+                if (tdCount < 5) { if (firstCell.isNotEmpty()) section = firstCell; continue }
+                val first = firstCell.replace('　', ' ').trim()
+                val code = first.substringBefore(' ').trim()
+                val name = first.substringAfter(' ', "").trim()
+                if (name.isEmpty() || !CODE.matches(code)) continue
+                val tds = TD.findAll(text.substring(rowStart, end)).map { it.groupValues[1].replace(TAG, "").replace("&nbsp;", " ").trim() }.toList()
+                val type = when {
+                    section.contains("ETF", true) || (code.startsWith("00") && !section.contains("ETN", true)) -> "ETF"
+                    section.contains("ETN", true) -> "ETN"
+                    section.contains("特別股") -> "特別股"
+                    section.contains("存託") -> "TDR"
+                    section.contains("受益") -> "受益證券"
+                    else -> "股票"
                 }
+                out += Sec(code, name, tds.getOrElse(2) { "" }, tds.getOrElse(3) { "" }, tds.getOrElse(4) { "" }, type)
             }
             return out
         } finally {
