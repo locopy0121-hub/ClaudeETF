@@ -191,7 +191,7 @@ object AppState {
     data class ExtQuote(val label: String, val price: Double, val changePct: Double, val time: Long)
 
     /** 當日高低與成交量（股），自選欄位與小工具使用 */
-    data class DayStat(val high: Double?, val low: Double?, val volume: Double?, val at: Long)
+    data class DayStat(val high: Double?, val low: Double?, val volume: Double?, val at: Long, val open: Double? = null)
     val dayStats = mutableStateMapOf<String, DayStat>()
 
     /** 逐筆成交明細（最新在前，每檔最多 1500 筆，跨日清空） */
@@ -589,7 +589,7 @@ object AppState {
             o.keys().forEach { k ->
                 val a = o.optJSONArray(k) ?: return@forEach
                 fun v(i: Int) = a.optDouble(i, -1.0).takeIf { it >= 0 }
-                dayStats[k] = DayStat(v(0), v(1), v(2), a.optLong(3))
+                dayStats[k] = DayStat(v(0), v(1), v(2), a.optLong(3), v(4))
             }
         }
         divPayAlert = p.getBoolean("divPayAlert", true)
@@ -910,7 +910,7 @@ object AppState {
             .putBoolean("tickerPinned", tickerPinned).putBoolean("tickerAuto", tickerAuto).putBoolean("tickerSched", tickerSched)
             .putString("tickerWindows", tickerWindows.joinToString(",")).putBoolean("tickerWeekdays", tickerWeekdays)
             .putString("dayStats", org.json.JSONObject().also { o ->
-                dayStats.forEach { (k, d) -> o.put(k, org.json.JSONArray().put(d.high ?: -1.0).put(d.low ?: -1.0).put(d.volume ?: -1.0).put(d.at)) }
+                dayStats.forEach { (k, d) -> o.put(k, org.json.JSONArray().put(d.high ?: -1.0).put(d.low ?: -1.0).put(d.volume ?: -1.0).put(d.at).put(d.open ?: -1.0)) }
             }.toString())
             .putBoolean("divPayAlert", divPayAlert)
             .putString("divPayMuted", divPayMuted.joinToString(","))
@@ -1103,7 +1103,11 @@ object AppState {
         if (live) recordTick(old.symbol, rq.price)
         if (rq.high != null || rq.low != null || rq.volume != null) {
             val prevStat = dayStats[old.symbol]
-            dayStats[old.symbol] = DayStat(rq.high ?: prevStat?.high, rq.low ?: prevStat?.low, rq.volume ?: prevStat?.volume, now)
+            // 開盤價：同一交易日沿用（跨日由新的開盤價取代）
+            val sameDay = prevStat != null && java.time.Instant.ofEpochMilli(prevStat.at).atZone(java.time.ZoneId.systemDefault()).toLocalDate() ==
+                java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+            dayStats[old.symbol] = DayStat(rq.high ?: prevStat?.high, rq.low ?: prevStat?.low, rq.volume ?: prevStat?.volume, now,
+                rq.open ?: if (sameDay) prevStat?.open else null)
         }
         quotes[i] = old.copy(
             // 台股：名稱沒有中文（如從 Yahoo 搜尋加入的英文名稱）時，改用證交所／櫃買／MIS 的完整中文名稱；美股不變

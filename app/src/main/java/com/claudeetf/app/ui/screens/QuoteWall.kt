@@ -174,7 +174,39 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
         1 -> C.Muted; 2 -> C.Text; 3 -> GOLD; 4 -> C.Primary; 5 -> trend
         else -> main
     }
+    /** 即時 K 棒：當日開、高、低、現價畫成一根蠟燭；字級＝高度 */
+    @Composable fun KBar(i: WallItem) {
+        val qq = q ?: return
+        if (qq.price <= 0) return
+        val ds = AppState.dayStats[h.symbol]
+        val k = com.claudeetf.app.data.KlineAnalysis.latestDaily[h.symbol]?.candles?.lastOrNull()
+        val open = ds?.open ?: k?.o?.takeIf { k.c == qq.price } ?: qq.prevClose
+        val hi = maxOf(ds?.high ?: qq.price, qq.price, open)
+        val lo = minOf(ds?.low ?: qq.price, qq.price, open)
+        val ref = qq.prevClose.takeIf { it > 0 } ?: open
+        val up = qq.price >= open
+        val col = when (i.color) { 0 -> Trend.fg(qq.price - open); 6 -> Trend.fg(if (up) 1.0 else -1.0); else -> color(i) }
+        val bgc = bgColor(i)
+        val hDp = (i.size * 1.6f).dp
+        val wDp = (i.size * 0.55f).coerceAtLeast(6f).dp
+        // 以昨收 ±（今日振幅與 2% 取大者）為刻度，K 棒高度反映實際漲跌幅度
+        val span = maxOf(hi - lo, ref * 0.02, kotlin.math.abs(hi - ref), kotlin.math.abs(lo - ref)).coerceAtLeast(1e-9)
+        val top = maxOf(hi, ref + span * 0.5); val bot = minOf(lo, ref - span * 0.5)
+        androidx.compose.foundation.Canvas(Modifier.outer(i.mx, i.my)
+            .then(if (bgc != null) Modifier.drawBehind { drawRoundRect(bgc, cornerRadius = CornerRadius(4.dp.toPx())) } else Modifier)
+            .outer(i.px, i.py).size(wDp, hDp)) {
+            fun y(p: Double) = (size.height * (1 - (p - bot) / (top - bot))).toFloat()
+            val cx = size.width / 2
+            // 昨收參考線
+            drawLine(col.copy(alpha = 0.35f), androidx.compose.ui.geometry.Offset(0f, y(ref)), androidx.compose.ui.geometry.Offset(size.width, y(ref)), 1.dp.toPx())
+            drawLine(col, androidx.compose.ui.geometry.Offset(cx, y(hi)), androidx.compose.ui.geometry.Offset(cx, y(lo)), 1.5.dp.toPx())
+            val bTop = y(maxOf(open, qq.price)); val bBot = y(minOf(open, qq.price))
+            drawRect(col, androidx.compose.ui.geometry.Offset(size.width * 0.15f, bTop),
+                androidx.compose.ui.geometry.Size(size.width * 0.7f, (bBot - bTop).coerceAtLeast(1.5.dp.toPx())))
+        }
+    }
     @Composable fun Item(i: WallItem) {
+        if (i.id == "kbar") { KBar(i); return }
         val (pre, v) = parts(i) ?: return
         val main = color(i)
         val bgc = bgColor(i)
@@ -435,8 +467,8 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                                 upd { it.copy(lh = if (v in 1..69) (if (v > it.lh) 70 else 0) else v) } }
 
                             WSub("配色")
-                            WChips("文字顏色", COLOR_OPTS + (if (i.id == "entry" || i.id == "band" || i.id == "rank") listOf(6 to "依等級") else emptyList()), i.color) { v -> upd { it.copy(color = v) } }
-                            WChips("標籤底色", BG_OPTS.filter { it.first != 2 || i.id == "entry" || i.id == "band" || i.id == "rank" }, i.bg) { v -> upd { it.copy(bg = v) } }
+                            WChips("文字顏色", COLOR_OPTS + (if (i.id == "entry" || i.id == "band" || i.id == "rank" || i.id == "kbar") listOf(6 to "依等級") else emptyList()), i.color) { v -> upd { it.copy(color = v) } }
+                            WChips("標籤底色", BG_OPTS.filter { it.first != 2 || i.id == "entry" || i.id == "band" || i.id == "rank" || i.id == "kbar" }, i.bg) { v -> upd { it.copy(bg = v) } }
                             if (i.bg != 0) WStep("底色濃度", i.ba, 10, 100, 5, "%") { v -> upd { it.copy(ba = v) } }
                             if (i.id in LABELED) {
                                 WToggle("顯示前綴文字（例如「市值」）", i.label) { v -> upd { it.copy(label = v) } }
