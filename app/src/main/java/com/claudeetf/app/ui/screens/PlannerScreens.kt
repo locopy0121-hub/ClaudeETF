@@ -298,11 +298,11 @@ fun FxScreen(nav: NavController) {
         hist = Load.Loading
         hist = runCatching {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { YahooExtra.history("TWD=X", ranges[range].first) }
-        }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
     LaunchedEffect(Unit) {
         bank = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BotFxApi.usd() } }
-            .fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            .fold({ Load.Ok(it) }, { Load.err(it) })
     }
     val us = AppState.holdingsOf(Market.US)
     val usCost = us.sumOf { it.shares * it.avgCost }

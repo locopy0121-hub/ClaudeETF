@@ -362,7 +362,7 @@ fun CompareScreen(nav: NavController, initial: String) {
         data = Load.Loading
         data = runCatching {
             picked.mapNotNull { s -> AppState.quote(s)?.let { q -> s to StockInfoRepo.history(q, ranges[range].first) } }.toMap()
-        }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {

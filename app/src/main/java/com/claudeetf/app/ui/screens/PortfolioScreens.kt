@@ -850,7 +850,7 @@ fun DividendScreen(nav: NavController) {
             val held = AppState.holdings.map { it.symbol }.toSet()
             CalendarRepo.load().filter { it.kind == EventKind.DIVIDEND && it.isHolding }
                 .filter { e -> held.any { e.title.startsWith(it + " ") } }
-        }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {
@@ -1000,7 +1000,7 @@ fun AnalysisScreen(nav: NavController) {
     LaunchedEffect(allocBy) { if (allocBy == 3) runCatching { com.claudeetf.app.data.IndustryRepo.ensure() } }
     LaunchedEffect(reload) {
         bt = Load.Loading
-        bt = runCatching { Analytics.backtest(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        bt = runCatching { Analytics.backtest(reload > 0) }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
     val alloc: List<Pair<String, Double>> = if (mv <= 0) emptyList() else when (allocBy) {
         0 -> AppState.holdings.groupBy { sectorOf(it.symbol) }

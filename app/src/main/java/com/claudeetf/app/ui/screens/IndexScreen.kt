@@ -44,7 +44,7 @@ fun IndexScreen(nav: NavController, symbol: String) {
     LaunchedEffect(symbol, range) {
         hist = Load.Loading
         suspend fun load() = runCatching { withContext(Dispatchers.IO) { YahooExtra.history(symbol, idxRanges[range].fetch) } }
-        hist = load().fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        hist = load().fold({ Load.Ok(it) }, { Load.err(it) })
         while (range == 0) {
             delay(30_000)
             val open = if (tw) MarketData.isTwIntraday() else MarketData.usLive()

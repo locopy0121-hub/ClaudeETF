@@ -64,17 +64,17 @@ fun MarketScreen(nav: NavController) {
         if (tab == 2) {
             com.claudeetf.app.data.TwPicks.startEtf()
             etfSnap = Load.Loading
-            etfSnap = runCatching { com.claudeetf.app.data.EtfMarket.load(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            etfSnap = runCatching { com.claudeetf.app.data.EtfMarket.load(reload > 0) }.fold({ Load.Ok(it) }, { Load.err(it) })
             return@LaunchedEffect
         }
         if (tab == 3) {
             global = Load.Loading
-            global = runCatching { MarketBoards.global(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            global = runCatching { MarketBoards.global(reload > 0) }.fold({ Load.Ok(it) }, { Load.err(it) })
             return@LaunchedEffect
         }
         board = Load.Loading
         board = runCatching { if (tab == 0) MarketBoards.us(reload > 0) else MarketBoards.tw(reload > 0) }
-            .fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            .fold({ Load.Ok(it) }, { Load.err(it) })
     }
 
     fun open(sym: String) {
@@ -272,7 +272,7 @@ fun CalendarScreen(nav: NavController) {
     var events by remember { mutableStateOf<Load<List<CalendarEvent>>>(Load.Loading) }
     LaunchedEffect(reload) {
         events = Load.Loading
-        events = runCatching { CalendarRepo.load(reload > 0) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        events = runCatching { CalendarRepo.load(reload > 0) }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
 
     Column(Modifier.fillMaxSize().background(C.Bg)) {

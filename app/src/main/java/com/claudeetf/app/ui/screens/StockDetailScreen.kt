@@ -59,6 +59,13 @@ sealed class Load<out T> {
     data object Loading : Load<Nothing>()
     data class Ok<T>(val value: T) : Load<T>()
     data class Err(val message: String) : Load<Nothing>()
+    companion object {
+        /** 載入失敗；協程被取消（切換分頁、離開畫面）時不當成錯誤，直接往外拋讓協程結束 */
+        fun err(t: Throwable): Load<Nothing> {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            return Err(t.friendly())
+        }
+    }
 }
 
 private val TPE = ZoneId.of("Asia/Taipei")
@@ -112,7 +119,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     LaunchedEffect(q.symbol, range, AppState.usExtendedChart) {
         history = Load.Loading
         history = runCatching { StockInfoRepo.history(q, ranges[range].fetch) }
-            .fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+            .fold({ Load.Ok(it) }, { Load.err(it) })
         // 盤中：最新價格即時接到走勢最後一根（見 liveMerge）；每 2 分鐘與完整分 K 校正一次
         while (range == 0) {
             kotlinx.coroutines.delay(120_000)
@@ -135,7 +142,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     // 基本面（概覽、財務、公司共用）
     var fund by remember { mutableStateOf<Load<Fundamentals>>(Load.Loading) }
     LaunchedEffect(q.symbol) {
-        fund = runCatching { StockInfoRepo.fundamentals(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        fund = runCatching { StockInfoRepo.fundamentals(q) }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
     // 股息、新聞：切到該分頁才載入
     var divs by remember { mutableStateOf<Load<DividendInfo>>(Load.Loading) }
@@ -146,7 +153,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     var peers by remember { mutableStateOf<Load<List<StockInfoRepo.Peer>>>(Load.Loading) }
     var peerExtras by remember { mutableStateOf<Map<String, PeerExtra>>(emptyMap()) }
     LaunchedEffect(q.symbol) {
-        peers = runCatching { StockInfoRepo.peers(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+        peers = runCatching { StockInfoRepo.peers(q) }.fold({ Load.Ok(it) }, { Load.err(it) })
         // 同業的三關位置與法人買賣超
         (peers as? Load.Ok<List<StockInfoRepo.Peer>>)?.value?.let { list ->
             val inst = if (q.market == Market.TW) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -165,7 +172,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
         when (tab) {
             Tab.OVERVIEW -> {
                 if (trading !is Load.Ok) {
-                    trading = runCatching { StockInfoRepo.trading(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+                    trading = runCatching { StockInfoRepo.trading(q) }.fold({ Load.Ok(it) }, { Load.err(it) })
                 }
                 // 串流尚未涵蓋時才以快照補（串流一接上，畫面改由推播同步，不再輪詢）
                 while (q.market == Market.TW && com.claudeetf.app.data.MarketData.isTwIntraday() && AppState.fugleKey.isNotBlank()) {
@@ -176,19 +183,19 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             }
             Tab.CHIPS -> if (chips !is Load.Ok) {
                 chips = Load.Loading
-                chips = runCatching { StockInfoRepo.chips(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+                chips = runCatching { StockInfoRepo.chips(q) }.fold({ Load.Ok(it) }, { Load.err(it) })
             }
             Tab.HOLD -> if (holdings !is Load.Ok) {
                 holdings = Load.Loading
-                holdings = runCatching { com.claudeetf.app.data.EtfComposition.load(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+                holdings = runCatching { com.claudeetf.app.data.EtfComposition.load(q) }.fold({ Load.Ok(it) }, { Load.err(it) })
             }
             Tab.DIV -> if (divs !is Load.Ok) {
                 divs = Load.Loading
-                divs = runCatching { StockInfoRepo.dividends(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+                divs = runCatching { StockInfoRepo.dividends(q) }.fold({ Load.Ok(it) }, { Load.err(it) })
             }
             Tab.NEWS -> if (news !is Load.Ok) {
                 news = Load.Loading
-                news = runCatching { StockInfoRepo.news(q) }.fold({ Load.Ok(it) }, { Load.Err(it.friendly()) })
+                news = runCatching { StockInfoRepo.news(q) }.fold({ Load.Ok(it) }, { Load.err(it) })
             }
             else -> {}
         }
