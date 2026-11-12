@@ -3,6 +3,8 @@ package com.claudeetf.app.data
 import android.content.Context
 import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -96,11 +98,16 @@ object AiAnalysis {
         }
         val errors = ArrayList<String>()
         var rep: StockMetrics.StockAnalysisReport? = null
+        val n = votes()
         for (p in chain) {
-            val r = withContext(Dispatchers.IO) { runCatching { call(p, m) } }
-            rep = r.getOrNull()
+            // 同一份數據平行分析 n 次取共識（AI 每次回答會有差異，多數決＋信心取中位數讓結果穩定）
+            val rs = withContext(Dispatchers.IO) {
+                kotlinx.coroutines.coroutineScope { (1..n).map { async { runCatching { call(p, m) } } }.awaitAll() }
+            }
+            val ok = rs.mapNotNull { it.getOrNull() }
+            rep = consensus(ok, n)
             if (rep != null) break
-            errors += p.name + "：" + (r.exceptionOrNull()?.message ?: "未知錯誤")
+            errors += p.name + "：" + (rs.firstNotNullOfOrNull { it.exceptionOrNull() }?.message ?: "未知錯誤")
             com.claudeetf.app.util.ErrorLog.record("AI 體檢", sym + " " + errors.last())
         }
         withContext(Dispatchers.Main) {
@@ -113,6 +120,29 @@ object AiAnalysis {
         }
     }
 
+    /** 每次分析呼叫 AI 的次數（取共識）：1、3、5，預設 3 */
+    fun votes(): Int = AppState.cacheGet("aiVotes")?.toIntOrNull()?.takeIf { it in setOf(1, 3, 5) } ?: 3
+    fun setVotes(v: Int) = AppState.cachePut("aiVotes", v.toString())
+
+    /** 多次結果取共識：訊號多數決（同票取較保守者），信心取該組中位數，文字取最接近中位數的一份 */
+    fun consensus(list: List<StockMetrics.StockAnalysisReport>, asked: Int): StockMetrics.StockAnalysisReport? {
+        if (list.isEmpty()) return null
+        if (list.size == 1 && asked == 1) return list[0]
+        val order = listOf("偏空警示", "轉弱防守", "區間震盪", "多頭回檔", "強勢多頭")
+        // 保守度：越接近「區間震盪」越保守
+        fun cons(sig: String) = order.indexOf(sig).let { if (it < 0) 0 else kotlin.math.abs(it - 2) }
+        val groups = list.groupBy { it.overallSignal }
+        val top = groups.values.maxOf { it.size }
+        val win = groups.filterValues { it.size == top }.entries.minBy { cons(it.key) }.value
+        val confs = win.map { it.confidence }.sorted()
+        val med = confs[confs.size / 2]
+        val rep = win.minBy { kotlin.math.abs(it.confidence - med) }
+        // 意見分歧時信心打折：一致比例越低，信心越低
+        val agree = win.size.toDouble() / list.size
+        val conf = (med * (0.6 + 0.4 * agree)).toInt().coerceIn(0, 100)
+        return rep.copy(confidence = conf, model = rep.model + " · ${list.size} 次共識 ${win.size}/${list.size}")
+    }
+
     private val userPrefix = "以下是本地預計算的 ComputedStockMetrics（所有數字皆已算好，請勿自行推估其他數字），請依規範只輸出單一 JSON：\n"
 
     private fun call(p: AiProviders.Provider, m: StockMetrics.ComputedStockMetrics): StockMetrics.StockAnalysisReport {
@@ -121,7 +151,7 @@ object AiAnalysis {
         val user = userPrefix + m.toJson().toString()
         val req = when (p.kind) {
             AiProviders.Kind.ANTHROPIC -> {
-                val body = JSONObject().put("model", model).put("max_tokens", 1500).put("temperature", 0.1)
+                val body = JSONObject().put("model", model).put("max_tokens", 1500).put("temperature", 0.0)
                     .put("system", JSONArray().put(JSONObject().put("type", "text").put("text", skillPrompt())
                         .put("cache_control", JSONObject().put("type", "ephemeral"))))
                     .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user)))
@@ -131,7 +161,7 @@ object AiAnalysis {
                     .post(body.toString().toRequestBody("application/json".toMediaType())).build()
             }
             AiProviders.Kind.OPENAI -> {
-                val body = JSONObject().put("model", model).put("temperature", 0.1).put("max_tokens", 1500)
+                val body = JSONObject().put("model", model).put("temperature", 0.0).put("max_tokens", 1500)
                     .put("messages", JSONArray()
                         .put(JSONObject().put("role", "system").put("content", skillPrompt()))
                         .put(JSONObject().put("role", "user").put("content", user)))

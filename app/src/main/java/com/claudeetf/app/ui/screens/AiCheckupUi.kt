@@ -139,6 +139,12 @@ fun AiSettings() {
         val chain = AiProviders.chain()
         Text(if (chain.isEmpty()) "目前：本地規則體檢（未設定任何 AI 服務）" else "目前使用順序：" + chain.joinToString(" → ") { it.name },
             color = if (chain.isEmpty()) C.Muted else C.Primary, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        var votes by remember { mutableIntStateOf(com.claudeetf.app.data.AiAnalysis.votes()) }
+        Text("每次分析取共識", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp))
+        Segmented(listOf("1 次", "3 次（建議）", "5 次"), listOf(1, 3, 5).indexOf(votes).coerceAtLeast(0), onSelect = { i ->
+            votes = listOf(1, 3, 5)[i]; com.claudeetf.app.data.AiAnalysis.setVotes(votes)
+        }, modifier = Modifier.padding(top = 4.dp))
+        Label("AI 每次回答會有差異。同一份數據平行分析多次，訊號取多數決、信心取中位數（意見分歧時信心打折），結果較穩定；次數越多用量越大。同一交易日的結果會保存，不會重複呼叫。")
     }
     if (AppState.aiOn) AiProviders.ALL.forEachIndexed { idx, p ->
         val on = open == p.id
