@@ -545,10 +545,13 @@ private fun LiveSignalStrip(q: Quote, onClick: () -> Unit) {
         r = runCatching { com.claudeetf.app.data.KlineAnalysis.load(q, false, if (live) 120_000L else 10 * 60_000L) }.getOrNull() ?: r
     }
     val res = r ?: return
+    // 右側標籤用「綜合進場建議」（與進場徽章一致）；K 線觀點改列在下方，避免兩個結論看起來互相矛盾
+    val adv = adviceFor(q, full = true)
+    val main = adv?.entry ?: res.entry
     val last = res.candles.lastIndex
     val todayHits = res.latest.filter { it.idx == last }
     val lastDay = java.time.Instant.ofEpochMilli(res.candles[last].t).atZone(zone).toLocalDate()
-    val c = entryColor(res.entry.level)
+    val c = entryColor(main.level)
     val hm = now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(c.copy(alpha = 0.10f))
@@ -571,7 +574,10 @@ private fun LiveSignalStrip(q: Quote, onClick: () -> Unit) {
                 )
             }
             Spacer(Modifier.weight(1f))
-            EntryTag(res.entry)
+            Column(horizontalAlignment = Alignment.End) {
+                EntryTag(main)
+                if (adv != null) Text("綜合建議 · 先投 ${adv.ratio}%", color = C.Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
+            }
         }
         Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(if (live) "當日 K 棒（形成中）：" else "當日 K 棒：", color = C.Muted, fontSize = 12.sp)
@@ -580,10 +586,25 @@ private fun LiveSignalStrip(q: Quote, onClick: () -> Unit) {
                 Modifier.weight(1f), color = if (todayHits.isEmpty()) C.Text2 else entryColor(todayHits.sumOf { it.pat.dir.weight }.coerceIn(-1, 1)),
                 fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
-            Text(res.dir.label + " " + res.strength, color = c, fontSize = 12.sp)
+            Text(res.dir.label + " " + res.strength, color = entryColor(res.entry.level), fontSize = 12.sp)
+        }
+        Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("K 線觀點：", color = C.Muted, fontSize = 12.sp)
+            Text(res.entry.label, color = entryColor(res.entry.level), fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
         Text(res.entry.reason, color = C.Text2, fontSize = 11.sp, lineHeight = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 2.dp))
+        // K 線觀點與綜合建議不同時說明原因
+        if (adv != null && adv.entry.level != res.entry.level) {
+            val cons = adv.cons.take(2).joinToString("、") { it.substringBefore("：") }
+            val pros = adv.pros.take(2).joinToString("、") { it.substringBefore("：") }
+            Text(
+                if (adv.entry.level < res.entry.level) "K 線短線" + res.entry.label + "，但綜合 ${adv.sources.size} 項指標後為「" + adv.entry.label + "」" +
+                    (if (cons.isNotEmpty()) "（主要拖累：$cons）" else "") + "，建議先小量試單。"
+                else "K 線短線" + res.entry.label + "，但綜合 ${adv.sources.size} 項指標後為「" + adv.entry.label + "」" +
+                    (if (pros.isNotEmpty()) "（主要支撐：$pros）" else "") + "。",
+                color = androidx.compose.ui.graphics.Color(0xFFF2B544), fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 2.dp))
+        }
         Label(if (live) "盤中訊號會隨價格變動，以收盤定案為準 · 點此看完整分析 ›" else "點此看完整 K 線分析 ›")
     }
 }
