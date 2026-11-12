@@ -42,7 +42,7 @@ import java.time.ZonedDateTime
 object DataHealth {
     enum class Level { OK, WARN, FAIL, SKIP }
     data class Result(val name: String, val source: String, val level: Level, val detail: String, val ms: Long)
-    private class Check(val name: String, val source: String, val run: suspend () -> Pair<Level, String>)
+    private class Check(val name: String, val source: String, val timeoutMs: Long = 30_000, val run: suspend () -> Pair<Level, String>)
 
     private val TPE = ZoneId.of("Asia/Taipei")
 
@@ -117,8 +117,19 @@ object DataHealth {
         Check("類股指數", "證交所 OpenAPI") {
             val l = TwOpenData.sectorIndices(); if (l.isEmpty()) Level.FAIL to "沒有資料" else Level.OK to "${l.size} 類 · " + l.take(2).joinToString("、") { it.first + " " + "%+.2f".format(it.second) + "%" }
         },
-        Check("證券代號表（ISIN）", "證交所 isin.twse.com.tw") {
-            val l = TwIsin.fetch(2); if (l.size < 500) Level.FAIL to "只取得 ${l.size} 筆" else Level.OK to "上市 ${l.size} 筆 · 例：" + (l.firstOrNull { it.code == "2330" }?.let { it.code + " " + it.name } ?: l.first().let { it.code + " " + it.name })
+        Check("證券代號表（ISIN）", "證交所 isin.twse.com.tw（網頁大、較慢）", 180_000) {
+            val cached = com.claudeetf.app.data.StockDirectory.isinCount
+            val upd = com.claudeetf.app.data.MarketChanges.updatedAt.takeIf { it > 0 }?.let {
+                java.time.Instant.ofEpochMilli(it).atZone(TPE).toLocalDateTime().withNano(0).withSecond(0).toString().replace("T", " ").replace("-", "/")
+            }
+            val note = "（App 內目錄 $cached 筆" + (upd?.let { "，更新於 $it" } ?: "") + "）"
+            val r = runCatching { TwIsin.fetch(2) }
+            val l = r.getOrNull()
+            when {
+                l == null -> (if (cached > 1000) Level.WARN else Level.FAIL) to "即時下載失敗：" + (r.exceptionOrNull()?.friendly() ?: "") + note
+                l.size < 500 -> Level.FAIL to "只取得 ${l.size} 筆$note"
+                else -> Level.OK to "上市 ${l.size} 筆 · 例：" + (l.firstOrNull { it.code == "2330" }?.let { it.code + " " + it.name } ?: l.first().let { it.code + " " + it.name }) + note
+            }
         },
         Check("集保股權分散", "集保 opendata.tdcc.com.tw") {
             val m = TdccOpenData.all(); if (m.isEmpty()) Level.FAIL to "沒有資料" else Level.OK to "${m.size} 檔"
@@ -147,11 +158,11 @@ object DataHealth {
         checks().map { c ->
             async(Dispatchers.IO) {
                 val t0 = System.currentTimeMillis()
-                val r = runCatching { withTimeout(30_000) { c.run() } }
+                val r = runCatching { withTimeout(c.timeoutMs) { c.run() } }
                 val ms = System.currentTimeMillis() - t0
                 val res = r.fold({ Result(c.name, c.source, it.first, it.second, ms) }, { e ->
                     if (e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
-                    val msg = if (e is kotlinx.coroutines.TimeoutCancellationException) "逾時（30 秒）" else e.friendly()
+                    val msg = if (e is kotlinx.coroutines.TimeoutCancellationException) "逾時（${c.timeoutMs / 1000} 秒）" else e.friendly()
                     com.claudeetf.app.util.ErrorLog.record("診斷・" + c.name, msg)
                     Result(c.name, c.source, Level.FAIL, msg, ms)
                 })

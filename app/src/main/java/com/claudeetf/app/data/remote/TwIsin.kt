@@ -15,11 +15,16 @@ object TwIsin {
     private val TD = Regex("<td[^>]*>(.*?)</td>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val TAG = Regex("<[^>]+>")
 
-    fun fetch(mode: Int): List<Sec> {
+    /** 證交所 ISIN 一覽表網頁很大、伺服器偏慢，偶有連線中斷：失敗自動重試一次 */
+    fun fetch(mode: Int): List<Sec> = runCatching { fetchOnce(mode) }.getOrElse { e ->
+        if (e is java.io.IOException) { Thread.sleep(2_000); fetchOnce(mode) } else throw e
+    }
+
+    private fun fetchOnce(mode: Int): List<Sec> {
         val conn = URL("https://isin.twse.com.tw/isin/C_public.jsp?strMode=$mode").openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 20_000
-            conn.readTimeout = 60_000
+            conn.readTimeout = 90_000
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Mobile")
             if (conn.responseCode !in 200..299) throw java.io.IOException("ISIN HTTP " + conn.responseCode)
             val cs = runCatching { Charset.forName("MS950") }.getOrElse { Charset.forName("Big5") }

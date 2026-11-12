@@ -38,6 +38,8 @@ object StockDirectory {
 
     /** ISIN 一覽表的額外資訊：代號 → 類型、上市日、產業 */
     @Volatile private var meta: Map<String, TwIsin.Sec> = emptyMap()
+    /** 目前目錄中的 ISIN 資料筆數（診斷用） */
+    val isinCount: Int get() = meta.size
     fun metaOf(symbol: String): TwIsin.Sec? = meta[symbol.uppercase()]
     fun isOtc(symbol: String) = symbol.uppercase() in otc
 
