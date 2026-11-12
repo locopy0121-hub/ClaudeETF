@@ -94,8 +94,8 @@ object StockDirectory {
             val o2 = HashSet<String>()
             val (names, isin, complete) = withContext(Dispatchers.IO) {
                 val out = LinkedHashMap<String, String>()
-                runCatching { TwseApi.dayAll() }.getOrNull()?.forEach { (k, v) -> out[k] = v.name ?: k }
-                runCatching { TpexApi.dayAll() }.getOrNull()?.forEach { (k, v) -> if (k !in out) { out[k] = v.name ?: k; o2 += k } }
+                runCatching { TwseApi.latestAll() }.getOrNull()?.forEach { (k, v) -> out[k] = v.name ?: k }
+                runCatching { TpexApi.latestAll() }.getOrNull()?.forEach { (k, v) -> if (k !in out) { out[k] = v.name ?: k; o2 += k } }
                 val iL = runCatching { TwIsin.fetch(2) }.getOrNull()
                 val iO = runCatching { TwIsin.fetch(4) }.getOrNull()
                 val im = LinkedHashMap<String, TwIsin.Sec>()

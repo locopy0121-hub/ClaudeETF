@@ -512,7 +512,7 @@ object AlertEngine {
 /** 背景每 15 分鐘：更新有設提醒的報價後檢查 */
 class AlertWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     // 背景工作結束一定把變更寫入（存檔有 400ms 合併延遲）
-    override suspend fun doWork(): Result = try { work() } finally {
+    override suspend fun doWork(): Result = try { java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Taipei")); work() } finally {
         // 盤中監控：背景檢查時順便確認服務有在跑（被系統關掉時補啟動或發「點此啟動」通知）
         runCatching { MonitorService.start(applicationContext) }
         AppState.flush()

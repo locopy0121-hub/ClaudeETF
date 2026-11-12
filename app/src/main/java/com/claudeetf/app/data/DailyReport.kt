@@ -275,11 +275,14 @@ object DailyReport {
     suspend fun generate(force: Boolean = false): Report? = lock.withLock {
         withContext(Dispatchers.Main) { generating = true; error = null; stage = "取得收盤行情…" }
         try {
-            val (tse, otc) = withContext(Dispatchers.IO) {
-                runCatching { TwseApi.dayAll() }.getOrDefault(emptyMap()) to runCatching { TpexApi.dayAll() }.getOrDefault(emptyMap())
+            val (tse, otc0) = withContext(Dispatchers.IO) {
+                runCatching { TwseApi.latestAll() }.getOrDefault(emptyMap()) to runCatching { TpexApi.latestAll() }.getOrDefault(emptyMap())
             }
             if (tse.isEmpty()) { withContext(Dispatchers.Main) { error = "取不到證交所收盤資料，請稍後再試" }; return@withLock null }
+            // 報表日期一律以台灣時間的資料日為準
             val date = (tse.values.firstOrNull { it.date != null }?.date ?: java.time.LocalDate.now(TPE)).toString()
+            // 上櫃資料日期與上市不同（尚未更新）時不混用
+            val otc = otc0.filterValues { it.date == null || it.date.toString() == date }
             if (!force && date in dates) return@withLock load(date).also { withContext(Dispatchers.Main) { latest = it } }
 
             val all = tse.values.map { it to false } + otc.values.map { it to true }

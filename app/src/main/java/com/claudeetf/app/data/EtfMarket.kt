@@ -35,7 +35,7 @@ object EtfMarket {
     suspend fun load(force: Boolean = false): Snapshot {
         cache?.takeIf { !force && System.currentTimeMillis() - it.first < 5 * 60_000L }?.let { return it.second }
         val (tse, otc) = withContext(Dispatchers.IO) {
-            runCatching { TwseApi.dayAll() }.getOrDefault(emptyMap()) to runCatching { TpexApi.dayAll() }.getOrDefault(emptyMap())
+            runCatching { TwseApi.latestAll() }.getOrDefault(emptyMap()) to runCatching { TpexApi.latestAll() }.getOrDefault(emptyMap())
         }
         if (tse.isEmpty() && otc.isEmpty()) throw IllegalStateException("取不到證交所／櫃買收盤資料")
         val marketYi = (tse.values.sumOf { it.value ?: 0.0 } + otc.values.sumOf { it.value ?: 0.0 }) / 1e8

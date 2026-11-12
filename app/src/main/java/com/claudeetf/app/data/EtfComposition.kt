@@ -61,8 +61,8 @@ object EtfComposition {
     private fun twPrices(): Map<String, RemoteQuote> {
         prices?.takeIf { it.first == today() }?.let { return it.second }
         val m = HashMap<String, RemoteQuote>()
-        runCatching { TwseApi.dayAll() }.getOrNull()?.let { m.putAll(it) }
-        runCatching { TpexApi.dayAll() }.getOrNull()?.forEach { (k, v) -> if (k !in m) m[k] = v }
+        runCatching { TwseApi.latestAll() }.getOrNull()?.let { m.putAll(it) }
+        runCatching { TpexApi.latestAll() }.getOrNull()?.forEach { (k, v) -> if (k !in m) m[k] = v }
         if (m.isNotEmpty()) prices = today() to m
         return m
     }

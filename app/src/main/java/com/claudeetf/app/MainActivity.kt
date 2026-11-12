@@ -125,6 +125,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // App 內所有時間、日期一律以台灣時間（GMT+8）為準，不受手機時區設定影響
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Taipei"))
         com.claudeetf.app.util.CrashLog.install(applicationContext)
         AppState.init(applicationContext)
         com.claudeetf.app.chat.ChatPrefs.init(applicationContext)

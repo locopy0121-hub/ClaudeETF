@@ -195,6 +195,26 @@ object TwseApi {
         return out
     }
 
+    @Volatile private var latestCache: Pair<Long, Map<String, RemoteQuote>>? = null
+
+    /**
+     * 最新一個交易日的全部上市收盤行情（台灣時間）：
+     * 平日 14:00 後先向證交所 MI_INDEX 取「今天」的官方收盤（約 14:30 公布），取不到再用 OpenAPI STOCK_DAY_ALL
+     * （OpenAPI 常到傍晚才更新，盤後一段時間內仍是前一交易日）。10 分鐘快取。
+     */
+    fun latestAll(): Map<String, RemoteQuote> {
+        latestCache?.takeIf { System.currentTimeMillis() - it.first < 10 * 60_000L }?.let { return it.second }
+        val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Taipei"))
+        val today = now.toLocalDate()
+        val weekday = now.dayOfWeek != java.time.DayOfWeek.SATURDAY && now.dayOfWeek != java.time.DayOfWeek.SUNDAY
+        val day = if (weekday && now.toLocalTime() >= java.time.LocalTime.of(14, 0)) runCatching { miIndex(today) }.getOrDefault(emptyMap()) else emptyMap()
+        val all = runCatching { dayAll() }.getOrDefault(emptyMap())
+        // OpenAPI 已是今天（或比 MI_INDEX 新）就用 OpenAPI；否則用今天的 MI_INDEX
+        val res = if (day.isNotEmpty() && (all.values.firstOrNull()?.date ?: java.time.LocalDate.MIN) < today) day else all.ifEmpty { day }
+        if (res.isNotEmpty()) latestCache = System.currentTimeMillis() to res
+        return res
+    }
+
     fun dayAll(): Map<String, RemoteQuote> {
         val arr = JSONArray(Http.get("https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL", timeoutMs = 25_000))
         val out = HashMap<String, RemoteQuote>(arr.length() * 2)
@@ -226,6 +246,63 @@ object TwseApi {
 // 櫃買中心 OpenAPI（上櫃股票盤後行情，免金鑰）
 // ---------------------------------------------------------------------------
 object TpexApi {
+    @Volatile private var latestCache: Pair<Long, Map<String, RemoteQuote>>? = null
+
+    /**
+     * 最新一個交易日的全部上櫃收盤行情（台灣時間）：OpenAPI 尚未更新到今天時，改向櫃買網站的每日收盤行情查詢今天。
+     * 10 分鐘快取。
+     */
+    fun latestAll(): Map<String, RemoteQuote> {
+        latestCache?.takeIf { System.currentTimeMillis() - it.first < 10 * 60_000L }?.let { return it.second }
+        val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Taipei"))
+        val today = now.toLocalDate()
+        val all = runCatching { dayAll() }.getOrDefault(emptyMap())
+        val weekday = now.dayOfWeek != java.time.DayOfWeek.SATURDAY && now.dayOfWeek != java.time.DayOfWeek.SUNDAY
+        val res = if (weekday && now.toLocalTime() >= java.time.LocalTime.of(14, 30) && (all.values.firstOrNull()?.date ?: java.time.LocalDate.MIN) < today)
+            runCatching { dailyClose(today) }.getOrDefault(emptyMap()).ifEmpty { all } else all
+        if (res.isNotEmpty()) latestCache = System.currentTimeMillis() to res
+        return res
+    }
+
+    /** 櫃買中心網站「上櫃股票每日收盤行情」（指定日期，JSON）；欄位依名稱對應 */
+    fun dailyClose(day: java.time.LocalDate): Map<String, RemoteQuote> {
+        val d = day.format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+        val urls = listOf(
+            "https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyQuotes?date=" + java.net.URLEncoder.encode(d, "UTF-8") + "&id=&response=json",
+            "https://www.tpex.org.tw/www/zh-tw/afterTrading/otc?date=" + java.net.URLEncoder.encode(d, "UTF-8") + "&type=EW&id=&response=json",
+        )
+        for (u in urls) {
+            val o = runCatching { JSONObject(Http.get(u, timeoutMs = 30_000)) }.getOrNull() ?: continue
+            val ds = o.optString("date").filter { it.isDigit() }
+            if (ds.isNotBlank() && ds != day.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)) continue
+            val t = o.optJSONArray("tables") ?: continue
+            for (i in 0 until t.length()) {
+                val x = t.optJSONObject(i) ?: continue
+                val f = x.optJSONArray("fields") ?: continue
+                val rows = x.optJSONArray("data") ?: continue
+                val n = (0 until f.length()).map { f.optString(it).trim() }
+                fun idx(vararg k: String) = n.indexOfFirst { name -> k.any { name.startsWith(it) } }
+                val iCode = idx("代號"); val iName = idx("名稱"); val iC = idx("收盤"); val iChg = idx("漲跌")
+                val iO = idx("開盤"); val iH = idx("最高"); val iL = idx("最低"); val iVol = idx("成交股數"); val iVal = idx("成交金額"); val iTx = idx("成交筆數")
+                if (iCode < 0 || iC < 0) continue
+                val out = HashMap<String, RemoteQuote>(rows.length() * 2)
+                for (r in 0 until rows.length()) {
+                    val row = rows.optJSONArray(r) ?: continue
+                    fun cell(k: Int) = if (k >= 0) row.optString(k) else null
+                    val code = cell(iCode)?.trim().orEmpty()
+                    val close = parseNum(cell(iC)) ?: continue
+                    if (code.isEmpty() || close <= 0) continue
+                    val chg = cell(iChg)?.replace(Regex("<[^>]*>"), "")?.replace("+", "")?.trim()?.let { parseNum(it) } ?: 0.0
+                    out[code] = RemoteQuote(symbol = code, name = cell(iName)?.trim()?.ifBlank { null }, price = close, prevClose = close - chg,
+                        open = parseNum(cell(iO)), high = parseNum(cell(iH)), low = parseNum(cell(iL)), volume = parseNum(cell(iVol)),
+                        value = parseNum(cell(iVal)), transactions = parseNum(cell(iTx)), date = day)
+                }
+                if (out.size > 100) return out
+            }
+        }
+        return emptyMap()
+    }
+
     fun dayAll(): Map<String, RemoteQuote> {
         val arr = JSONArray(Http.get("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes", timeoutMs = 25_000))
         val out = HashMap<String, RemoteQuote>(arr.length() * 2)

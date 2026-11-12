@@ -140,8 +140,8 @@ object TwPicks {
     suspend fun analyzeEtfs(force: Boolean = false): List<Pick> {
         if (!force && etfAll.isNotEmpty() && !staleAt(etfAt)) return etfAll
         val universe = kotlinx.coroutines.withContext(Dispatchers.IO) {
-            val tse = runCatching { TwseApi.dayAll() }.getOrDefault(emptyMap())
-            val otc = runCatching { TpexApi.dayAll() }.getOrDefault(emptyMap())
+            val tse = runCatching { TwseApi.latestAll() }.getOrDefault(emptyMap())
+            val otc = runCatching { TpexApi.latestAll() }.getOrDefault(emptyMap())
             (tse.values.map { it to false } + otc.values.map { it to true }).filter { (q, _) ->
                 q.symbol.startsWith("00") && !q.symbol.endsWith("L") && !q.symbol.endsWith("R") && q.price > 0 && (q.volume ?: 0.0) >= 200_000
             }.sortedByDescending { (q, _) -> q.value ?: (q.price * (q.volume ?: 0.0)) }.take(UNIVERSE_ETF)
@@ -198,8 +198,8 @@ object TwPicks {
     private suspend fun run() {
         running = true; error = null; done = 0; total = 0
         val (universe, date) = kotlinx.coroutines.withContext(Dispatchers.IO) {
-            val tse = runCatching { TwseApi.dayAll() }.getOrDefault(emptyMap())
-            val otc = runCatching { TpexApi.dayAll() }.getOrDefault(emptyMap())
+            val tse = runCatching { TwseApi.latestAll() }.getOrDefault(emptyMap())
+            val otc = runCatching { TpexApi.latestAll() }.getOrDefault(emptyMap())
             val d = (tse.values.firstOrNull()?.date ?: otc.values.firstOrNull()?.date)?.toString() ?: ""
             fun top(m: Collection<com.claudeetf.app.data.remote.RemoteQuote>, n: Int) = m.filter { q ->
                 Regex("^[1-9]\\d{3}$").matches(q.symbol) && q.price >= 10 && (q.volume ?: 0.0) >= 1_000_000
