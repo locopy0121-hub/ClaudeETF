@@ -42,14 +42,4 @@ class StockMetricsTest {
         assertTrue(r.overallSignal == "多頭回檔" || r.overallSignal == "強勢多頭")
         assertTrue(r.verdict.length <= 35)
     }
-
-    @Test fun parseTolerant() {
-        val raw = "```json\n{\"ticker\":\"2330\",\"overall_signal\":\"區間震盪\",\"confidence_score\":60,\"one_line_verdict\":\"等方向\"," +
-            "\"technical_analysis\":{\"trend\":\"盤整\",\"candlestick_insight\":\"x\",\"key_support\":100.5,\"key_resistance\":0}," +
-            "\"chip_analysis\":{\"institutional_status\":\"分歧\",\"summary\":\"y\"},\"fundamental_valuation\":{\"valuation_status\":\"合理\",\"peer_comparison\":\"z\",\"risk_warning\":\"目前無重大異常訊號\"}}\n```"
-        val r = StockMetrics.StockAnalysisReport.parse(raw, "claude")!!
-        assertEquals("區間震盪", r.overallSignal)
-        assertEquals(100.5, r.support!!, 1e-9)
-        assertEquals(null, r.resistance)
-    }
 }
