@@ -253,7 +253,8 @@ object ReportExport {
                     val np = paint(28f, TEXT, bold = true)
                     val name = fit(p.name, np, 210f)
                     drawText(name, nx, y + 44f, np)
-                    val tag = p.symbol + " " + (if (p.otc) "櫃" else "市") + (if (p.zone >= 0) " · " + PriceBand.zoneNames[p.zone] else "")
+                    val stk = DailyReport.streakOf(r, p.symbol, bull)
+                    val tag = p.symbol + " " + (if (p.otc) "櫃" else "市") + (if (p.zone >= 0) " · " + PriceBand.zoneNames[p.zone] else "") + (if (stk >= 2) " · 連 $stk 日" else "")
                     drawText(tag, nx + np.measureText(name) + 12f, y + 44f, paint(22f, MUTED))
                     // 分數條
                     val bx = x0 + 520f; val bw = 220f

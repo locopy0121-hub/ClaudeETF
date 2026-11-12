@@ -303,7 +303,7 @@ fun DailyReportScreen(nav: NavController) {
                             // 分布摘要
                             val otcN = list.count { it.otc }
                             Label("上市 ${list.size - otcN} 檔、上櫃 $otcN 檔 · 平均近 20 日 " + "%+.1f".format(list.map { it.mom20 }.average()) + "%")
-                            list.forEachIndexed { i, p -> ReportPickRow(i + 1, p, pickSide == 0) { open(p.symbol) } }
+                            list.forEachIndexed { i, p -> ReportPickRow(i + 1, p, pickSide == 0, DailyReport.streakOf(r, p.symbol, pickSide == 0)) { open(p.symbol) } }
                         }
                     }
                 }
@@ -347,7 +347,7 @@ fun DailyReportScreen(nav: NavController) {
                         if (list.isEmpty()) Label(if (r.etfAnalyzed == 0) "這份報表產生時 ETF 尚未分析，按右上角 ↻ 重新產生。" else "沒有符合條件的 ETF。", Modifier.padding(top = 8.dp))
                         else {
                             ScoreBars(list, etfSide == 0, Modifier.fillMaxWidth().padding(top = 8.dp))
-                            list.forEachIndexed { i, p -> ReportPickRow(i + 1, p, etfSide == 0) { open(p.symbol) } }
+                            list.forEachIndexed { i, p -> ReportPickRow(i + 1, p, etfSide == 0, DailyReport.streakOf(r, p.symbol, etfSide == 0)) { open(p.symbol) } }
                         }
                     }
                 }
@@ -366,7 +366,7 @@ fun DailyReportScreen(nav: NavController) {
 }
 
 @Composable
-private fun ReportPickRow(rank: Int, p: TwPicks.Pick, bull: Boolean, onClick: () -> Unit) {
+private fun ReportPickRow(rank: Int, p: TwPicks.Pick, bull: Boolean, streak: Int = 0, onClick: () -> Unit) {
     val tone = Trend.fg(if (bull) 1.0 else -1.0)
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 7.dp), verticalAlignment = Alignment.Top) {
         Text(rank.toString(), color = if (rank <= 3) Color.White else tone, fontSize = 12.sp, fontWeight = FontWeight.Bold,
@@ -377,6 +377,8 @@ private fun ReportPickRow(rank: Int, p: TwPicks.Pick, bull: Boolean, onClick: ()
                 Text(p.name, color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 HGap(4.dp); NumText(p.symbol, 11.sp, C.Muted); HGap(4.dp); Label(if (p.otc) "櫃" else "市")
                 if (p.zone >= 0) { HGap(4.dp); Text(com.claudeetf.app.data.PriceBand.zoneNames[p.zone], color = zoneColor(p.zone), fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                if (streak >= 2) { HGap(4.dp); Text("連 $streak 日", color = tone, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(tone.copy(alpha = 0.15f)).padding(horizontal = 4.dp)) }
             }
             // 完整解析：分析理由、建議、操作參考、策略訊號（不截斷）
             Text(com.claudeetf.app.util.ReportExport.pickDetail(p), color = C.Text2, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
@@ -584,7 +586,8 @@ fun DailyRankChip(symbol: String, small: Boolean = false) {
     val rk = DailyReport.rankOf(symbol) ?: return
     var info by remember { mutableStateOf(false) }
     val c = Trend.fg(if (rk.bull) 1.0 else -1.0)
-    Text((if (rk.bull) "看漲 " else "看跌 ") + rk.rank, color = c, fontSize = if (small) 11.sp else 13.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+    val days = DailyReport.latest?.let { DailyReport.streakOf(it, symbol, rk.bull) } ?: 0
+    Text((if (rk.bull) "看漲 " else "看跌 ") + rk.rank + (if (days >= 2) "・連 $days 日" else ""), color = c, fontSize = if (small) 11.sp else 13.sp, fontWeight = FontWeight.Bold, maxLines = 1,
         modifier = Modifier.clip(RoundedCornerShape(if (small) 5.dp else 8.dp)).background(c.copy(alpha = 0.15f))
             .border(1.dp, c.copy(alpha = 0.6f), RoundedCornerShape(if (small) 5.dp else 8.dp)).clickable { info = true }
             .padding(horizontal = if (small) 6.dp else 10.dp, vertical = if (small) 1.dp else 5.dp))
@@ -595,6 +598,7 @@ fun DailyRankChip(symbol: String, small: Boolean = false) {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
                 Text(dateShort(rk.date) + " " + (if (rk.etf) "ETF " else "個股") + (if (rk.bull) "看漲" else "看跌") + "名單第 ${rk.rank} 名（共 ${rk.total} 檔）",
                     color = c, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                if (days >= 2) Text("已連續 $days 份報表列入" + (if (rk.bull) "看漲" else "看跌") + "名單", color = c, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
                 Text("綜合分數 " + "%+.1f".format(rk.pick.score) + " · 當日收盤 " + Fmt.price(rk.pick.price) + "（" + "%+.2f".format(rk.pick.pct) + "%）",
                     color = C.Text2, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                 Text(com.claudeetf.app.util.ReportExport.pickDetail(rk.pick), color = C.Text2, fontSize = 13.sp, lineHeight = 19.sp, modifier = Modifier.padding(top = 8.dp))

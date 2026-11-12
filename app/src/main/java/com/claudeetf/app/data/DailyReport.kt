@@ -172,6 +172,23 @@ object DailyReport {
         return out.sortedWith(compareBy({ !it.held }, { it.bull }, { it.rank }))
     }
 
+    /** 連續上榜天數：key＝"B:代號"（看漲）或 "S:代號"（看跌），以該份報表往前連續計算（最多 20 份） */
+    private val streakCache = HashMap<String, Map<String, Int>>()
+
+    fun streaks(r: Report): Map<String, Int> = streakCache.getOrPut(r.date) {
+        val past = dates.filter { it < r.date }.take(19).map { load(it) }
+        fun keys(x: Report?) = x?.let { rep ->
+            (rep.bulls + rep.etfBulls).map { "B:" + it.symbol }.toSet() + (rep.bears + rep.etfBears).map { "S:" + it.symbol }.toSet()
+        } ?: emptySet()
+        keys(r).associateWith { k ->
+            var n = 1
+            for (p in past) { if (k in keys(p)) n++ else break }
+            n
+        }
+    }
+
+    fun streakOf(r: Report, symbol: String, bull: Boolean): Int = streaks(r)[(if (bull) "B:" else "S:") + symbol] ?: 0
+
     /** 某檔在最新一份報表的名次（看漲／看跌、個股或 ETF 名單） */
     data class Rank(val bull: Boolean, val rank: Int, val total: Int, val etf: Boolean, val pick: TwPicks.Pick, val date: String)
 
