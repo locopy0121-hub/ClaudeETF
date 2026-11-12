@@ -187,6 +187,7 @@ fun WatchExtraItem(q: Quote, id: String, st: WatchStyle, list: Boolean = false) 
             Text("三關：$pos", color = c, fontSize = small, maxLines = 1, overflow = TextOverflow.Ellipsis)
         } ?: Text("三關：—", color = C.Muted, fontSize = small)
         "entry" -> EntryTagFor(q)
+        "rank" -> DailyRankChip(q.symbol, small = true)
         "limit" -> if (q.market == Market.TW) {
             com.claudeetf.app.ui.LimitTag(com.claudeetf.app.ui.limitOf(q), st.sp(11))
         }
@@ -396,7 +397,7 @@ fun WatchRowBody(q: Quote, st: WatchStyle, modifier: Modifier, cells: Boolean, s
 }
 
 private val LINE_NAMES = mapOf(
-    "entry" to "", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "limit" to "漲跌停", "ext" to "盤前盤後",
+    "entry" to "", "rank" to "", "keys" to "三關", "volume" to "成交量", "amp" to "振幅", "limit" to "漲跌停", "ext" to "盤前盤後",
     "hold" to "持股", "div" to "除權息", "inst" to "法人", "dt" to "當沖", "credit" to "信用", "rev" to "月營收", "pe" to "本益比", "pnl" to "損益",
 )
 
