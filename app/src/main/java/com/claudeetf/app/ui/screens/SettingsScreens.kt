@@ -628,6 +628,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
             }
             if (section == "monitor") item { MonitorSettings() }
             if (section == "kcond") item { KCondSettings() }
+            if (section == "ai") item { AiSettings() }
             if (section == "widget") item { WidgetSettings() }
             if (section == "accounts") {
                 items(AppState.accounts.toList(), key = { "acc-" + it.id }) { a -> AccountCard(a) }
@@ -1168,6 +1169,7 @@ internal val SETTINGS_SECTIONS = listOf(
     ),
     "分析與提醒" to listOf(
         SettingsEntry("kcond", "🕯️", "K 棒分析條件"),
+        SettingsEntry("ai", "🤖", "AI 個股體檢（Claude）"),
         SettingsEntry("alerts", "🔔", "提醒"),
         SettingsEntry("monitor", "📡", "盤中持股監控"),
     ),
@@ -1194,6 +1196,7 @@ private val SETTINGS_KEYWORDS = mapOf(
     "pages" to "首頁 卡片 排序 跑馬燈 指數 時段 字條 加權指數 字級 字體",
     "stock" to "個股頁 進場 徽章 角色 OS 泡泡 動畫 先投 預計投入 金額 買賣點 K棒訊號 投資分析指數 位置 大小",
     "kcond" to "K棒 條件 國安基金 RSI KD 均線 乖離 爆量 52週",
+    "ai" to "AI Claude 體檢 金鑰 API 模型 籌碼 估值 分析",
     "alerts" to "提醒 通知 價格 漲跌 除息 財報",
     "monitor" to "監控 盤中 背景 推播",
     "source" to "資料來源 富果 Fugle 證交所 櫃買 收盤 確認 金鑰 Finnhub Yahoo 期貨",

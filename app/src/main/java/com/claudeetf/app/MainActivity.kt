@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
         com.claudeetf.app.data.MarketChanges.init(applicationContext)
         com.claudeetf.app.data.TwPicks.init(applicationContext)
         com.claudeetf.app.data.DailyReport.init(applicationContext)
+        com.claudeetf.app.data.ClaudeAnalysis.init(applicationContext)
         com.claudeetf.app.data.EtfComposition.dir = filesDir
         watchNetwork()
         AppState.systemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==

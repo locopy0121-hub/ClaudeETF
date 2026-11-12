@@ -279,6 +279,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                         }
                         2 -> {
                             item { EntryAdviceCard(q, onKline = { ovSub = 3 }, onBand = { ovSub = 4 }) }
+                            item { AiCheckupCard(q) }
                             item { AnalysisCard(q) }
                             peersSection(nav, peers, peerExtras)
                         }
