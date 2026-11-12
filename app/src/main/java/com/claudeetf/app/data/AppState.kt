@@ -549,8 +549,14 @@ object AppState {
         dividendUsGrossYtd = p.getD("divUs", 1_120.73f)
         cashTwd = p.getD("cash", 164_000f)
         fugleKey = loadSecret(p, "fugleKey")
-        claudeKey = loadSecret(p, "claudeKey")
-        claudeModel = p.getString("claudeModel", "claude-haiku-5-5") ?: "claude-haiku-5-5"
+        com.claudeetf.app.data.AiProviders.ALL.forEach { pv ->
+            loadSecret(p, "aiKey_" + pv.id).takeIf { it.isNotBlank() }?.let { aiKeys[pv.id] = it }
+        }
+        // 舊版 Claude 金鑰搬到新的多服務設定
+        if (aiKey("claude").isBlank()) loadSecret(p, "claudeKey").takeIf { it.isNotBlank() }?.let { aiKeys["claude"] = it; saveSecret("aiKey_claude", it) }
+        runCatching { org.json.JSONObject(p.getString("aiModels", "{}") ?: "{}").let { o -> o.keys().forEach { k -> aiModels[k] = o.optString(k) } } }
+        runCatching { org.json.JSONObject(p.getString("aiEnabled", "{}") ?: "{}").let { o -> o.keys().forEach { k -> aiEnabled[k] = o.optBoolean(k, true) } } }
+        aiCustomUrl = p.getString("aiCustomUrl", "") ?: ""
         twIntradaySource = p.getString("twIntradaySource", "fugle") ?: "fugle"
         twOfficialClose = p.getBoolean("twOfficialClose", true)
         kcondNotify = p.getBoolean("kcondNotify", false)
@@ -908,7 +914,9 @@ object AppState {
             .putBoolean("monLimit", monLimit).putFloat("monPnlStep", monPnlStep.toFloat()).putBoolean("monUs", monUs)
             .putString("tickerStyle", tickerStyle.toJson())
             .putString("starred", starred.joinToString(","))
-            .putString("claudeModel", claudeModel)
+            .putString("aiModels", org.json.JSONObject(aiModels.toMap() as Map<*, *>).toString())
+            .putString("aiEnabled", org.json.JSONObject(aiEnabled.toMap() as Map<*, *>).toString())
+            .putString("aiCustomUrl", aiCustomUrl)
             .putBoolean("tickerShow", tickerShow).putString("tickerSymbols", tickerSymbols.joinToString(","))
             .putBoolean("tickerPinned", tickerPinned).putBoolean("tickerAuto", tickerAuto).putBoolean("tickerSched", tickerSched)
             .putString("tickerWindows", tickerWindows.joinToString(",")).putBoolean("tickerWeekdays", tickerWeekdays)
@@ -1042,14 +1050,19 @@ object AppState {
 
     // ---------- 行情資料 ----------
 
-    /** Claude API（AI 個股體檢）：金鑰加密保存、模型可選 */
-    var claudeKey by mutableStateOf("")
-    var claudeModel by mutableStateOf("claude-haiku-5-5")
-    fun updateClaude(key: String = claudeKey, model: String = claudeModel) {
-        claudeKey = key.trim(); claudeModel = model
-        saveSecret("claudeKey", claudeKey)
+    /** AI 個股體檢：多家服務（Agnes AI 優先），各自的金鑰加密保存、模型可自訂 */
+    val aiKeys = androidx.compose.runtime.mutableStateMapOf<String, String>()
+    val aiModels = androidx.compose.runtime.mutableStateMapOf<String, String>()
+    val aiEnabled = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
+    var aiCustomUrl by mutableStateOf("")
+    fun aiKey(id: String) = aiKeys[id].orEmpty()
+    fun updateAi(id: String, key: String? = null, model: String? = null, enabled: Boolean? = null) {
+        key?.let { aiKeys[id] = it.trim(); saveSecret("aiKey_$id", it.trim()) }
+        model?.let { aiModels[id] = it.trim() }
+        enabled?.let { aiEnabled[id] = it }
         save()
     }
+    fun updateAiCustomUrl(url: String) { aiCustomUrl = url.trim(); save() }
 
     fun updateFugleKey(key: String) {
         fugleKey = key.trim()

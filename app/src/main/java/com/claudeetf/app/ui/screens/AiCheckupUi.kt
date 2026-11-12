@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,7 +19,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.claudeetf.app.data.AppState
-import com.claudeetf.app.data.ClaudeAnalysis
+import com.claudeetf.app.data.AiAnalysis
+import com.claudeetf.app.data.AiProviders
 import com.claudeetf.app.data.Quote
 import com.claudeetf.app.data.StockMetrics
 import com.claudeetf.app.ui.*
@@ -40,25 +42,25 @@ private fun signalColor(s: String): Color = when (s) {
 fun AiCheckupCard(q0: Quote) {
     val q = AppState.quote(q0.symbol) ?: q0
     val scope = rememberCoroutineScope()
-    val st = ClaudeAnalysis.states[q.symbol]
+    val st = AiAnalysis.states[q.symbol]
     var tab by remember { mutableIntStateOf(0) }
     var showMetrics by remember { mutableStateOf(false) }
-    LaunchedEffect(q.symbol) { if (st?.report == null) runCatching { ClaudeAnalysis.load(q, useAi = AppState.claudeKey.isNotBlank()) } }
+    LaunchedEffect(q.symbol) { if (st?.report == null) runCatching { AiAnalysis.load(q, useAi = AiAnalysis.hasAny()) } }
     Card(padding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("AI 多維度體檢", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 Label(when {
                     st?.loading == true -> "計算中…"
-                    st?.report?.source == "claude" -> "Claude 解讀（" + st.report.model.removePrefix("claude-") + "）· 資料日 " + (st.metrics?.date ?: "")
+                    st?.report?.source == "ai" || st?.report?.source == "claude" -> "AI 解讀（" + st.report.model + "）· 資料日 " + (st.metrics?.date ?: "")
                     st?.report != null -> "本地規則體檢 · 資料日 " + (st.metrics?.date ?: "")
                     else -> "技術、K 棒、籌碼、估值四維度"
                 })
             }
-            Text(if (st?.loading == true) "分析中" else if (AppState.claudeKey.isBlank()) "重新計算" else "AI 重新分析",
+            Text(if (st?.loading == true) "分析中" else if (!AiAnalysis.hasAny()) "重新計算" else "AI 重新分析",
                 color = if (st?.loading == true) C.Muted else C.Primary, fontSize = 12.sp,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).clickable(enabled = st?.loading != true) {
-                    scope.launch { runCatching { ClaudeAnalysis.load(q, useAi = AppState.claudeKey.isNotBlank(), force = true) } }
+                    scope.launch { runCatching { AiAnalysis.load(q, useAi = AiAnalysis.hasAny(), force = true) } }
                 }.padding(horizontal = 10.dp, vertical = 6.dp))
         }
         st?.fallback?.let { Text(it, color = Color(0xFFF2B544), fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp)) }
@@ -119,24 +121,66 @@ fun AiCheckupCard(q0: Quote) {
     }
 }
 
-/** 設置 › 分析與提醒 › AI 個股體檢：Claude API 金鑰與模型 */
+/** 設置 › 分析與提醒 › AI 個股體檢：多家 AI 服務（Agnes AI 優先），各自金鑰、模型、啟用與測試 */
 @Composable
 fun AiSettings() {
-    var key by remember { mutableStateOf(AppState.claudeKey) }
+    val scope = rememberCoroutineScope()
+    var open by remember { mutableStateOf<String?>("agnes") }
+    val testMsg = remember { mutableStateMapOf<String, String>() }
+    Column(Modifier.fillMaxWidth()) {
     Card(padding = 14.dp) {
-        Text("AI 個股體檢（Claude API）", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Label("個股頁 › 分析 的「AI 多維度體檢」：技術指標、K 棒型態、籌碼與估值全部在手機本地計算，只把算好的數字交給 Claude 解讀成結論。不填金鑰時改用本地規則體檢，功能照常可用。")
-        OutlinedTextField(key, { key = it; AppState.updateClaude(key = it) }, singleLine = true,
-            label = { Text("Anthropic API 金鑰（sk-ant-…）") }, visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = fieldColors())
-        Text("模型", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-        ClaudeAnalysis.MODELS.forEach { (id, name) ->
-            Row(Modifier.fillMaxWidth().clickable { AppState.updateClaude(model = id) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (AppState.claudeModel == id) "●" else "○", color = if (AppState.claudeModel == id) C.Primary else C.Muted, fontSize = 14.sp)
-                HGap(8.dp); Text(name, color = C.Text, fontSize = 13.sp)
+        Text("AI 個股體檢", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Label("個股頁 › 分析 的「AI 多維度體檢」：指標全部在手機計算，只把算好的數字交給 AI 解讀。可設定多家服務，依下列順序使用（Agnes AI 優先），前一家失敗自動改用下一家；都沒設定時用本地規則體檢。")
+        val chain = AiProviders.chain()
+        Text(if (chain.isEmpty()) "目前：本地規則體檢（未設定任何 AI 服務）" else "目前使用順序：" + chain.joinToString(" → ") { it.name },
+            color = if (chain.isEmpty()) C.Muted else C.Primary, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+    }
+    AiProviders.ALL.forEachIndexed { idx, p ->
+        val on = open == p.id
+        val has = AppState.aiKey(p.id).isNotBlank()
+        val enabled = AppState.aiEnabled[p.id] != false
+        Card(padding = 12.dp, modifier = Modifier.padding(top = 8.dp)) {
+            Row(Modifier.fillMaxWidth().clickable { open = if (on) null else p.id }, verticalAlignment = Alignment.CenterVertically) {
+                Text("${idx + 1}", color = C.Muted, fontSize = 12.sp, modifier = Modifier.width(18.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(p.name + if (idx == 0) "（優先）" else "", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Label(if (!has) "未設定金鑰" else if (!enabled) "已停用" else "使用中 · " + AiProviders.modelOf(p))
+                }
+                if (has) Text(if (enabled) "●" else "○", color = if (enabled) C.Green else C.Muted, fontSize = 14.sp)
+                HGap(8.dp); Text(if (on) "▲" else "▼", color = C.Muted, fontSize = 12.sp)
+            }
+            if (on) {
+                var key by remember(p.id) { mutableStateOf(AppState.aiKey(p.id)) }
+                var model by remember(p.id) { mutableStateOf(AiProviders.modelOf(p)) }
+                var url by remember(p.id) { mutableStateOf(AppState.aiCustomUrl) }
+                if (p.id == "custom") OutlinedTextField(url, { url = it; AppState.updateAiCustomUrl(it) }, singleLine = true,
+                    label = { Text("API 網址（例如 https://xxx/v1）") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = fieldColors())
+                OutlinedTextField(key, { key = it; AppState.updateAi(p.id, key = it) }, singleLine = true,
+                    label = { Text("API 金鑰（" + p.keyHint + "）") }, visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = fieldColors())
+                OutlinedTextField(model, { model = it; AppState.updateAi(p.id, model = it) }, singleLine = true,
+                    label = { Text("模型") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), colors = fieldColors())
+                if (p.models.isNotEmpty()) Row(Modifier.padding(top = 6.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    p.models.forEach { mid ->
+                        Text(mid, color = if (model == mid) C.OnPrimary else C.Text2, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                            .background(if (model == mid) C.Primary else C.Bg).clickable { model = mid; AppState.updateAi(p.id, model = mid) }
+                            .padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                }
+                OptToggle("啟用", enabled) { AppState.updateAi(p.id, enabled = it) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("測試連線", color = if (has) C.Primary else C.Muted, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg)
+                        .clickable(enabled = has) { testMsg[p.id] = "測試中…"; scope.launch { testMsg[p.id] = AiAnalysis.test(p) } }
+                        .padding(horizontal = 10.dp, vertical = 6.dp))
+                    HGap(8.dp)
+                    testMsg[p.id]?.let { Text(it, Modifier.weight(1f), color = if (it.startsWith("連線成功")) C.Green else C.Text2, fontSize = 12.sp) }
+                }
+                if (p.site.isNotBlank()) Label("申請金鑰：" + p.site)
             }
         }
-        Label("金鑰以手機安全晶片加密保存。同一檔同一交易日只呼叫一次（結果快取），按「AI 重新分析」才會再呼叫；系統提示詞啟用 Prompt Caching 以節省費用。")
+    }
+    Label("金鑰以手機安全晶片加密保存。同一檔同一交易日只呼叫一次（結果快取），按「AI 重新分析」才會再呼叫。Claude 啟用 Prompt Caching；其他服務使用 OpenAI 相容介面。", Modifier.padding(top = 8.dp))
     }
 }
