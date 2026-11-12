@@ -59,7 +59,7 @@ fun MarketScreen(nav: NavController) {
     var etfSnap by remember { mutableStateOf<Load<com.claudeetf.app.data.EtfMarket.Snapshot>>(Load.Loading) }
     var etfSide by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(tab, reload) {
+    LaunchedEffect(tab, reload, com.claudeetf.app.util.ErrorLog.retryTick) {
         if (tab == 1) com.claudeetf.app.data.TwPicks.start()
         if (tab == 2) {
             com.claudeetf.app.data.TwPicks.startEtf()
@@ -101,7 +101,7 @@ fun MarketScreen(nav: NavController) {
             } else if (tab == 3) {
                 when (val g = global) {
                     is Load.Loading -> item { Label("載入全球市場中…", Modifier.padding(vertical = 16.dp)) }
-                    is Load.Err -> item { Text("全球市場載入失敗：" + g.message, color = C.Red, fontSize = 13.sp) }
+                    is Load.Err -> item { ErrorBox("全球市場載入失敗：" + g.message) }
                     is Load.Ok -> {
                         g.value.groupBy { it.first }.forEach { (group, rows) ->
                             item { SectionTitle(group) }
@@ -178,7 +178,7 @@ private fun LazyListScope.boardSection(
 ) {
     when (board) {
         is Load.Loading -> item { Label("載入類股與排行中…", Modifier.padding(vertical = 16.dp)) }
-        is Load.Err -> item { Text("市場資料載入失敗：" + board.message, color = C.Red, fontSize = 13.sp) }
+        is Load.Err -> item { ErrorBox("市場資料載入失敗：" + board.message) }
         is Load.Ok -> {
             val b = board.value
             if (b.sectors.isNotEmpty()) {
@@ -270,7 +270,7 @@ fun CalendarScreen(nav: NavController) {
     var reload by remember { mutableIntStateOf(0) }
     val kinds = listOf<EventKind?>(null) + EventKind.entries
     var events by remember { mutableStateOf<Load<List<CalendarEvent>>>(Load.Loading) }
-    LaunchedEffect(reload) {
+    LaunchedEffect(reload, com.claudeetf.app.util.ErrorLog.retryTick) {
         events = Load.Loading
         events = runCatching { CalendarRepo.load(reload > 0) }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
@@ -302,7 +302,7 @@ fun CalendarScreen(nav: NavController) {
             item { Label("未來 120 天 · 時間皆為台灣時間 · 包含自選與持股") }
             when (val e = events) {
                 is Load.Loading -> item { Label("載入行事曆中…（每檔查詢一次，自選越多越久）", Modifier.padding(vertical = 16.dp)) }
-                is Load.Err -> item { Text("行事曆載入失敗：" + e.message, color = C.Red, fontSize = 13.sp) }
+                is Load.Err -> item { ErrorBox("行事曆載入失敗：" + e.message) }
                 is Load.Ok -> {
                     val list = e.value.filter { filter == 0 || it.kind == kinds[filter] }
                     if (list.isEmpty()) item { Label("這段期間沒有事件", Modifier.padding(vertical = 16.dp)) }

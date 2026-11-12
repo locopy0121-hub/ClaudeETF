@@ -272,6 +272,7 @@ object FugleStream {
         ws = null
         resetSubs()
         main.post { AppState.streamStatus = msg }
+        if (msg != "連線關閉") com.claudeetf.app.util.ErrorLog.record("富果串流", msg)
         if (wanted) {
             // 斷線重連：2、4、8…最多 60 秒
             val delayMs = minOf(60_000L, 2_000L shl minOf(retry, 5))
@@ -315,6 +316,7 @@ object FugleStream {
             "unsubscribed" -> {}
             "error" -> {
                 val msg = o.optJSONObject("data")?.optString("message") ?: "錯誤"
+                com.claudeetf.app.util.ErrorLog.record("富果串流", msg)
                 if (msg.contains("auth", true) || msg.contains("credential", true)) {
                     wanted = false
                     authFailedKey = key

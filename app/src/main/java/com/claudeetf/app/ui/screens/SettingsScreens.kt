@@ -642,7 +642,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 item { UpdateCard() }
                 item { ReleaseHistoryCard() }
                 item { ManualCard(nav) }
-                item { SettingRow("錯誤紀錄", if (com.claudeetf.app.util.CrashLog.read(context) != null) "有紀錄 ›" else "無 ›") { nav.navigate(Routes.ERRORS) } }
+                item { SettingRow("錯誤紀錄", listOfNotNull(if (com.claudeetf.app.util.CrashLog.read(context) != null) "有閃退" else null, com.claudeetf.app.util.ErrorLog.entries.size.takeIf { it > 0 }?.let { "載入錯誤 $it" }).joinToString(" · ").ifBlank { "無" } + " ›") { nav.navigate(Routes.ERRORS) } }
                 item { SettingRow("重新看使用引導", "›") { nav.navigate(Routes.WELCOME) } }
             }
             if (section == "source") item { Label("金鑰以手機安全晶片加密保存，不會上傳到其他地方。", Modifier.padding(4.dp)) }

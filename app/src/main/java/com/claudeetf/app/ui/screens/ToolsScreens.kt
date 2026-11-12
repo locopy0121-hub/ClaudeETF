@@ -357,7 +357,7 @@ fun CompareScreen(nav: NavController, initial: String) {
     var range by remember { mutableIntStateOf(2) }
     val ranges = listOf("1mo" to "1月", "6mo" to "6月", "1y" to "1年", "5y" to "5年")
     var data by remember { mutableStateOf<Load<Map<String, YahooExtra.History>>>(Load.Ok(emptyMap())) }
-    LaunchedEffect(picked, range) {
+    LaunchedEffect(picked, range, com.claudeetf.app.util.ErrorLog.retryTick) {
         if (picked.isEmpty()) { data = Load.Ok(emptyMap()); return@LaunchedEffect }
         data = Load.Loading
         data = runCatching {
@@ -393,7 +393,7 @@ fun CompareScreen(nav: NavController, initial: String) {
             item { Segmented(ranges.map { it.second }, range, { range = it }) }
             when (val d = data) {
                 is Load.Loading -> item { Label("載入走勢中…", Modifier.padding(vertical = 20.dp)) }
-                is Load.Err -> item { Text("載入失敗：" + d.message, color = C.Red, fontSize = 13.sp) }
+                is Load.Err -> item { ErrorBox("載入失敗：" + d.message) }
                 is Load.Ok -> {
                     val series = picked.mapIndexedNotNull { i, s ->
                         val h = d.value[s] ?: return@mapIndexedNotNull null

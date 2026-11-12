@@ -267,3 +267,18 @@ fun Gap(h: Dp) = Spacer(Modifier.height(h))
 
 @Composable
 fun HGap(w: Dp) = Spacer(Modifier.width(w))
+
+/** 載入失敗的統一顯示：錯誤原因＋「重試」（重試會讓各頁以 ErrorLog.retryTick 為 key 的載入重新執行） */
+@Composable
+fun ErrorBox(message: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Red.copy(alpha = 0.10f)).padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(message, color = C.Red, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
+        Text("重試", color = C.Primary, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(C.Selected)
+                .clickable { com.claudeetf.app.util.ErrorLog.retry() }.padding(horizontal = 12.dp, vertical = 6.dp))
+    }
+}

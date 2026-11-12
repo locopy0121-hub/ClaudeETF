@@ -294,13 +294,13 @@ fun FxScreen(nav: NavController) {
     var bank by remember { mutableStateOf<Load<BotFxApi.Fx>>(Load.Loading) }
     var usd by remember { mutableStateOf("1000") }
     var twd by remember { mutableStateOf("") }
-    LaunchedEffect(range) {
+    LaunchedEffect(range, com.claudeetf.app.util.ErrorLog.retryTick) {
         hist = Load.Loading
         hist = runCatching {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { YahooExtra.history("TWD=X", ranges[range].first) }
         }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(com.claudeetf.app.util.ErrorLog.retryTick) {
         bank = runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BotFxApi.usd() } }
             .fold({ Load.Ok(it) }, { Load.err(it) })
     }
@@ -325,7 +325,7 @@ fun FxScreen(nav: NavController) {
                             KeyValue("台灣銀行 即期賣出", Fmt.num(b.value.spotSell, 3))
                             Label("換美元看「賣出」、美元換回台幣看「買入」")
                         }
-                        is Load.Err -> Label("台銀牌告：" + b.message)
+                        is Load.Err -> ErrorBox("台銀牌告：" + b.message)
                         is Load.Loading -> Label("載入台銀牌告…")
                     }
                 }
@@ -334,7 +334,7 @@ fun FxScreen(nav: NavController) {
             item {
                 when (val h = hist) {
                     is Load.Loading -> Label("載入走勢中…", Modifier.padding(vertical = 20.dp))
-                    is Load.Err -> Text("走勢載入失敗：" + h.message, color = C.Red, fontSize = 13.sp)
+                    is Load.Err -> ErrorBox("走勢載入失敗：" + h.message)
                     is Load.Ok -> if (h.value.closes.size >= 2) {
                         Card(padding = 14.dp) {
                             val c = h.value.closes

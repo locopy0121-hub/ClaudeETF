@@ -101,6 +101,7 @@ object AiAnalysis {
             rep = r.getOrNull()
             if (rep != null) break
             errors += p.name + "：" + (r.exceptionOrNull()?.message ?: "未知錯誤")
+            com.claudeetf.app.util.ErrorLog.record("AI 體檢", sym + " " + errors.last())
         }
         withContext(Dispatchers.Main) {
             states[sym] = if (rep != null) {

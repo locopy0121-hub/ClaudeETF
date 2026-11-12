@@ -845,7 +845,7 @@ fun DividendScreen(nav: NavController) {
     val maxV = months.maxOrNull()?.takeIf { it > 0 } ?: 1.0
     val divTrades = AppState.trades.filter { it.type == TradeType.DIVIDEND && it.origin != TradeOrigin.LEGACY }
     var upcoming by remember { mutableStateOf<Load<List<CalendarEvent>>>(Load.Loading) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(com.claudeetf.app.util.ErrorLog.retryTick) {
         upcoming = runCatching {
             val held = AppState.holdings.map { it.symbol }.toSet()
             CalendarRepo.load().filter { it.kind == EventKind.DIVIDEND && it.isHolding }
@@ -929,7 +929,7 @@ fun DividendScreen(nav: NavController) {
             item { SectionTitle("持股即將除息", "取自財經行事曆") }
             when (val u = upcoming) {
                 is Load.Loading -> item { Label("載入中…") }
-                is Load.Err -> item { Label("無法取得：" + u.message) }
+                is Load.Err -> item { ErrorBox("無法取得：" + u.message) }
                 is Load.Ok -> {
                     if (u.value.isEmpty()) item { Label("未來 120 天沒有已公布的除息日") }
                     items(u.value) { e ->
@@ -997,8 +997,8 @@ fun AnalysisScreen(nav: NavController) {
     val cost = AppState.totalCostTwd()
     val xirr = remember(AppState.trades.size) { Analytics.xirr() }
     var bt by remember { mutableStateOf<Load<Analytics.Backtest>>(Load.Loading) }
-    LaunchedEffect(allocBy) { if (allocBy == 3) runCatching { com.claudeetf.app.data.IndustryRepo.ensure() } }
-    LaunchedEffect(reload) {
+    LaunchedEffect(allocBy, com.claudeetf.app.util.ErrorLog.retryTick) { if (allocBy == 3) runCatching { com.claudeetf.app.data.IndustryRepo.ensure() } }
+    LaunchedEffect(reload, com.claudeetf.app.util.ErrorLog.retryTick) {
         bt = Load.Loading
         bt = runCatching { Analytics.backtest(reload > 0) }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
@@ -1036,7 +1036,7 @@ fun AnalysisScreen(nav: NavController) {
             item { Segmented(listOf("1月", "3月", "6月", "1年"), range, { range = it }) }
             when (val b = bt) {
                 is Load.Loading -> item { Label("下載各持股一年歷史價格中…", Modifier.padding(vertical = 20.dp)) }
-                is Load.Err -> item { Text("回測失敗：" + b.message, color = C.Red, fontSize = 13.sp) }
+                is Load.Err -> item { ErrorBox("回測失敗：" + b.message) }
                 is Load.Ok -> {
                     val r = b.value
                     val days = listOf(31L, 92L, 183L, 366L)[range]

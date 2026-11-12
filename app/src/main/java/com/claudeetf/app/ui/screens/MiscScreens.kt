@@ -242,33 +242,51 @@ fun SearchScreen(nav: NavController) {
 @Composable
 fun ErrorLogScreen(nav: NavController) {
     val context = LocalContext.current
-    var log by remember { mutableStateOf(CrashLog.read(context)) }
+    var crash by remember { mutableStateOf(CrashLog.read(context)) }
+    val errs = com.claudeetf.app.util.ErrorLog.entries
+    var tab by remember { mutableIntStateOf(if (crash == null && errs.isNotEmpty()) 1 else 0) }
     Column(Modifier.fillMaxSize().background(C.Bg)) {
         TopBar("錯誤紀錄", onBack = { nav.popBackStack() })
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val l = log
-            if (l == null) {
-                item { Label("沒有閃退紀錄。") }
+            item { Segmented(listOf("閃退" + (if (crash != null) "（有）" else ""), "載入錯誤（${errs.size}）"), tab) { tab = it } }
+            val text: String? = if (tab == 0) crash else errs.takeIf { it.isNotEmpty() }?.let { com.claudeetf.app.util.ErrorLog.text() }
+            item {
+                Label(if (tab == 0) "App 異常結束時的紀錄（保留最近 5 次，新的在前）。"
+                    else "資料載入失敗、API 錯誤等不會閃退的問題（保留最近 200 筆，新的在前）。同樣的錯誤 1 分鐘內只記一次。")
+            }
+            if (text == null) {
+                item { Label(if (tab == 0) "沒有閃退紀錄。" else "沒有載入錯誤。") }
             } else {
-                item { Label("App 上次異常結束時的紀錄。可以分享給開發者協助修正。") }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.weight(1f)) {
                             PrimaryButton("分享") {
-                                val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, l)
+                                val ver = com.claudeetf.app.BuildConfigInfo.versionName(context)
+                                val body = "台美股資產 $ver · Android " + android.os.Build.VERSION.RELEASE + "（" + android.os.Build.MODEL + "）\n\n" + text
+                                val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, body)
                                 runCatching { context.startActivity(Intent.createChooser(send, "分享錯誤紀錄")) }
                             }
                         }
                         Box(Modifier.weight(1f)) {
-                            PrimaryButton("清除") { CrashLog.clear(context); log = null }
+                            PrimaryButton("清除") {
+                                if (tab == 0) { CrashLog.clear(context); crash = null } else com.claudeetf.app.util.ErrorLog.clear()
+                            }
                         }
                     }
                 }
-                item {
+                if (tab == 0) item {
                     Text(
-                        l, color = C.Text2, fontSize = 11.sp, fontFamily = com.claudeetf.app.ui.theme.Mono,
+                        text, color = C.Text2, fontSize = 11.sp, fontFamily = com.claudeetf.app.ui.theme.Mono,
                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Card).padding(12.dp),
                     )
+                } else items(errs.asReversed().toList()) { e ->
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Card).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(e.where, color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Label(e.text().substringBefore("  ["))
+                        }
+                        Text(e.message, color = C.Text2, fontSize = 12.sp, lineHeight = 17.sp)
+                    }
                 }
             }
         }

@@ -41,7 +41,7 @@ fun IndexScreen(nav: NavController, symbol: String) {
     var mas by remember { mutableStateOf(setOf<Int>()) }
     var sub by remember { mutableStateOf(SubChart.VOLUME) }
     var hist by remember { mutableStateOf<Load<YahooExtra.History>>(Load.Loading) }
-    LaunchedEffect(symbol, range) {
+    LaunchedEffect(symbol, range, com.claudeetf.app.util.ErrorLog.retryTick) {
         hist = Load.Loading
         suspend fun load() = runCatching { withContext(Dispatchers.IO) { YahooExtra.history(symbol, idxRanges[range].fetch) } }
         hist = load().fold({ Load.Ok(it) }, { Load.err(it) })
@@ -74,7 +74,7 @@ fun IndexScreen(nav: NavController, symbol: String) {
             item {
                 when (val h = hist) {
                     is Load.Loading -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("載入走勢中…") }
-                    is Load.Err -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("走勢載入失敗：" + h.message) }
+                    is Load.Err -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { ErrorBox("走勢載入失敗：" + h.message) }
                     is Load.Ok -> {
                         val v = h.value
                         if (v.closes.size < 2) Label("此區間沒有走勢資料")

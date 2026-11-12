@@ -63,6 +63,9 @@ sealed class Load<out T> {
         /** 載入失敗；協程被取消（切換分頁、離開畫面）時不當成錯誤，直接往外拋讓協程結束 */
         fun err(t: Throwable): Load<Nothing> {
             if (t is kotlinx.coroutines.CancellationException) throw t
+            val where = t.stackTrace.firstOrNull { it.className.startsWith("com.claudeetf") }
+                ?.className?.substringAfterLast('.')?.substringBefore('$') ?: "載入"
+            com.claudeetf.app.util.ErrorLog.record(where, t.friendly())
             return Err(t.friendly())
         }
     }
@@ -116,7 +119,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
 
     // 走勢
     var history by remember { mutableStateOf<Load<YahooExtra.History>>(Load.Loading) }
-    LaunchedEffect(q.symbol, range, AppState.usExtendedChart) {
+    LaunchedEffect(q.symbol, range, AppState.usExtendedChart, com.claudeetf.app.util.ErrorLog.retryTick) {
         history = Load.Loading
         history = runCatching { StockInfoRepo.history(q, ranges[range].fetch) }
             .fold({ Load.Ok(it) }, { Load.err(it) })
@@ -136,12 +139,12 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
         }
     }
     // 三關價（前一交易日高低）
-    LaunchedEffect(q.symbol) {
+    LaunchedEffect(q.symbol, com.claudeetf.app.util.ErrorLog.retryTick) {
         runCatching { StockInfoRepo.keyPrices(q) }.getOrNull()?.let { AppState.keyPrices[q.symbol] = it }
     }
     // 基本面（概覽、財務、公司共用）
     var fund by remember { mutableStateOf<Load<Fundamentals>>(Load.Loading) }
-    LaunchedEffect(q.symbol) {
+    LaunchedEffect(q.symbol, com.claudeetf.app.util.ErrorLog.retryTick) {
         fund = runCatching { StockInfoRepo.fundamentals(q) }.fold({ Load.Ok(it) }, { Load.err(it) })
     }
     // 股息、新聞：切到該分頁才載入
@@ -152,7 +155,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
     var holdings by remember { mutableStateOf<Load<com.claudeetf.app.data.EtfComposition.Result>>(Load.Loading) }
     var peers by remember { mutableStateOf<Load<List<StockInfoRepo.Peer>>>(Load.Loading) }
     var peerExtras by remember { mutableStateOf<Map<String, PeerExtra>>(emptyMap()) }
-    LaunchedEffect(q.symbol) {
+    LaunchedEffect(q.symbol, com.claudeetf.app.util.ErrorLog.retryTick) {
         peers = runCatching { StockInfoRepo.peers(q) }.fold({ Load.Ok(it) }, { Load.err(it) })
         // 同業的三關位置與法人買賣超
         (peers as? Load.Ok<List<StockInfoRepo.Peer>>)?.value?.let { list ->
@@ -168,7 +171,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
             }
         }
     }
-    LaunchedEffect(q.symbol, tab) {
+    LaunchedEffect(q.symbol, tab, com.claudeetf.app.util.ErrorLog.retryTick) {
         when (tab) {
             Tab.OVERVIEW -> {
                 if (trading !is Load.Ok) {
@@ -656,7 +659,7 @@ private fun ChartBlock(
 ) {
     when (history) {
         is Load.Loading -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("載入走勢中…") }
-        is Load.Err -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Label("走勢載入失敗：" + history.message) }
+        is Load.Err -> Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { ErrorBox("走勢載入失敗：" + history.message) }
         is Load.Ok -> {
             val h = history.value
             if (h.closes.size < 2) {
@@ -737,7 +740,7 @@ private fun LazyListScope.loading(text: String = "載入中…") {
 }
 
 private fun LazyListScope.showError(msg: String) {
-    item { Text("資料載入失敗：$msg", color = C.Red, fontSize = 13.sp, modifier = Modifier.padding(vertical = 16.dp)) }
+    item { ErrorBox("資料載入失敗：$msg", Modifier.padding(vertical = 8.dp)) }
 }
 
 private fun LazyListScope.infoGrid(items: List<InfoItem>) {
@@ -1141,7 +1144,7 @@ private fun LazyListScope.tradingSection(q: Quote, t: Load<StockInfoRepo.Trading
     item { SectionTitle("當日交易", (t as? Load.Ok<StockInfoRepo.Trading>)?.value?.source) }
     when (t) {
         is Load.Loading -> loading("載入當日交易中…")
-        is Load.Err -> item { Label("當日交易：" + t.message) }
+        is Load.Err -> item { ErrorBox("當日交易：" + t.message) }
         is Load.Ok -> {
             val v = t.value
             infoGrid(v.items)

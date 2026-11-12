@@ -29,7 +29,7 @@ fun LazyListScope.etfMarketSection(
 ) {
     when (snap) {
         is Load.Loading -> item { Label("載入台股 ETF 行情中…", Modifier.padding(vertical = 16.dp)) }
-        is Load.Err -> item { Text("ETF 行情載入失敗：" + snap.message, color = C.Red, fontSize = 13.sp) }
+        is Load.Err -> item { ErrorBox("ETF 行情載入失敗：" + snap.message) }
         is Load.Ok -> {
             val s = snap.value
             item {

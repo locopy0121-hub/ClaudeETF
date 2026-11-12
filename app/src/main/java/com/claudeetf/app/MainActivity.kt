@@ -131,6 +131,7 @@ class MainActivity : ComponentActivity() {
         // App 內所有時間、日期一律以台灣時間（GMT+8）為準，不受手機時區設定影響
         java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Taipei"))
         com.claudeetf.app.util.CrashLog.install(applicationContext)
+        com.claudeetf.app.util.ErrorLog.init(applicationContext)
         AppState.init(applicationContext)
         com.claudeetf.app.chat.ChatPrefs.init(applicationContext)
         runCatching { com.claudeetf.app.data.AppUpdater.detectUpdated(applicationContext) }
@@ -268,7 +269,7 @@ private fun ComponentActivity.watchNetwork() {
     } == true
     runCatching {
         cm.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: android.net.Network) { runOnUiThread { AppState.online = true } }
+            override fun onAvailable(network: android.net.Network) { runOnUiThread { AppState.online = true; com.claudeetf.app.util.ErrorLog.onOnline() } }
             override fun onLost(network: android.net.Network) { runOnUiThread { AppState.online = false } }
         })
     }
