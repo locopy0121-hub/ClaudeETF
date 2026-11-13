@@ -300,7 +300,7 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
                         "AI" -> { item { ConsensusCard(q) }; item { AiCheckupCard(q) } }
                         "K線" -> item { KlineAnalysisCard(q) }
                         "光譜" -> item { PriceBandCard(q) }
-                        "報酬" -> { item { YearlyReturnsCard(q) }; item { DrawdownCard(q) }; item { NextDividendCard(q, compact = true) } }
+                        "報酬" -> { item { YearlyReturnsCard(q) }; item { DrawdownCard(q) } }
                         "我的" -> overviewMine(q)
                         else -> overviewBasic(q, fund)
                     }
@@ -318,7 +318,9 @@ fun StockDetailScreen(nav: NavController, symbol: String) {
         if (AppState.entryFloatOn) {
             val first = listState.firstVisibleItemIndex
             val off = listState.firstVisibleItemScrollOffset
-            if (AppState.entryFloatPin || first == 0) PlacedEntryFloat(if (AppState.entryFloatPin) 0f else off.toFloat()) { m ->
+            // 頁首的即時 K 棒訊號已顯示同樣的綜合建議：訊號列還在畫面上時不重複顯示懸浮徽章
+            val stripVisible = AppState.showLiveSignal && first <= 1
+            if (!stripVisible && (AppState.entryFloatPin || first == 0)) PlacedEntryFloat(if (AppState.entryFloatPin) 0f else off.toFloat()) { m ->
                 EntryFloatBadge(q, m) { tabIdx = 0; ovSub = subIdx("K線") }
             }
         }

@@ -108,6 +108,7 @@ fun HomeScreen(nav: NavController) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            var focusShown = false
             AppState.homeCards().forEach { card ->
                 when (card) {
                     "assets" -> {
@@ -213,11 +214,11 @@ fun HomeScreen(nav: NavController) {
                         }
                     }
                     }
-                    "movers" -> item { HoldingMovers(nav) }
+                    // 「今日持股漲跌」與「持股前五大」合併為持股焦點卡（舊設定任一開啟都顯示一次）
+                    "movers", "holdings" -> if (!focusShown) { focusShown = true; item { HoldingFocusCard(nav) } }
                     "goal" -> item { GoalCard() }
                     "pnlsplit" -> item { PnlSplitCard() }
                     "watch" -> item { WatchTopCard(nav) }
-                    "holdings" -> item { HoldingsTopCard(nav) }
                     "keys" -> item { KeysCard(nav) }
                     "divcal" -> item { DivCalCard(nav) }
                     "alerts" -> item { AlertsCard(nav) }
@@ -280,15 +281,33 @@ fun IndexCard(q: IndexQuote, modifier: Modifier = Modifier, onClick: (() -> Unit
     }
 }
 
-/** 今日持股漲跌前三 */
+/** 持股焦點：今日漲跌幅最大前五／市值前五大（原「今日持股漲跌」與「持股前五大」合併） */
 @Composable
-private fun HoldingMovers(nav: NavController) {
-    val rows = AppState.holdings.mapNotNull { h -> AppState.quote(h.symbol)?.takeIf { it.price > 0 && it.prevClose > 0 } }
-        .sortedByDescending { kotlin.math.abs(it.changePct) }.take(3)
+private fun HoldingFocusCard(nav: NavController) {
+    var mode by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+    val total = AppState.totalMarketValueTwd().takeIf { it > 0 } ?: 1.0
+    val rows = if (mode == 0) AppState.holdings.mapNotNull { h -> AppState.quote(h.symbol)?.takeIf { it.price > 0 && it.prevClose > 0 } }
+        .sortedByDescending { kotlin.math.abs(it.changePct) }.take(5)
+    else AppState.holdings.sortedByDescending { AppState.marketValueTwd(it) }.take(5).mapNotNull { AppState.quote(it.symbol) }
     Card {
-        Text("今日持股漲跌", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("持股焦點", Modifier.weight(1f), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            listOf("今日漲跌", "市值前五").forEachIndexed { i, n ->
+                Text(n, color = if (mode == i) C.Primary else C.Muted, fontSize = 12.sp, fontWeight = if (mode == i) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier.clickable { mode = i }.padding(horizontal = 6.dp, vertical = 2.dp))
+            }
+        }
         if (rows.isEmpty()) Label("尚無持股報價")
-        rows.forEach { q ->
+        if (mode == 1) rows.forEach { q ->
+            val h = AppState.holdings.firstOrNull { it.symbol == q.symbol } ?: return@forEach
+            Row(Modifier.fillMaxWidth().clickable { nav.navigate(Routes.stock(q.symbol)) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                MarketTag(q.market); HGap(6.dp)
+                Text(q.symbol + " " + q.name, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, maxLines = 1)
+                Label("占 " + Fmt.num(AppState.marketValueTwd(h) / total * 100, 1) + "%"); HGap(6.dp)
+                ChangePill(q.changePct)
+            }
+        }
+        if (mode == 0) rows.forEach { q ->
             Row(
                 Modifier.fillMaxWidth().clickable { nav.navigate(Routes.stock(q.symbol)) }.padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
