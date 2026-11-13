@@ -6,6 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -338,6 +342,8 @@ fun AppRoot() {
     val config = androidx.compose.ui.platform.LocalConfiguration.current
     // 平板或橫向（寬度 ≥ 600dp）改用側邊導覽列，內容最寬 760dp 置中
     val wide = config.screenWidthDp >= 600
+    // 手機橫向：高度不足，側邊導覽改精簡版，內容放寬到 1000dp
+    val shortH = config.screenHeightDp < 520
     fun go(r: String) = nav.navigate(r) {
         popUpTo(nav.graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
@@ -379,7 +385,28 @@ fun AppRoot() {
             if (!AppState.onboarded) nav.navigate(Routes.WELCOME)
         }
         androidx.compose.foundation.layout.Row(Modifier.fillMaxSize().padding(padding)) {
-        if (wide && !hideBar) {
+        if (wide && !hideBar && shortH) {
+            // 精簡側邊導覽：每項 52dp、圖示＋小字，高度不足時可捲動，不會重疊
+            androidx.compose.foundation.layout.Column(
+                Modifier.width(64.dp).fillMaxHeight().background(C.Bg).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(vertical = 4.dp),
+                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp, androidx.compose.ui.Alignment.CenterVertically),
+            ) {
+                tabs.forEach { t ->
+                    val sel = current == t.route
+                    androidx.compose.foundation.layout.Column(
+                        Modifier.width(56.dp).height(52.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                            .background(if (sel) C.Selected else androidx.compose.ui.graphics.Color.Transparent)
+                            .clickable { go(t.route) },
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                    ) {
+                        Icon(t.icon, contentDescription = t.label, tint = if (sel) C.Primary else C.Muted, modifier = Modifier.size(22.dp))
+                        Text(t.label, fontSize = 10.sp, color = if (sel) C.Primary else C.Muted, maxLines = 1)
+                    }
+                }
+            }
+        } else if (wide && !hideBar) {
             androidx.compose.material3.NavigationRail(containerColor = C.Bg) {
                 tabs.forEach { t ->
                     androidx.compose.material3.NavigationRailItem(
@@ -404,7 +431,7 @@ fun AppRoot() {
         ) {
         NavHost(
             nav, startDestination = Routes.HOME,
-            modifier = (if (wide) Modifier.widthIn(max = 760.dp) else Modifier).fillMaxSize(),
+            modifier = (if (wide) Modifier.widthIn(max = if (shortH) 1000.dp else 760.dp) else Modifier).fillMaxSize(),
         ) {
             composable(Routes.WELCOME) { com.claudeetf.app.ui.screens.WelcomeScreen(nav) }
             composable(Routes.SEARCH) { com.claudeetf.app.ui.screens.SearchScreen(nav) }

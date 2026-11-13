@@ -276,11 +276,13 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
 /** 行情牆：依欄數排成網格 */
 @Composable
 fun QuoteWall(list: List<Holding>, st: WallStyle = AppState.wallStyle, demo: Int = 0, onOpen: (String) -> Unit) {
+    val land = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val cols = st.colsFor(land)
     Column(verticalArrangement = Arrangement.spacedBy(st.gap.dp)) {
-        list.chunked(st.cols).forEach { row ->
+        list.chunked(cols).forEach { row ->
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(st.gap.dp)) {
                 row.forEach { h -> WallTile(h, st, Modifier.weight(1f).fillMaxHeight(), demo) { onOpen(h.symbol) } }
-                repeat(st.cols - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
@@ -406,6 +408,7 @@ fun WallStyleSettings(showPreview: Boolean = true) {
 
         Blind("layout", "版面", "每列 ${st.cols} 格 · 內距 ${st.pad} · 行距 ${st.lineGap} · 字高 ${st.lineHeight}%", open, ::toggle) {
             WChips("每列格數", listOf(1 to "1 格", 2 to "2 格", 3 to "3 格", 4 to "4 格"), st.cols) { v -> set { it.copy(cols = v) } }
+            WChips("橫向每列格數", listOf(0 to "自動", 2 to "2 格", 3 to "3 格", 4 to "4 格", 5 to "5 格", 6 to "6 格"), st.landCols) { v -> set { it.copy(landCols = v) } }
             WStep("格內內距（可負）", st.pad, -10, 24, 1, " dp") { v -> set { it.copy(pad = v) } }
             WStep("格與格間距", st.gap, 0, 16, 1, " dp") { v -> set { it.copy(gap = v) } }
             WStep("行距（可負）", st.lineGap, -12, 16, 1, " dp") { v -> set { it.copy(lineGap = v) } }

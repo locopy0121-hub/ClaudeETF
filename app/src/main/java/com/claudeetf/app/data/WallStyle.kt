@@ -78,12 +78,17 @@ data class WallStyle(
     val limitFill: Boolean = true,
     /** 項目（依順序排列） */
     val items: List<WallItem> = DEFAULT_ITEMS,
+    /** 手機橫向時每列格數（0＝自動：直向格數＋1，最多 4） */
+    val landCols: Int = 0,
 ) {
+    /** 依方向取得實際每列格數 */
+    fun colsFor(landscape: Boolean) = if (!landscape) cols else if (landCols > 0) landCols else (cols + 1).coerceAtMost(4)
+
     fun item(id: String) = items.firstOrNull { it.id == id } ?: DEFAULT_ITEMS.first { it.id == id }
     fun withItem(it2: WallItem) = copy(items = items.map { if (it.id == it2.id) it2 else it })
 
     fun toJson(): String = JSONObject().put("v", 2).put("c", cols).put("p", pad).put("g", gap).put("lg", lineGap).put("lh", lineHeight)
-        .put("h", header).put("b", border).put("lf", limitFill).put("items", JSONArray().apply { items.forEach { put(it.toJson()) } }).toString()
+        .put("h", header).put("b", border).put("lf", limitFill).put("lcols", landCols).put("items", JSONArray().apply { items.forEach { put(it.toJson()) } }).toString()
 
     companion object {
         /** 項目代號 → 名稱 */
@@ -155,7 +160,7 @@ data class WallStyle(
                 o.optInt("c", d.cols).coerceIn(1, 4), o.optInt("p", d.pad).coerceIn(-10, 24), o.optInt("g", d.gap).coerceIn(0, 16),
                 o.optInt("lg", d.lineGap).coerceIn(-12, 16), o.optInt("lh", d.lineHeight).coerceIn(70, 170),
                 o.optBoolean("h", d.header), o.optBoolean("b", d.border), o.optBoolean("lf", d.limitFill),
-            )
+            ).copy(landCols = o.optInt("lcols", 0).coerceIn(0, 6))
             val arr = o.optJSONArray("items")
             if (arr == null) {
                 // v1：各項目的開關與字級轉成項目設定

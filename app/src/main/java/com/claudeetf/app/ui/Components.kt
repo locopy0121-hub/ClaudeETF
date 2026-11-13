@@ -152,7 +152,8 @@ fun TopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
+            // 手機橫向高度不足：標題列縮為 44dp
+            .height(if (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 520) 44.dp else 56.dp)
             .padding(start = if (onBack == null) 16.dp else 4.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
