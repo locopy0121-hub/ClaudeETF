@@ -1,5 +1,6 @@
 package com.claudeetf.app.ui.screens
 
+import androidx.compose.foundation.border
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -94,6 +95,7 @@ fun EntryTag(e: KlineAnalysis.Entry, big: Boolean = false, animLevel: Int = AppS
     }
     Text(icon + e.label, color = if (big) Color.White else c, fontSize = if (big) 15.sp else 11.sp, fontWeight = FontWeight.Bold, maxLines = 1,
         modifier = Modifier.clip(shape).background(if (big) c.copy(alpha = 0.9f) else c.copy(alpha = 0.16f))
+            .then(if (!big && com.claudeetf.app.ui.theme.tagOutline) Modifier.border(1.dp, c.copy(alpha = 0.7f), shape) else Modifier)
             .padding(horizontal = if (big) 12.dp else 7.dp, vertical = if (big) 6.dp else 2.dp))
 }
 

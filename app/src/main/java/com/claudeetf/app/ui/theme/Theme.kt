@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Density
@@ -39,6 +40,20 @@ val LightPalette = Palette(
     greenBg = Color(0xFFE3F5EA), greenFg = Color(0xFF05603A), tw = Color(0xFFB54708), twBg = Color(0xFFFEF0C7),
     us = Color(0xFF6941C6), usBg = Color(0xFFEFE8FD), gray = Color(0xFF98A2B3),
 )
+
+/**
+ * 淺色主題下確保文字看得清楚：亮度過高的顏色（黃、淺綠、淺橘等）自動加深；深色主題原色不變。
+ */
+fun Color.readable(): Color {
+    if (ThemeState.isDark() || alpha < 0.5f) return this
+    var c = this
+    var n = 0
+    while (c.luminance() > 0.30f && n < 8) { c = androidx.compose.ui.graphics.lerp(c, Color.Black, 0.14f); n++ }
+    return c
+}
+
+/** 標籤是否加上外框（淺色主題預設開啟，可在外觀設定關閉） */
+val tagOutline: Boolean get() = when (AppState.cacheGet("tagOutline")) { "1" -> true; "0" -> false; else -> !ThemeState.isDark() }
 
 /** 0 = 跟隨系統、1 = 深色、2 = 淺色 */
 object ThemeState {
@@ -84,14 +99,14 @@ object Trend {
     private fun custom(v: Long): Color? = if (v != 0L) Color(v.toInt()) else null
     /** 平盤預設黃色（股價、漲跌顯示用） */
     val FLAT = Color(0xFFE6C34A)
-    val up: Color get() = custom(AppState.customUp) ?: if (tw) C.Red else C.Green
-    val down: Color get() = custom(AppState.customDown) ?: if (tw) C.Green else C.Red
-    val flat: Color get() = custom(AppState.customFlat) ?: FLAT
+    val up: Color get() = (custom(AppState.customUp) ?: if (tw) C.Red else C.Green).readable()
+    val down: Color get() = (custom(AppState.customDown) ?: if (tw) C.Green else C.Red).readable()
+    val flat: Color get() = (custom(AppState.customFlat) ?: FLAT).readable()
 
     fun fg(v: Double): Color = when {
         v > 0 -> up
         v < 0 -> down
-        else -> custom(AppState.customFlat) ?: C.Muted
+        else -> custom(AppState.customFlat)?.readable() ?: C.Muted
     }
     /** 股價本身的顏色：漲紅、平黃、跌綠（依配色設定） */
     fun price(v: Double): Color = when {

@@ -493,6 +493,14 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                     Card(padding = 14.dp) {
                         Text("主題", color = C.Text, fontSize = 14.sp)
                         Segmented(listOf("跟隨系統", "深色", "淺色"), AppState.themeMode, { AppState.updateTheme(it) }, background = C.Bg)
+                        Text("標籤外框", color = C.Text, fontSize = 14.sp)
+                        var outline by remember { mutableIntStateOf(when (AppState.cacheGet("tagOutline")) { "1" -> 1; "0" -> 2; else -> 0 }) }
+                        Segmented(listOf("自動（淺色開）", "開", "關"), outline, { v ->
+                            outline = v
+                            when (v) { 1 -> AppState.cachePut("tagOutline", "1"); 2 -> AppState.cachePut("tagOutline", "0"); else -> AppState.cachePut("tagOutline", "") }
+                            AppState.updateTheme(AppState.themeMode)
+                        }, background = C.Bg)
+                        Label("淺色主題下，黃色等淺色文字會自動加深；進場建議標籤加上同色外框，更容易辨識。")
                         Text("字級", color = C.Text, fontSize = 14.sp)
                         val scales = listOf(0.9f, 1f, 1.15f, 1.3f)
                         Segmented(

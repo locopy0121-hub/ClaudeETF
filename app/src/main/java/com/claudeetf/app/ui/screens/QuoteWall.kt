@@ -1,5 +1,6 @@
 package com.claudeetf.app.ui.screens
 
+import com.claudeetf.app.ui.theme.readable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -169,7 +170,7 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
     fun color(i: WallItem): Color = if (limitOnFill(i)) trend else if (inv && i.bg == 0) (if (i.id == "code") Color.White.copy(alpha = 0.7f) else Color.White) else when (i.color) {
         1 -> trend; 2 -> C.Text; 3 -> C.Muted; 4 -> GOLD; 5 -> C.Primary; 6 -> level(i)
         else -> bgColor(i)?.takeIf { it.alpha >= 0.6f }?.let { onColor(it) } ?: natural(i)
-    }
+    }.let { if (i.bg == 0 && !inv) it.readable() else it }
     fun labelColor(i: WallItem, main: Color): Color = if (inv && i.bg == 0) Color.White.copy(alpha = 0.75f) else when (i.lc) {
         1 -> C.Muted; 2 -> C.Text; 3 -> GOLD; 4 -> C.Primary; 5 -> trend
         else -> main

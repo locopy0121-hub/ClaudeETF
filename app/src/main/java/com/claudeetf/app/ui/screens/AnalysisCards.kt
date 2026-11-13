@@ -1,5 +1,6 @@
 package com.claudeetf.app.ui.screens
 
+import com.claudeetf.app.ui.theme.readable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -180,7 +181,7 @@ fun zoneColor(zone: Int): Color = when (zone) {
     3 -> Color(0xFFE0A060)
     4 -> Color(0xFFE57373)
     else -> Color(0xFF9575CD)
-}
+}.let { it.readable() }
 
 /** 綜合結論：分析指數 × 股價光譜 */
 @Composable
