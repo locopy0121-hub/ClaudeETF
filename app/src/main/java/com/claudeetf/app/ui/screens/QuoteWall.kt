@@ -1,5 +1,7 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.claudeetf.app.ui.screens
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.offset
 import com.claudeetf.app.ui.textFx
 import com.claudeetf.app.ui.theme.readable
@@ -96,7 +98,12 @@ private fun textAlignOf(a: Int) = when (a) { 1 -> TextAlign.Center; 2 -> TextAli
 
 /** 行情牆的一格 */
 @Composable
-fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int = 0, onClick: () -> Unit) {
+fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int = 0,
+             editSel: String? = null, onPickItem: ((String) -> Unit)? = null, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    /** 編輯模式：項目可點選，選中的加框 */
+    fun Modifier.pick(id: String): Modifier = if (onPickItem == null) this else this
+        .border(if (editSel == id) 2.dp else 1.dp, if (editSel == id) C.Primary else C.Primary.copy(alpha = 0.25f), RoundedCornerShape(4.dp))
+        .clickable { onPickItem(id) }
     val q = AppState.quote(h.symbol)
     val chg = q?.change ?: 0.0
     val pct = q?.changePct ?: 0.0
@@ -195,7 +202,7 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
         // 以昨收 ±（今日振幅與 2% 取大者）為刻度，K 棒高度反映實際漲跌幅度
         val span = maxOf(hi - lo, ref * 0.02, kotlin.math.abs(hi - ref), kotlin.math.abs(lo - ref)).coerceAtLeast(1e-9)
         val top = maxOf(hi, ref + span * 0.5); val bot = minOf(lo, ref - span * 0.5)
-        androidx.compose.foundation.Canvas(Modifier.outer(i.mx, i.my)
+        androidx.compose.foundation.Canvas(Modifier.pick(i.id).outer(i.mx, i.my)
             .then(if (bgc != null) Modifier.drawBehind { drawRoundRect(bgc, cornerRadius = CornerRadius(4.dp.toPx())) } else Modifier)
             .outer(i.px, i.py).size(wDp, hDp)) {
             fun y(p: Double) = (size.height * (1 - (p - bot) / (top - bot))).toFloat()
@@ -221,8 +228,11 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
         Text(txt, color = main, fontSize = i.size.sp, lineHeight = (i.size * 1.18f * ilh).sp,
             fontWeight = if (i.bold) FontWeight.Bold else FontWeight.Normal, fontFamily = com.claudeetf.app.ui.fontOf(i.font.ifEmpty { if (i.mono) "mono" else "" }),
             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = textAlignOf(i.align),
+            fontStyle = if (i.italic) androidx.compose.ui.text.font.FontStyle.Italic else null,
+            textDecoration = if (i.under) androidx.compose.ui.text.style.TextDecoration.Underline else null,
             modifier = Modifier
                 .then(if (i.ox != 0 || i.oy != 0) Modifier.offset(i.ox.dp, i.oy.dp) else Modifier)
+                .pick(i.id)
                 .then(if (i.an > 0 && q != null) Modifier.textFx(i.an, i.at, i.asp, i.apw, q.price, Trend.fg(q.change)) else Modifier)
                 .outer(i.mx, i.my)
                 .then(if (bgc != null) Modifier.drawBehind { drawRoundRect(bgc, cornerRadius = CornerRadius(6.dp.toPx())) } else Modifier)
@@ -264,7 +274,9 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
     Box(
         modifier.clip(RoundedCornerShape(6.dp)).background(bodyBg)
             .then(if (st.border || inv) Modifier.border(1.dp, if (inv) lerp(trend, Color.White, 0.25f) else trend.copy(alpha = 0.55f), RoundedCornerShape(6.dp)) else Modifier)
-            .clickable(onClick = onClick),
+            .then(if (onPickItem != null) Modifier
+                else if (onLongClick != null) Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                else Modifier.clickable(onClick = onClick)),
     ) {
         Column(Modifier.fillMaxWidth()) {
             if (headLines.isNotEmpty()) Lines(st.lineGap.coerceAtMost(0), extra = headLines.map { it.first().lg },
@@ -291,13 +303,15 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
 
 /** 行情牆：依欄數排成網格 */
 @Composable
-fun QuoteWall(list: List<Holding>, st: WallStyle = AppState.wallStyle, demo: Int = 0, onOpen: (String) -> Unit) {
+fun QuoteWall(list: List<Holding>, st: WallStyle = AppState.wallStyle, demo: Int = 0,
+              editSel: String? = null, onPickItem: ((String) -> Unit)? = null, onLongPress: ((String) -> Unit)? = null, onOpen: (String) -> Unit) {
     val land = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val cols = st.colsFor(land)
     Column(verticalArrangement = Arrangement.spacedBy(st.gap.dp)) {
         list.chunked(cols).forEach { row ->
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(st.gap.dp)) {
-                row.forEach { h -> WallTile(h, st, Modifier.weight(1f).fillMaxHeight(), demo) { onOpen(h.symbol) } }
+                row.forEach { h -> WallTile(h, st, Modifier.weight(1f).fillMaxHeight(), demo, editSel, onPickItem,
+                    onLongPress?.let { f -> { f(h.symbol) } }) { onOpen(h.symbol) } }
                 repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
@@ -393,15 +407,21 @@ fun WallPreview(modifier: Modifier = Modifier) {
     val samples = AppState.holdings.take(st.cols * 2).ifEmpty { listOf(Holding("0050", 1000.0, 85.0), Holding("0056", 1000.0, 36.0)) }
     var demo by remember { mutableStateOf(0) }
     Column(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
-        QuoteWall(samples, st, demo) {}
+        // 預覽即編輯：點格子裡的任一項目即選取，下方出現快速工具列，✎ 叫出完整編輯工具
+        QuoteWall(samples, st, demo, editSel = WallEdit.sel, onPickItem = { WallEdit.select(it) }) {}
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("預覽", color = C.Muted, fontSize = 11.sp)
             listOf(0 to "一般", 1 to "漲停", -1 to "跌停").forEach { (v, n) ->
                 Text(n, color = if (demo == v) C.OnPrimary else C.Text2, fontSize = 11.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp))
                     .background(if (demo == v) C.Primary else C.Bg).clickable { demo = v }.padding(horizontal = 9.dp, vertical = 3.dp))
             }
+            Spacer(Modifier.weight(1f))
+            WallUndoRedo()
         }
+        if (WallEdit.sel == null) Text("點格子裡的項目即可編輯", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        else WallQuickBar()
     }
+    WallEditSheet()
 }
 
 /** 設定頁：行情牆樣式（即時預覽＋百葉窗分區） */
@@ -460,6 +480,21 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                     }
                     AnimatedVisibility(isEd, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                         Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 10.dp)) {
+                            WallItemEditor(i, st, ::set)
+                        }
+                    }
+                }
+            }
+        }
+        Text("全部恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.updateWallStyle(WallStyle()); editing = null }.padding(vertical = 10.dp))
+    }
+}
+
+
+/** 行情牆單一項目的完整編輯內容：設定頁的項目清單與「編輯工具」面板共用 */
+@Composable
+fun WallItemEditor(i: WallItem, st: WallStyle, set: ((WallStyle) -> WallStyle) -> Unit) {
+  Column(Modifier.fillMaxWidth()) {
                             fun upd(f: (WallItem) -> WallItem) = set { it.withItem(f(it.item(i.id))) }
                             WChips("位置", listOf(1 to "標題列", 0 to "內容區", 2 to "懸浮（自由位置）"), if (i.fl) 2 else if (i.head) 1 else 0) { v ->
                                 upd { it.copy(fl = v == 2, head = if (v == 2) it.head else v == 1) } }
@@ -534,11 +569,5 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                                 upd { it.copy(head = d.head, inline = d.inline, align = d.align, size = d.size, bold = d.bold, color = d.color, mono = d.mono, font = d.font, label = d.label,
                                     fl = d.fl, fx = d.fx, fy = d.fy, mx = d.mx, my = d.my, px = d.px, py = d.py, lg = d.lg, lh = d.lh, bg = d.bg, ba = d.ba, lc = d.lc) } }.padding(vertical = 4.dp))
                             if (i.id == "entry") Label("進場建議依 K 線分析（與個股頁相同），未分析過的個股會在背景分析後顯示。")
-                        }
-                    }
-                }
-            }
-        }
-        Text("全部恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.updateWallStyle(WallStyle()); editing = null }.padding(vertical = 10.dp))
-    }
+}
 }
