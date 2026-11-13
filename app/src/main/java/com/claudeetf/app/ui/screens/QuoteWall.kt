@@ -410,7 +410,7 @@ fun WallPreview(modifier: Modifier = Modifier) {
     val st = AppState.wallStyle
     val samples = AppState.holdings.take(2).ifEmpty { listOf(Holding("0050", 1000.0, 85.0), Holding("0056", 1000.0, 36.0)) }
     var demo by remember { mutableStateOf(0) }
-    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
+    Column(modifier.fillMaxWidth().trackPreviewEdge().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
         // 預覽即編輯：點格子裡的任一項目即選取，下方出現快速工具列，✎ 叫出完整編輯工具
         QuoteWall(samples, st, demo, editSel = WallEdit.sel, onPickItem = { WallEdit.select(it) }) {}
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

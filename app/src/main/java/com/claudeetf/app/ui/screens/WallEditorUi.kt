@@ -131,11 +131,9 @@ fun WallQuickBar() {
 fun WallEditSheet() {
     if (!WallEdit.sheet) return
     val id = WallEdit.sel ?: run { WallEdit.sheet = false; return }
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val st = AppState.wallStyle
-    ModalBottomSheet(onDismissRequest = { WallEdit.done() }, sheetState = state, containerColor = C.Card,
-        scrimColor = Color.Black.copy(alpha = 0.15f)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+    DockedPanel(onDismiss = { WallEdit.done() }) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("取消", color = C.Text2, fontSize = 15.sp, modifier = Modifier.clickable { WallEdit.cancel() }.padding(vertical = 8.dp, horizontal = 4.dp))
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -159,7 +157,7 @@ fun WallEditSheet() {
                             .padding(horizontal = 10.dp, vertical = 4.dp))
                 }
             }
-            Box(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+            Box(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 56.dp)) {
                 WallItemEditor(st.item(id), st) { f -> WallEdit.apply(f) }
             }
         }

@@ -1377,7 +1377,7 @@ internal fun AnimChooser(sel: Int, set: (Int) -> Unit) {
 internal fun HoldStylePreview() {
     val st = AppState.holdStyle
     val samples = AppState.holdings.take(1).ifEmpty { listOf(com.claudeetf.app.data.Holding("0050", 1000.0, 85.0)) }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+    Column(Modifier.fillMaxWidth().trackPreviewEdge().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
         Label("預覽：點任一項目叫出編輯工具", Modifier.padding(top = 4.dp))
         samples.forEach { h -> HoldingRow(h, true, st, sel = EditSel.hold, onPick = { EditSel.hold = it; EditSel.holdSheet = true }) {} }
     }
