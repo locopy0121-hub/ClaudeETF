@@ -469,8 +469,6 @@ private fun infoLine(q: Quote, id: String, st: WatchStyle): (@Composable RowScop
 
 // ============================== 設定 ==============================
 
-/** 設置 › 顯示 › 自選個股顯示格式：點預覽中的項目即可調整 */
-@Composable
 /** 行情卡片樣式預覽：固定在設定頁頂部，點項目即選取（卡片／清單切換） */
 @Composable
 fun WatchStylePreview() {
