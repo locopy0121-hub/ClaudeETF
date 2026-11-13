@@ -34,6 +34,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import kotlin.math.roundToInt
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.layout
@@ -112,7 +113,7 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
         .border(if (editSel == id) 2.dp else 1.dp, if (editSel == id) C.Primary else C.Primary.copy(alpha = 0.25f), RoundedCornerShape(4.dp))
         .then(if (editSel == id && st.item(id).fl) Modifier.pointerInput(id, tileSize) {
             var fx = 0f; var fy = 0f
-            androidx.compose.foundation.gestures.detectDragGestures(
+            detectDragGestures(
                 onDragStart = { val it0 = AppState.wallStyle.item(id); fx = it0.fx.toFloat(); fy = it0.fy.toFloat(); Hist.wall.mark() },
                 onDragEnd = { guideX = null; guideY = null },
                 onDragCancel = { guideX = null; guideY = null },

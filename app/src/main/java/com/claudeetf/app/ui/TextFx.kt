@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -174,7 +175,7 @@ fun Modifier.textFx(style: Int, trig: Int, speed: Int, power: Int, value: Double
         // 數字滾動：在自身範圍內裁切，新內容由下（漲）或上（跌）捲入
         17 -> graphicsLayer { clip = true; translationY = p.value * size.height * (if (dir < 0) -1f else 1f) * (0.6f + 0.4f * pw.coerceAtMost(1f)) }
         // 打字機：由左到右逐步顯現
-        18 -> drawWithContent { androidx.compose.ui.graphics.drawscope.clipRect(right = size.width * (1f - p.value)) { this@drawWithContent.drawContent() } }
+        18 -> drawWithContent { clipRect(right = size.width * (1f - p.value)) { this@drawWithContent.drawContent() } }
         // 跑馬燈：在自身範圍內由右往左循環
         19 -> graphicsLayer { clip = true; translationX = size.width * (1f - 2f * p.value) }
         // 彈性浮現：由小彈到原尺寸（彈簧可略為超過）
