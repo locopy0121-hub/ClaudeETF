@@ -145,17 +145,18 @@ fun WallEditSheet() {
                 Text("完成", color = C.OnPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                     modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Primary).clickable { WallEdit.done() }.padding(horizontal = 14.dp, vertical = 7.dp))
             }
-            Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 WallUndoRedo()
                 Spacer(Modifier.weight(1f))
-                // 切換要編輯的項目
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    st.items.filter { it.show }.forEach { o ->
-                        val on = o.id == id
-                        Text(WallStyle.NAMES[o.id] ?: o.id, color = if (on) C.OnPrimary else C.Text2, fontSize = 11.sp,
-                            modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (on) C.Primary else C.Bg).clickable { WallEdit.sel = o.id }
-                                .padding(horizontal = 8.dp, vertical = 3.dp))
-                    }
+                Text("切換項目 ›", color = C.Muted, fontSize = 11.sp)
+            }
+            // 切換要編輯的項目（獨立一列，分頁保持不變）
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                st.items.filter { it.show || it.id == id }.forEach { o ->
+                    val on = o.id == id
+                    Text(WallStyle.NAMES[o.id] ?: o.id, color = if (on) C.OnPrimary else C.Text2, fontSize = 12.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(if (on) C.Primary else C.Bg).clickable { WallEdit.sel = o.id }
+                            .padding(horizontal = 10.dp, vertical = 4.dp))
                 }
             }
             Box(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {

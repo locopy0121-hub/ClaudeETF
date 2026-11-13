@@ -487,8 +487,8 @@ fun WatchStylePreview() {
         if (EditSel.watchView == 0) Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val sel = EditSel.watch?.takeIf { it.startsWith("c:") }?.removePrefix("c:")
             WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)), sel) { EditSel.watch = "c:$it" }
-            if (st.cardCols == 3) WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)))
-            else Spacer(Modifier.weight(0.25f))
+            // 只預覽單一個股，寬度與實際每列張數相同，騰出畫面給編輯工具
+            Spacer(Modifier.weight((st.cardCols - 1).coerceAtLeast(1).toFloat()))
         } else Box(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(horizontal = 6.dp)) {
             WatchRowBody(sample, st, Modifier, false, EditSel.watch?.takeIf { it.startsWith("l:") }?.removePrefix("l:")) { EditSel.watch = "l:$it" }
         }
