@@ -471,31 +471,43 @@ private fun infoLine(q: Quote, id: String, st: WatchStyle): (@Composable RowScop
 
 /** 設置 › 顯示 › 自選個股顯示格式：點預覽中的項目即可調整 */
 @Composable
-fun WatchStyleSettings() {
+/** 行情卡片樣式預覽：固定在設定頁頂部，點項目即選取（卡片／清單切換） */
+@Composable
+fun WatchStylePreview() {
+    val st = AppState.watchStyle
+    val sample = AppState.quotes.firstOrNull { it.price > 0 } ?: Quote("0050", "元大台灣50", Market.TW, 92.50, 97.15)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("預覽", color = C.Muted, fontSize = 11.sp)
+            listOf(0 to "卡片", 1 to "清單").forEach { (v, n) ->
+                Text(n, color = if (EditSel.watchView == v) C.OnPrimary else C.Text2, fontSize = 11.sp, modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                    .background(if (EditSel.watchView == v) C.Primary else C.Bg).clickable { EditSel.watchView = v }.padding(horizontal = 9.dp, vertical = 3.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            Text("點項目即可編輯", color = C.Muted, fontSize = 11.sp)
+        }
+        if (EditSel.watchView == 0) Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val sel = EditSel.watch?.takeIf { it.startsWith("c:") }?.removePrefix("c:")
+            WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)), sel) { EditSel.watch = "c:$it" }
+            if (st.cardCols == 3) WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)))
+            else Spacer(Modifier.weight(0.25f))
+        } else Box(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(horizontal = 6.dp)) {
+            WatchRowBody(sample, st, Modifier, false, EditSel.watch?.takeIf { it.startsWith("l:") }?.removePrefix("l:")) { EditSel.watch = "l:$it" }
+        }
+    }
+}
+
+@Composable
+fun WatchStyleSettings(showPreview: Boolean = true) {
     val st = AppState.watchStyle
     fun set(f: (WatchStyle) -> WatchStyle) = AppState.updateWatchStyle(f(AppState.watchStyle))
-    val sample = AppState.quotes.firstOrNull { it.price > 0 } ?: Quote("0050", "元大台灣50", Market.TW, 92.50, 97.15)
-    // 點選的目標："c:項目" 卡片、"l:項目" 清單
-    var target by remember { mutableStateOf<String?>(null) }
+    val target = EditSel.watch
 
     Card(padding = 14.dp) {
         Text("自選個股顯示格式", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Label("點預覽中的名稱、價格、漲跌或任一項目，下方會出現該項設定（含字級、粗細、文字顏色）")
-
-        Text("卡片預覽", color = C.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val sel = target?.takeIf { it.startsWith("c:") }?.removePrefix("c:")
-            WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)), sel) { target = "c:$it" }
-            if (st.cardCols == 3) WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)))
-            else Spacer(Modifier.weight(0.25f))
-        }
-        if (target?.startsWith("c:") == true) Editor(target!!, st, ::set) { target = null }
-
-        Text("清單預覽", color = C.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
-        Box(Modifier.fillMaxWidth().padding(top = 4.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(horizontal = 6.dp)) {
-            WatchRowBody(sample, st, Modifier, false, target?.takeIf { it.startsWith("l:") }?.removePrefix("l:")) { target = "l:$it" }
-        }
-        if (target?.startsWith("l:") == true) Editor(target!!, st, ::set) { target = null }
+        Label("點上方預覽中的名稱、價格、漲跌或任一項目，這裡會出現該項設定（含字級、粗細、文字顏色、文字動畫）")
+        if (showPreview) Box(Modifier.padding(top = 8.dp)) { WatchStylePreview() }
+        if (target != null) Editor(target, st, ::set) { EditSel.watch = null }
 
         // ---- 共用設定 ----
         Section("共用設定")
@@ -529,7 +541,7 @@ fun WatchStyleSettings() {
             onToggle = { id, on -> set { s -> s.copy(listHidden = if (on) s.listHidden - id else s.listHidden + id) } })
         Label("市場標籤、報價時間、成交量、振幅、漲跌停相鄰時會排在同一行")
 
-        Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.updateWatchStyle(WatchStyle()); target = null }.padding(top = 8.dp, bottom = 2.dp))
+        Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.updateWatchStyle(WatchStyle()); EditSel.watch = null }.padding(top = 8.dp, bottom = 2.dp))
     }
 }
 

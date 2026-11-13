@@ -276,7 +276,9 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
         vis.filter { it.fl }.forEach { i ->
             // 依基準點擺放：座標＝格內百分比，基準點（左緣／中心／右緣）落在該座標上，方便上下項目精準對齊
             Layout(content = { Item(i) }, modifier = Modifier.matchParentSize().padding((pad.value * 0.5f).dp)) { ms, c ->
-                val pl = ms.first().measure(c.copy(minWidth = 0, minHeight = 0))
+                // 項目沒有資料時不會產生內容（例如尚無報價），不擺放任何東西
+                val m0 = ms.firstOrNull() ?: return@Layout layout(c.maxWidth, c.maxHeight) {}
+                val pl = m0.measure(c.copy(minWidth = 0, minHeight = 0))
                 val ax = when (i.fa) { 0 -> 0f; 1 -> 0.5f; 2 -> 1f; else -> i.fx / 100f }
                 val ay = when (i.fva) { 0 -> 0f; 1 -> 0.5f; 2 -> 1f; else -> i.fy / 100f }
                 val x = (c.maxWidth * i.fx / 100f - pl.width * ax).toInt().coerceIn(0, (c.maxWidth - pl.width).coerceAtLeast(0))

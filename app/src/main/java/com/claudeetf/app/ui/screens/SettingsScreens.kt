@@ -449,7 +449,8 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
             }
 
             if (section == "watch") {
-                item { WatchStyleSettings() }
+                stickyHeader { Box(Modifier.fillMaxWidth().background(C.Bg).padding(vertical = 6.dp)) { WatchStylePreview() } }
+                item { WatchStyleSettings(showPreview = false) }
                 item {
                     Card(padding = 14.dp) {
                         Text("行情卡片的進場標籤", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
@@ -465,7 +466,10 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 item {
                     HoldModeHeader("清單模式（持股卡片）", "排版、項目位置、字級、行距與動畫", holdOpen == "card") { holdOpen = if (holdOpen == "card") null else "card" }
                 }
-                if (holdOpen == "card") item { HoldStyleSettings() }
+                if (holdOpen == "card") {
+                    stickyHeader { Box(Modifier.fillMaxWidth().background(C.Bg).padding(vertical = 6.dp)) { HoldStylePreview() } }
+                    item { HoldStyleSettings(showPreview = false) }
+                }
                 item {
                     HoldModeHeader("行情牆模式", "每列 ${AppState.wallStyle.cols} 格 · 顯示 ${AppState.wallStyle.items.count { it.show }} 項", holdOpen == "wall") { holdOpen = if (holdOpen == "wall") null else "wall" }
                 }
@@ -603,7 +607,17 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                         }
                     }
                 }
-                if (AppState.tickerShow) item { TickerStyleSettings() }
+                if (AppState.tickerShow) {
+                    stickyHeader {
+                        Box(Modifier.fillMaxWidth().background(C.Bg).padding(vertical = 6.dp)) {
+                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(6.dp)) {
+                                Text("跑馬燈預覽", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, bottom = 4.dp))
+                                IndexTicker(null, preview = true)
+                            }
+                        }
+                    }
+                    item { TickerStyleSettings(showPreview = false) }
+                }
                 item {
                     Card(padding = 14.dp) {
                         var picking by remember { mutableStateOf(false) }
@@ -1359,7 +1373,17 @@ internal fun AnimChooser(sel: Int, set: (Int) -> Unit) {
 // ============================== 持股卡片樣式 ==============================
 
 @Composable
-private fun HoldStyleSettings() {
+internal fun HoldStylePreview() {
+    val st = AppState.holdStyle
+    val samples = AppState.holdings.take(2).ifEmpty { listOf(com.claudeetf.app.data.Holding("0050", 1000.0, 85.0)) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+        Label("預覽：點任一項目即可編輯位置、對齊、字級、顏色與動畫", Modifier.padding(top = 4.dp))
+        samples.forEach { h -> HoldingRow(h, true, st, sel = EditSel.hold, onPick = { EditSel.hold = it }) {} }
+    }
+}
+
+@Composable
+private fun HoldStyleSettings(showPreview: Boolean = true) {
     val st = AppState.holdStyle
     val HS = com.claudeetf.app.data.HoldStyle
     fun set(f: (com.claudeetf.app.data.HoldStyle) -> com.claudeetf.app.data.HoldStyle) = AppState.updateHoldStyle(f(AppState.holdStyle))
@@ -1370,19 +1394,14 @@ private fun HoldStyleSettings() {
     Card(padding = 14.dp) {
         Text("持股卡片顯示格式", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         Label("只影響「持股」頁；自選行情的卡片在「行情卡片樣式」另外設定，兩者互不影響")
-        // 即時預覽：用前兩檔持股（沒有持股時以示意資料）；兩檔都可點選項目
-        val samples = AppState.holdings.take(2).ifEmpty { listOf(com.claudeetf.app.data.Holding("0050", 1000.0, 85.0)) }
-        var target by remember { mutableStateOf<String?>(null) }
-        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg).padding(horizontal = 8.dp, vertical = 4.dp)) {
-            Label("預覽：點任一項目，可調整位置（左／中／右欄）、對齊、同行、字級、行距、內距、顏色與動畫", Modifier.padding(top = 4.dp))
-            samples.forEach { h -> HoldingRow(h, true, st, sel = target, onPick = { target = it }) {} }
-        }
+        if (showPreview) Box(Modifier.padding(vertical = 8.dp)) { HoldStylePreview() }
+        val target = EditSel.hold
         target?.let { id ->
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.Primary.copy(alpha = 0.10f))
                 .border(1.dp, C.Primary.copy(alpha = 0.5f), RoundedCornerShape(10.dp)).padding(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("持股卡片 › " + (HS.NAMES[id] ?: id), Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text("完成", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { target = null }.padding(6.dp))
+                    Text("完成", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { EditSel.hold = null }.padding(6.dp))
                 }
                 Text("位置", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
                 ChipRow(listOf(0 to "左欄", 1 to "中欄", 2 to "右欄"), st.zoneOf(id)) { v -> set { it.copy(zone = it.zone + (id to v), align = it.align - id) } }
@@ -1396,7 +1415,7 @@ private fun HoldStyleSettings() {
                     Text("順序", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
                     Text("↑ 往前", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { move(id, -1) }.padding(8.dp))
                     Text("↓ 往後", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable { move(id, 1) }.padding(8.dp))
-                    Text("隱藏", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { set { it.copy(hidden = it.hidden + id) }; target = null }.padding(8.dp))
+                    Text("隱藏", color = C.Red, fontSize = 13.sp, modifier = Modifier.clickable { set { it.copy(hidden = it.hidden + id) }; EditSel.hold = null }.padding(8.dp))
                 }
                 // 現價方格專屬：即時／收盤文字、字型（原「持股現價方格」設定併入此處）
                 if (id == "price") {
@@ -1430,7 +1449,7 @@ private fun HoldStyleSettings() {
         st.items.forEachIndexed { i, id ->
             val on = st.shows(id)
             Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).clickable { target = id }) {
+                Column(Modifier.weight(1f).clickable { EditSel.hold = id }) {
                     Text(HS.NAMES[id] ?: id, color = if (on) C.Text else C.Muted, fontSize = 14.sp)
                     Text(HS.ZONE_NAMES[st.zoneOf(id)] + (if (id in st.inline) " · 同上一行" else ""), color = C.Muted, fontSize = 10.sp)
                 }
@@ -2111,7 +2130,7 @@ private fun TStep(label: String, v: Int, min: Int, max: Int, unit: String, set: 
 
 /** 指數跑馬燈（置頂字條）樣式：字級、字體、粗細、顯示項目、配色、間距與速度，附即時預覽 */
 @Composable
-fun TickerStyleSettings() {
+fun TickerStyleSettings(showPreview: Boolean = true) {
     val st = AppState.tickerStyle
     fun set(f: (com.claudeetf.app.data.TickerStyle) -> com.claudeetf.app.data.TickerStyle) = AppState.updateTickerStyle(f(AppState.tickerStyle))
     var open by remember { mutableStateOf<String?>("size") }
@@ -2127,7 +2146,7 @@ fun TickerStyleSettings() {
     Card(padding = 14.dp) {
         Text("跑馬燈字條樣式", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
         Label("置頂的指數字條（例如「TW 盤後 加權指數 44,257.15 ▲ +2,595.45」）的字級、字體與顯示項目。")
-        Box(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(6.dp)) { IndexTicker(null, preview = true) }
+        if (showPreview) Box(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(6.dp)) { IndexTicker(null, preview = true) }
         Sec("size", "字級") {
             TStep("指數名稱", st.nameSize, 8, 28, " sp") { v -> set { it.copy(nameSize = v) } }
             TStep("指數點數", st.valueSize, 8, 28, " sp") { v -> set { it.copy(valueSize = v) } }
