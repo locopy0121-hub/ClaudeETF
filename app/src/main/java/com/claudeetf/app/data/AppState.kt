@@ -85,7 +85,7 @@ object AppState {
     /** 首頁卡片順序與隱藏 */
     val allHomeCards = listOf("assets" to "總資產與走勢", "alloc" to "資產配置", "movers" to "持股焦點（今日漲跌／市值前五）",
         "session" to "美股交易時段", "index" to "主要指數", "source" to "資料來源", "goal" to "資產目標",
-        "pnlsplit" to "今日損益（台股／美股）", "watch" to "自選前五檔",
+        "watch" to "自選前五檔",
         "keys" to "持股三關位置", "divcal" to "持股除息行事曆", "alerts" to "最近通知", "fx" to "匯率與總經",
         "fut" to "台指期近月", "news" to "財經新聞（RSS）", "report" to "每日盤後報表")
     /** v0.1.45 新增的固定卡片：舊使用者預設隱藏，到設定勾選 */

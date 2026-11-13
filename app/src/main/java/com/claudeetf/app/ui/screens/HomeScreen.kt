@@ -127,6 +127,20 @@ fun HomeScreen(nav: NavController) {
                                 Label("今日"); HGap(8.dp)
                                 NumText(mask(Fmt.signed(today)) + "（" + Fmt.pct(today / (total - today) * 100) + "）", 13.sp, Trend.fg(today))
                             }
+                            // 台股／美股今日損益分開（原「今日損益（台股／美股）」卡併入）
+                            run {
+                                fun pnl(m: com.claudeetf.app.data.Market) = AppState.holdings.sumOf { h ->
+                                    val qq = AppState.quote(h.symbol) ?: return@sumOf 0.0
+                                    if (qq.market != m) 0.0 else h.shares * qq.change * AppState.fxFor(m)
+                                }
+                                val hasTw = AppState.holdings.any { AppState.quote(it.symbol)?.market == com.claudeetf.app.data.Market.TW }
+                                val hasUs = AppState.holdings.any { AppState.quote(it.symbol)?.market == com.claudeetf.app.data.Market.US }
+                                if (hasTw && hasUs) Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Label("　台股"); HGap(4.dp); NumText(mask(Fmt.signed(pnl(com.claudeetf.app.data.Market.TW))), 12.sp, Trend.fg(pnl(com.claudeetf.app.data.Market.TW)))
+                                    HGap(10.dp)
+                                    Label("美股"); HGap(4.dp); NumText(mask(Fmt.signed(pnl(com.claudeetf.app.data.Market.US))), 12.sp, Trend.fg(pnl(com.claudeetf.app.data.Market.US)))
+                                }
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Label("未實現"); HGap(8.dp)
                                 NumText(mask(Fmt.signed(unreal)) + "（" + Fmt.pct(if (cost > 0) unreal / cost * 100 else 0.0) + "）", 13.sp, Trend.fg(unreal))
@@ -217,7 +231,7 @@ fun HomeScreen(nav: NavController) {
                     // 「今日持股漲跌」與「持股前五大」合併為持股焦點卡（舊設定任一開啟都顯示一次）
                     "movers", "holdings" -> if (!focusShown) { focusShown = true; item { HoldingFocusCard(nav) } }
                     "goal" -> item { GoalCard() }
-                    "pnlsplit" -> item { PnlSplitCard() }
+                    "pnlsplit" -> {} // 已併入總資產卡
                     "watch" -> item { WatchTopCard(nav) }
                     "keys" -> item { KeysCard(nav) }
                     "divcal" -> item { DivCalCard(nav) }
