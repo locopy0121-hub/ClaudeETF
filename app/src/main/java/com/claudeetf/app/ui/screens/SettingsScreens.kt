@@ -1025,6 +1025,14 @@ private fun DataCard() {
             if (t == null) msg = "無法讀取檔案" else restoreText = t
         }
     }
+    val autoScope = rememberCoroutineScope()
+    var autoTick by remember { mutableIntStateOf(0) }
+    val pickAuto = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) autoScope.launch {
+            msg = if (com.claudeetf.app.data.AutoBackup.setTarget(context, uri)) "已設定每日自動備份，並完成第一次備份" else "已設定，但第一次備份失敗：" + (com.claudeetf.app.data.AutoBackup.lastError ?: "")
+            autoTick++
+        }
+    }
     val exportCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) msg = if (writeText(context, uri, TradeCsv.export(AppState.trades.toList()))) "交易 CSV 已匯出" else "匯出失敗"
     }
@@ -1046,6 +1054,21 @@ private fun DataCard() {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SmallButton("匯出備份", Modifier.weight(1f)) { exportBackup.launch(Backup.fileName("json")) }
             SmallButton("從備份還原", Modifier.weight(1f)) { openBackup.launch(arrayOf("application/json", "text/plain", "*/*")) }
+        }
+        // 每日自動備份
+        key(autoTick) {
+            val ab = com.claudeetf.app.data.AutoBackup
+            Text("每日自動備份", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+            Label(if (ab.uri == null) "未開啟。選一次備份檔位置（可選 Google 雲端硬碟），之後每天開啟 App 時自動覆寫最新備份。"
+                else "已開啟 · 上次自動備份：" + (if (ab.lastAt > 0) Fmt.time(ab.lastAt) else "尚未") + (ab.lastError?.let { "（上次失敗：$it）" } ?: ""),
+                color = if (ab.lastError != null) C.Red else C.Muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallButton(if (ab.uri == null) "選擇備份位置" else "更換位置", Modifier.weight(1f)) { pickAuto.launch("台美股資產-自動備份.json") }
+                if (ab.uri != null) {
+                    SmallButton("立即備份", Modifier.weight(1f)) { autoScope.launch { msg = if (ab.runNow(context)) "自動備份完成" else "備份失敗：" + (ab.lastError ?: ""); autoTick++ } }
+                    SmallButton("關閉", Modifier.weight(1f)) { ab.disable(context); autoTick++ }
+                }
+            }
         }
         restoreText?.let { text ->
             Text("還原會取代手機上目前的所有資料，確定嗎？", color = C.Red, fontSize = 13.sp)

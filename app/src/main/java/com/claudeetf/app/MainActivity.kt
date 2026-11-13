@@ -123,6 +123,8 @@ class MainActivity : ComponentActivity() {
         com.claudeetf.app.alerts.MonitorService.start(applicationContext)
         // 已下載好的新版：回到 App 直接進入系統安裝（Play 安全防護掃描後按「安裝」）
         com.claudeetf.app.data.AppUpdater.onForeground(applicationContext)
+        // 每日自動備份（已設定備份檔時，距上次超過一天才寫入）
+        lifecycleScope.launch { runCatching { com.claudeetf.app.data.AutoBackup.runIfDue(applicationContext) } }
         // 離開超過 1 分鐘重新上鎖
         if (AppState.appLock && AppState.backgroundAt > 0 && System.currentTimeMillis() - AppState.backgroundAt > 60_000) {
             AppState.locked = true

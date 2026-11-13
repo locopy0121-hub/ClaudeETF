@@ -82,6 +82,14 @@ object CalendarRepo {
                 label(d), d, "全日", "美股休市・$name", "紐約時間全日休市", EventKind.HOLIDAY,
             )
         }
+        UsSession.earlyCloses.forEach { (d, name) ->
+            val tw = UsSession.nyToTaipei(d, LocalTime.of(13, 0))
+            val td = tw.toLocalDate()
+            if (td >= today && td <= horizon) out += CalendarEvent(
+                label(td), td, tw.format(DateTimeFormatter.ofPattern("HH:mm")), "美股提早收盤・$name",
+                "美東 13:00 收盤（台灣時間 " + tw.format(DateTimeFormatter.ofPattern("M/d HH:mm")) + "），盤後交易至美東 17:00", EventKind.HOLIDAY,
+            )
+        }
         UsSession.fomcDecisionDays.forEach { d ->
             val tw = UsSession.nyToTaipei(d, LocalTime.of(14, 0))
             val td = tw.toLocalDate()

@@ -24,6 +24,11 @@ object UsSession {
     ).associate { LocalDate.parse(it.first) to it.second }
     private val holidays = holidayNames.keys
 
+    /** 提早收盤日（紐約日期，美東 13:00 收盤、盤後至 17:00） */
+    val earlyCloses: Map<LocalDate, String> = listOf(
+        "2026-11-27" to "感恩節隔日", "2026-12-24" to "平安夜", "2027-11-26" to "感恩節隔日",
+    ).associate { LocalDate.parse(it.first) to it.second }
+
     /** FOMC 利率決議（第二天美東 14:00 公布）；聯準會公告日程 */
     val fomcDecisionDays: List<LocalDate> = listOf(
         "2026-12-09",
@@ -65,31 +70,33 @@ object UsSession {
         val isDst = NY.rules.isDaylightSavings(ny.toInstant())
         val weekend = d.dayOfWeek == DayOfWeek.SATURDAY || d.dayOfWeek == DayOfWeek.SUNDAY
         val open = LocalTime.of(9, 30)
-        val close = LocalTime.of(16, 0)
+        val early = d in earlyCloses
+        val close = if (early) LocalTime.of(13, 0) else LocalTime.of(16, 0)
+        val postEnd = if (early) LocalTime.of(17, 0) else LocalTime.of(20, 0)
         val phase = when {
             d in holidays -> Phase.HOLIDAY
             weekend -> Phase.CLOSED
             t >= LocalTime.of(4, 0) && t < open -> Phase.PRE
             t >= open && t < close -> Phase.REGULAR
-            t >= close && t < LocalTime.of(20, 0) -> Phase.POST
+            t >= close && t < postEnd -> Phase.POST
             else -> Phase.CLOSED
         }
         val progress = if (phase == Phase.REGULAR)
-            Duration.between(open, t).toMinutes() / 390f else 0f
+            Duration.between(open, t).toMinutes() / Duration.between(open, close).toMinutes().toFloat() else 0f
         val countdown = when (phase) {
             Phase.REGULAR -> {
                 val m = Duration.between(t, close).toMinutes()
-                "距收盤 ${m / 60} 小時 ${m % 60} 分"
+                "距收盤 ${m / 60} 小時 ${m % 60} 分" + if (early) "（提早收盤）" else ""
             }
             Phase.PRE -> {
                 val m = Duration.between(t, open).toMinutes()
                 "距開盤 ${m / 60} 小時 ${m % 60} 分"
             }
-            else -> if (isDst) "夏令時間" else "冬令時間"
+            else -> (if (isDst) "夏令時間" else "冬令時間") + if (early) " · 今日提早收盤" else ""
         }
         return Info(
             phase, isDst,
-            tw(d, LocalTime.of(4, 0)), tw(d, open), tw(d, close), tw(d, LocalTime.of(20, 0)),
+            tw(d, LocalTime.of(4, 0)), tw(d, open), tw(d, close), tw(d, postEnd),
             progress, countdown,
         )
     }
