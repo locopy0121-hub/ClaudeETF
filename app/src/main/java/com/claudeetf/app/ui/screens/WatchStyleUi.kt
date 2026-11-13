@@ -486,11 +486,20 @@ fun WatchStylePreview() {
         }
         if (EditSel.watchView == 0) Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val sel = EditSel.watch?.takeIf { it.startsWith("c:") }?.removePrefix("c:")
-            WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)), sel) { EditSel.watch = "c:$it" }
+            WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)), sel) { EditSel.watch = "c:$it"; EditSel.watchSheet = true }
             // 只預覽單一個股，寬度與實際每列張數相同，騰出畫面給編輯工具
             Spacer(Modifier.weight((st.cardCols - 1).coerceAtLeast(1).toFloat()))
         } else Box(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(horizontal = 6.dp)) {
-            WatchRowBody(sample, st, Modifier, false, EditSel.watch?.takeIf { it.startsWith("l:") }?.removePrefix("l:")) { EditSel.watch = "l:$it" }
+            WatchRowBody(sample, st, Modifier, false, EditSel.watch?.takeIf { it.startsWith("l:") }?.removePrefix("l:")) { EditSel.watch = "l:$it"; EditSel.watchSheet = true }
+        }
+    }
+    val t = EditSel.watch
+    if (EditSel.watchSheet && t != null) {
+        val card = t.startsWith("c:"); val id = t.substringAfter(":")
+        val names = if (card) WatchStyle.CARD_NAMES else WatchStyle.LIST_NAMES
+        val title = when (id) { "name" -> "名稱"; "code" -> "代號"; "price" -> "價格"; "change" -> "漲跌"; else -> names[id] ?: id }
+        ItemEditSheet(title, if (card) "行情卡片 · 套用到全部卡片" else "行情清單 · 套用到全部列", onDone = { EditSel.watchSheet = false; EditSel.watch = null }) {
+            Editor(t, AppState.watchStyle, { f -> AppState.updateWatchStyle(f(AppState.watchStyle)) }, bare = true) { EditSel.watchSheet = false; EditSel.watch = null }
         }
     }
 }
@@ -499,13 +508,11 @@ fun WatchStylePreview() {
 fun WatchStyleSettings(showPreview: Boolean = true) {
     val st = AppState.watchStyle
     fun set(f: (WatchStyle) -> WatchStyle) = AppState.updateWatchStyle(f(AppState.watchStyle))
-    val target = EditSel.watch
 
     Card(padding = 14.dp) {
         Text("自選個股顯示格式", color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Label("點上方預覽中的名稱、價格、漲跌或任一項目，這裡會出現該項設定（含字級、粗細、文字顏色、文字動畫）")
+        Label("點上方預覽中的任一項目叫出編輯工具；或在下方項目清單點名稱展開該項設定")
         if (showPreview) Box(Modifier.padding(top = 8.dp)) { WatchStylePreview() }
-        if (target != null) Editor(target, st, ::set) { EditSel.watch = null }
 
         // ---- 共用設定 ----
         Section("共用設定")
@@ -530,13 +537,15 @@ fun WatchStyleSettings(showPreview: Boolean = true) {
         Stepper("卡片間距", st.gapDp, 0, 24, 2, "dp") { v -> set { it.copy(gapDp = v) } }
         ItemList("卡片顯示項目與順序", st.items, WatchStyle.CARD_NAMES, st.hidden,
             onMove = { i, j -> set { s -> s.copy(items = s.items.toMutableList().also { java.util.Collections.swap(it, i, j) }) } },
-            onToggle = { id, on -> set { s -> s.copy(hidden = if (on) s.hidden - id else s.hidden + id) } })
+            onToggle = { id, on -> set { s -> s.copy(hidden = if (on) s.hidden - id else s.hidden + id) } },
+            detail = { id -> Editor("c:$id", st, ::set, bare = true) {} })
 
         // ---- 清單 ----
         Section("清單")
         ItemList("清單顯示項目與順序（價格與漲跌固定在右側）", st.listItems, WatchStyle.LIST_NAMES, st.listHidden,
             onMove = { i, j -> set { s -> s.copy(listItems = s.listItems.toMutableList().also { java.util.Collections.swap(it, i, j) }) } },
-            onToggle = { id, on -> set { s -> s.copy(listHidden = if (on) s.listHidden - id else s.listHidden + id) } })
+            onToggle = { id, on -> set { s -> s.copy(listHidden = if (on) s.listHidden - id else s.listHidden + id) } },
+            detail = { id -> Editor("l:$id", st, ::set, bare = true) {} })
         Label("市場標籤、報價時間、成交量、振幅、漲跌停相鄰時會排在同一行")
 
         Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.updateWatchStyle(WatchStyle()); EditSel.watch = null }.padding(top = 8.dp, bottom = 2.dp))
@@ -545,14 +554,14 @@ fun WatchStyleSettings(showPreview: Boolean = true) {
 
 /** 點選預覽項目後的快速設定 */
 @Composable
-private fun Editor(target: String, st: WatchStyle, set: ((WatchStyle) -> WatchStyle) -> Unit, onClose: () -> Unit) {
+private fun Editor(target: String, st: WatchStyle, set: ((WatchStyle) -> WatchStyle) -> Unit, bare: Boolean = false, onClose: () -> Unit) {
     val card = target.startsWith("c:")
     val id = target.substringAfter(":")
     val names = if (card) WatchStyle.CARD_NAMES else WatchStyle.LIST_NAMES
     val title = when (id) { "name" -> "名稱"; "code" -> "代號"; "price" -> "價格"; "change" -> "漲跌"; else -> names[id] ?: id }
-    Column(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).background(C.Primary.copy(alpha = 0.10f))
+    Column(if (bare) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).background(C.Primary.copy(alpha = 0.10f))
         .border(1.dp, C.Primary.copy(alpha = 0.5f), RoundedCornerShape(10.dp)).padding(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        if (!bare) Row(verticalAlignment = Alignment.CenterVertically) {
             Text((if (card) "卡片 › " else "清單 › ") + title, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Text("完成", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onClose).padding(6.dp))
         }
@@ -704,17 +713,17 @@ private fun SmallBtn(text: String, enabled: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun ItemList(title: String, items: List<String>, names: Map<String, String>, hidden: Set<String>,
-                     onMove: (Int, Int) -> Unit, onToggle: (String, Boolean) -> Unit) {
+                     onMove: (Int, Int) -> Unit, onToggle: (String, Boolean) -> Unit,
+                     detail: (@Composable (String) -> Unit)? = null) {
     Text(title, color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+    if (detail != null) Label("點項目名稱展開細部設定；或直接點上方預覽中的項目叫出編輯工具")
+    var open by remember { mutableStateOf<String?>(null) }
     items.forEachIndexed { i, id ->
         val on = id !in hidden
-        Row(Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(names[id] ?: id, Modifier.weight(1f), color = if (on) C.Text else C.Muted, fontSize = 13.sp)
-            Text("↑", color = if (i > 0) C.Primary else C.Border, fontSize = 18.sp,
-                modifier = Modifier.clickable(enabled = i > 0) { onMove(i, i - 1) }.padding(horizontal = 10.dp, vertical = 4.dp))
-            Text("↓", color = if (i < items.lastIndex) C.Primary else C.Border, fontSize = 18.sp,
-                modifier = Modifier.clickable(enabled = i < items.lastIndex) { onMove(i, i + 1) }.padding(horizontal = 10.dp, vertical = 4.dp))
-            androidx.compose.material3.Switch(on, { onToggle(id, it) })
+        CollapsibleItem(names[id] ?: id, on, open == id, i > 0, i < items.lastIndex,
+            onName = { if (detail != null) open = if (open == id) null else id },
+            onShow = { onToggle(id, it) }, onUp = { onMove(i, i - 1) }, onDown = { onMove(i, i + 1) }) {
+            detail?.invoke(id)
         }
     }
 }

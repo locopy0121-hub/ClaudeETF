@@ -461,32 +461,15 @@ fun WallStyleSettings(showPreview: Boolean = true) {
         val shown = st.items.count { it.show }
         Blind("items", "項目（顯示、順序、對齊、字級）", "顯示 $shown／${st.items.size} 項：" + st.items.filter { it.show }.joinToString("、") { WallStyle.NAMES[it.id] ?: it.id },
             open, ::toggle) {
-            Label("開關決定是否顯示；↑↓ 調整順序；點項目名稱展開該項目的詳細設定。")
+            Label("點項目名稱展開細部設定；或直接點上方預覽格子裡的項目叫出編輯工具。")
             st.items.forEachIndexed { idx, i ->
-                val name = WallStyle.NAMES[i.id] ?: i.id
-                val isEd = editing == i.id
-                Column(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(10.dp))
-                    .background(if (isEd) C.Primary.copy(alpha = 0.08f) else C.Card)) {
-                    Row(Modifier.fillMaxWidth().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f).clickable { editing = if (isEd) null else i.id }.padding(vertical = 8.dp)) {
-                            Text(name + if (isEd) "  ▲" else "  ▼", color = if (i.show) C.Text else C.Muted, fontSize = 14.sp)
-                            Text((if (i.fl) "懸浮 ${i.fx}%,${i.fy}%" else if (i.head) "標題列" else "內容") + (if (i.inline) " · 同行" else "") + " · " + ALIGN_NAMES[i.align] + " · ${i.size}sp" + (if (i.bold) " · 粗" else "") + (if (i.bg != 0) " · 底色" else "") +
-                                (if (i.mx != 0 || i.my != 0 || i.px != 0 || i.py != 0 || i.lg != 0 || i.lh != 0) " · 間距自訂" else ""),
-                                color = C.Muted, fontSize = 11.sp)
-                        }
-                        Text("↑", color = if (idx > 0) C.Primary else C.Border, fontSize = 18.sp, modifier = Modifier.clickable(enabled = idx > 0) {
-                            set { s -> s.copy(items = s.items.toMutableList().also { l -> l.add(idx - 1, l.removeAt(idx)) }) } }.padding(horizontal = 8.dp, vertical = 6.dp))
-                        Text("↓", color = if (idx < st.items.lastIndex) C.Primary else C.Border, fontSize = 18.sp, modifier = Modifier.clickable(enabled = idx < st.items.lastIndex) {
-                            set { s -> s.copy(items = s.items.toMutableList().also { l -> l.add(idx + 1, l.removeAt(idx)) }) } }.padding(horizontal = 8.dp, vertical = 6.dp))
-                        Switch(i.show, { v -> set { it.withItem(i.copy(show = v)) } },
-                            colors = SwitchDefaults.colors(checkedTrackColor = C.Primary, checkedThumbColor = C.OnPrimary, uncheckedTrackColor = C.Border))
-                        Spacer(Modifier.width(6.dp))
-                    }
-                    AnimatedVisibility(isEd, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                        Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 10.dp)) {
-                            WallItemEditor(i, st, ::set)
-                        }
-                    }
+                CollapsibleItem(WallStyle.NAMES[i.id] ?: i.id, i.show, editing == i.id, idx > 0, idx < st.items.lastIndex,
+                    onName = { editing = if (editing == i.id) null else i.id },
+                    onShow = { v -> set { it.withItem(i.copy(show = v)) } },
+                    onUp = { set { s -> s.copy(items = s.items.toMutableList().also { l -> l.add(idx - 1, l.removeAt(idx)) }) } },
+                    onDown = { set { s -> s.copy(items = s.items.toMutableList().also { l -> l.add(idx + 1, l.removeAt(idx)) }) } },
+                    summary = (if (i.fl) "懸浮" else if (i.head) "標題列" else "內容") + " · ${i.size}sp") {
+                    WallItemEditor(i, st, ::set)
                 }
             }
         }

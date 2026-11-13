@@ -12,4 +12,7 @@ object EditSel {
     var watchView by mutableStateOf(0)
     /** 持股卡片選取的項目 */
     var hold by mutableStateOf<String?>(null)
+    /** 從預覽點選項目時以下方面板（編輯工具）開啟 */
+    var watchSheet by mutableStateOf(false)
+    var holdSheet by mutableStateOf(false)
 }
