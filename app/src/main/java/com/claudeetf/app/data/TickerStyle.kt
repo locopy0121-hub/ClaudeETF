@@ -54,7 +54,7 @@ data class TickerStyle(
                 o.optInt("vc", d.valueColor).coerceIn(0, 1), o.optInt("bg", d.bg).coerceIn(0, 2),
                 o.optInt("ph", d.padH).coerceIn(0, 24), o.optInt("pv", d.padV).coerceIn(0, 20), o.optInt("g", d.gap).coerceIn(4, 40),
                 o.optInt("r", d.radius).coerceIn(0, 24), o.optInt("spd", d.speed).coerceIn(10, 120),
-                o.optInt("fx", 0).coerceIn(0, 16), o.optInt("ft", 1).coerceIn(0, 3), o.optInt("fs", 1).coerceIn(0, 2), o.optInt("fp", 1).coerceIn(0, 2), o.optInt("fo", 0).coerceIn(0, 2),
+                o.optInt("fx", 0).coerceIn(0, 20), o.optInt("ft", 1).coerceIn(0, 4), o.optInt("fs", 1).coerceIn(0, 2), o.optInt("fp", 1).coerceIn(0, 2), o.optInt("fo", 0).coerceIn(0, 2),
             )
         }.getOrDefault(TickerStyle())
     }

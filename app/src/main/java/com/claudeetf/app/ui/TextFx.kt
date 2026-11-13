@@ -63,11 +63,18 @@ object TextFx {
         Style(12, "變色", "光影", "文字染上漲跌色再褪回"),
         Style(15, "底線掃過", "光影", "下方線條由左延伸"),
         Style(16, "外框呼吸", "光影", "外框忽明忽暗"),
+        // 金融
+        Style(17, "數字滾動", "金融", "數值變動時新數字由下（漲）或上（跌）捲入"),
+        Style(18, "打字機", "金融", "由左到右逐字顯現"),
+        Style(19, "跑馬燈", "金融", "文字水平循環捲動"),
+        Style(20, "彈性浮現", "金融", "由小彈出到原尺寸，適合進場或訊號標籤"),
     )
-    val MAX_ID = 16
+    val MAX_ID = 20
+    /** 「進入型」動畫：進度從 1 走到 0（剩餘量） */
+    fun isEnter(id: Int) = id in 17..20
     fun nameOf(id: Int) = STYLES.firstOrNull { it.id == id }?.name ?: "無"
 
-    val TRIGGERS = listOf(0 to "常駐", 1 to "數值變動", 2 to "上漲時", 3 to "下跌時")
+    val TRIGGERS = listOf(0 to "常駐", 1 to "數值變動", 2 to "上漲時", 3 to "下跌時", 4 to "進場時")
     val SPEEDS = listOf(0 to "慢", 1 to "正常", 2 to "快")
     val POWERS = listOf(0 to "弱", 1 to "中", 2 to "強")
 }
@@ -86,30 +93,41 @@ fun Modifier.textFx(style: Int, trig: Int, speed: Int, power: Int, value: Double
     val pw = when (power) { 0 -> 0.5f; 2 -> 1.6f; else -> 1f }
     val p = remember { Animatable(0f) }
     var dir by remember { mutableIntStateOf(0) }
-    if (trig == 0) {
-        LaunchedEffect(style, dur) {
+    val enter = TextFx.isEnter(style)
+    // 播放一次：進入型由 1 走到 0；其餘 0→1→0（掃光類 0→1 後歸零）
+    suspend fun playOnce() {
+        when {
+            enter -> { p.snapTo(1f); p.animateTo(0f, if (style == 20) androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 380f) else tween(dur, easing = if (style == 18) LinearEasing else FastOutSlowInEasing)) }
+            style == 8 || style == 15 -> { p.snapTo(0f); p.animateTo(1f, tween(dur, easing = LinearEasing)); p.snapTo(0f) }
+            else -> { p.snapTo(0f); p.animateTo(1f, tween(dur / 3)); p.animateTo(0f, tween(dur * 2 / 3)) }
+        }
+    }
+    when (trig) {
+        0 -> LaunchedEffect(style, dur) {
             while (true) {
-                if (style == 8 || style == 15) {
-                    // 掃光、底線：單向掃過再停頓
-                    p.snapTo(0f); p.animateTo(1f, tween(dur, easing = LinearEasing)); kotlinx.coroutines.delay(dur.toLong())
-                } else {
-                    p.animateTo(1f, tween(dur / 2, easing = FastOutSlowInEasing))
-                    p.animateTo(0f, tween(dur / 2, easing = FastOutSlowInEasing))
-                    if (style == 1 || style == 9) kotlinx.coroutines.delay(dur.toLong())
+                when {
+                    style == 19 -> { p.snapTo(0f); p.animateTo(1f, tween(dur * 6, easing = LinearEasing)) }
+                    enter -> { dir = if (dir >= 0) -1 else 1; playOnce(); kotlinx.coroutines.delay(dur.toLong() * 2) }
+                    style == 8 || style == 15 -> { p.snapTo(0f); p.animateTo(1f, tween(dur, easing = LinearEasing)); kotlinx.coroutines.delay(dur.toLong()) }
+                    else -> {
+                        p.animateTo(1f, tween(dur / 2, easing = FastOutSlowInEasing))
+                        p.animateTo(0f, tween(dur / 2, easing = FastOutSlowInEasing))
+                        if (style == 1 || style == 9) kotlinx.coroutines.delay(dur.toLong())
+                    }
                 }
             }
         }
-    } else {
-        val last = remember { doubleArrayOf(value) }
-        LaunchedEffect(value) {
-            val d = value.compareTo(last[0])
-            last[0] = value
-            if (d == 0) return@LaunchedEffect
-            if ((trig == 2 && d < 0) || (trig == 3 && d > 0)) return@LaunchedEffect
-            dir = d
-            p.snapTo(0f)
-            if (style == 8 || style == 15) p.animateTo(1f, tween(dur, easing = LinearEasing)).also { p.snapTo(0f) }
-            else { p.animateTo(1f, tween(dur / 3)); p.animateTo(0f, tween(dur * 2 / 3)) }
+        4 -> LaunchedEffect(style) { dir = 1; playOnce() }
+        else -> {
+            val last = remember { doubleArrayOf(value) }
+            LaunchedEffect(value) {
+                val d = value.compareTo(last[0])
+                last[0] = value
+                if (d == 0) return@LaunchedEffect
+                if ((trig == 2 && d < 0) || (trig == 3 && d > 0)) return@LaunchedEffect
+                dir = d
+                playOnce()
+            }
         }
     }
     val c = if (dir != 0) tone else tone
@@ -153,6 +171,14 @@ fun Modifier.textFx(style: Int, trig: Int, speed: Int, power: Int, value: Double
         16 -> drawBehind {
             drawRoundRect(c.copy(alpha = (0.85f * p.value).coerceIn(0f, 1f)), cornerRadius = CornerRadius(6.dp.toPx()), style = Stroke((1.5f * pw).dp.toPx()))
         }
+        // 數字滾動：在自身範圍內裁切，新內容由下（漲）或上（跌）捲入
+        17 -> graphicsLayer { clip = true; translationY = p.value * size.height * (if (dir < 0) -1f else 1f) * (0.6f + 0.4f * pw.coerceAtMost(1f)) }
+        // 打字機：由左到右逐步顯現
+        18 -> drawWithContent { androidx.compose.ui.graphics.drawscope.clipRect(right = size.width * (1f - p.value)) { this@drawWithContent.drawContent() } }
+        // 跑馬燈：在自身範圍內由右往左循環
+        19 -> graphicsLayer { clip = true; translationX = size.width * (1f - 2f * p.value) }
+        // 彈性浮現：由小彈到原尺寸（彈簧可略為超過）
+        20 -> graphicsLayer { val s = (1f - 0.45f * pw.coerceAtMost(1.3f) * p.value).coerceAtLeast(0.2f); scaleX = s; scaleY = s; alpha = (1f - p.value).coerceIn(0.2f, 1f) }
         else -> this
     }
 }
@@ -189,11 +215,19 @@ fun FxPicker(style: Int, trig: Int, speed: Int, power: Int, onChange: (style: In
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 androidx.compose.material3.Text("預覽", color = com.claudeetf.app.ui.theme.C.Muted, fontSize = 11.sp)
                 androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
-                androidx.compose.material3.Text("▲ +1.25%", color = com.claudeetf.app.ui.theme.Trend.fg(1.0), fontSize = 18.sp,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    modifier = Modifier.textFx(style, 0, speed, power, 0.0, com.claudeetf.app.ui.theme.Trend.fg(1.0)).padding(horizontal = 6.dp, vertical = 2.dp))
-                androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
-                androidx.compose.material3.Text(TextFx.STYLES.firstOrNull { it.id == style }?.desc ?: "", color = com.claudeetf.app.ui.theme.C.Muted, fontSize = 11.sp)
+                // 常駐：持續循環；其他觸發：按「▶ 重播」模擬一次觸發
+                var replay by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+                val down = trig == 3
+                val tone = com.claudeetf.app.ui.theme.Trend.fg(if (down) -1.0 else 1.0)
+                androidx.compose.runtime.key(if (trig == 4) replay else 0) {
+                    androidx.compose.material3.Text(if (down) "▼ 1,234.50" else "▲ 1,234.50", color = tone, fontSize = 18.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        modifier = Modifier.textFx(style, trig, speed, power, (if (down) -replay else replay).toDouble(), tone).padding(horizontal = 6.dp, vertical = 2.dp))
+                }
+                androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                androidx.compose.material3.Text(TextFx.STYLES.firstOrNull { it.id == style }?.desc ?: "", color = com.claudeetf.app.ui.theme.C.Muted, fontSize = 11.sp,
+                    modifier = Modifier.weight(1f))
+                if (trig != 0) chip("▶ 重播", false) { replay++ }
             }
             androidx.compose.material3.Text("觸發", color = com.claudeetf.app.ui.theme.C.Text, fontSize = 12.sp)
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {

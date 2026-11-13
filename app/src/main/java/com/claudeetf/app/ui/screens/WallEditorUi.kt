@@ -33,33 +33,19 @@ import com.claudeetf.app.ui.theme.C
 object WallEdit {
     var sel by mutableStateOf<String?>(null)
     var sheet by mutableStateOf(false)
-    private val undo = ArrayDeque<WallStyle>()
-    private val redo = ArrayDeque<WallStyle>()
-    var undoCount by mutableIntStateOf(0); private set
-    var redoCount by mutableIntStateOf(0); private set
-    private var snapshot: WallStyle? = null
+    val undoCount get() = Hist.wall.undoCount
+    val redoCount get() = Hist.wall.redoCount
 
-    fun select(id: String) { sel = if (sel == id && !sheet) null else id }
-
+    fun select(id: String) { Hist.wall.begin(); sel = if (sel == id && !sheet) null else id }
     /** 每次修改都記一步（最多 50 步） */
-    fun apply(f: (WallStyle) -> WallStyle) {
-        val cur = AppState.wallStyle
-        val next = f(cur)
-        if (next == cur) return
-        undo.addLast(cur); if (undo.size > 50) undo.removeFirst()
-        redo.clear()
-        AppState.updateWallStyle(next)
-        sync()
-    }
-    fun undo() { val p = undo.removeLastOrNull() ?: return; redo.addLast(AppState.wallStyle); AppState.updateWallStyle(p); sync() }
-    fun redo() { val n = redo.removeLastOrNull() ?: return; undo.addLast(AppState.wallStyle); AppState.updateWallStyle(n); sync() }
-    private fun sync() { undoCount = undo.size; redoCount = redo.size }
-
-    fun openSheet() { snapshot = AppState.wallStyle; sheet = true }
+    fun apply(f: (WallStyle) -> WallStyle) = Hist.wall.apply(f)
+    fun undo() = Hist.wall.undo()
+    fun redo() = Hist.wall.redo()
+    fun openSheet() { Hist.wall.begin(); sheet = true }
     /** 完成：保留修改 */
-    fun done() { snapshot = null; sheet = false }
-    /** 取消：還原到開啟面板前 */
-    fun cancel() { snapshot?.let { if (it != AppState.wallStyle) apply { _ -> it } }; snapshot = null; sheet = false }
+    fun done() { Hist.wall.end(); sheet = false }
+    /** 取消：還原到開始編輯前 */
+    fun cancel() { Hist.wall.cancel(); sheet = false }
 }
 
 @Composable
@@ -132,24 +118,20 @@ fun WallEditSheet() {
     if (!WallEdit.sheet) return
     val id = WallEdit.sel ?: run { WallEdit.sheet = false; return }
     val st = AppState.wallStyle
+    var ai by remember { mutableStateOf(false) }
+    if (ai) {
+        val cur = st.item(id)
+        AiStyleDialog(WallStyle.NAMES[id] ?: id, cur.toJson(), wallItemSchema(), listOf("放大加粗", "改成金色", "加上膠囊底色", "數字跳動時閃一下", "靠右對齊"),
+            onDismiss = { ai = false }) { patch -> mergeWallItem(id, patch) }
+    }
     DockedPanel(onDismiss = { WallEdit.done() }) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("取消", color = C.Text2, fontSize = 15.sp, modifier = Modifier.clickable { WallEdit.cancel() }.padding(vertical = 8.dp, horizontal = 4.dp))
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("編輯工具・" + (WallStyle.NAMES[id] ?: id), color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    Text("持股行情牆 · 套用到全部格子", color = C.Muted, fontSize = 11.sp)
-                }
-                Text("完成", color = C.OnPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Primary).clickable { WallEdit.done() }.padding(horizontal = 14.dp, vertical = 7.dp))
-            }
-            Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                WallUndoRedo()
-                Spacer(Modifier.weight(1f))
-                Text("切換項目 ›", color = C.Muted, fontSize = 11.sp)
-            }
-            // 切換要編輯的項目（獨立一列，分頁保持不變）
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            DeckHeader(WallStyle.NAMES[id] ?: id, "持股行情牆 · 套用到全部格子", Hist.wall, AbSlots.Target.WALL,
+                onAi = { ai = true }, onCancel = { WallEdit.cancel() }, onDone = { WallEdit.done() })
+            // 切換要編輯的項目（分頁保持不變）
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("項目", color = C.Muted, fontSize = 11.sp)
                 st.items.filter { it.show || it.id == id }.forEach { o ->
                     val on = o.id == id
                     Text(WallStyle.NAMES[o.id] ?: o.id, color = if (on) C.OnPrimary else C.Text2, fontSize = 12.sp,
@@ -162,4 +144,32 @@ fun WallEditSheet() {
             }
         }
     }
+}
+
+/** 行情牆項目給 AI 的欄位說明 */
+fun wallItemSchema(): String = buildString {
+    appendLine("z: 字級 8~60（sp）；b: 粗體 true/false；it/ul/sk/tn: 斜體/底線/刪除線/等寬數字")
+    appendLine("c: 文字顏色 0 預設、1 依漲跌、2 主文字、3 次要灰、4 金色、5 主色、6 依等級")
+    appendLine("bg: 底色 0 無、1 依漲跌、2 依等級、3 灰、4 金、5 主色、6 白、7 深色；ba: 底色濃度 10~100")
+    appendLine("a: 對齊 0 靠左、1 置中、2 靠右；h: 放在標題列 true/false")
+    appendLine("mx/my: 外距 -8~24 / -12~24；px/py: 內距 -10~20 / -10~16（dp）")
+    appendLine("ox: 水平位移 -60~60；oy: 垂直位移 -40~40（dp）")
+    appendLine("fl: 懸浮 true/false；fx/fy: 懸浮座標 0~100（%）；fa/fva: 基準點 0 左/上、1 中、2 右/下、3 自動")
+    appendLine("an: 文字動畫 " + fxSchema())
+    appendLine("at: 觸發 0 常駐、1 數值變動、2 上漲時、3 下跌時、4 進場時；asp: 速度 0~2；apw: 強度 0~2")
+}
+
+/** 套用 AI 修改到行情牆項目（只接受允許欄位；範圍由 WallItem.fromJson 限制）；記入復原歷史 */
+fun mergeWallItem(id: String, patch: org.json.JSONObject): List<String> {
+    val names = linkedMapOf("z" to "字級", "b" to "粗體", "it" to "斜體", "ul" to "底線", "sk" to "刪除線", "tn" to "等寬數字",
+        "c" to "文字顏色", "bg" to "底色", "ba" to "底色濃度", "a" to "對齊", "h" to "標題列", "mx" to "外距", "my" to "外距",
+        "px" to "內距", "py" to "內距", "ox" to "水平位移", "oy" to "垂直位移", "fl" to "懸浮", "fx" to "X 座標", "fy" to "Y 座標",
+        "fa" to "水平基準點", "fva" to "垂直基準點", "an" to "動畫", "at" to "動畫觸發", "asp" to "動畫速度", "apw" to "動畫強度")
+    val cur = AppState.wallStyle.item(id)
+    val o = org.json.JSONObject()
+    names.keys.forEach { k -> if (patch.has(k)) { val v = patch.get(k); if (v is Number || v is Boolean) o.put(k, v) } }
+    val next = WallItem.fromJson(o, cur)
+    if (next == cur) return emptyList()
+    WallEdit.apply { it.withItem(next) }
+    return names.filterKeys { o.has(it) }.values.distinct()
 }

@@ -22,3 +22,12 @@ fun fontOf(key: String): FontFamily? = when (key) {
     "caps" -> FontFamily(Typeface.create("sans-serif-smallcaps", Typeface.NORMAL))
     else -> null
 }
+
+/** 底線＋刪除線組合 */
+fun decoOf(under: Boolean, strike: Boolean): androidx.compose.ui.text.style.TextDecoration? = when {
+    under && strike -> androidx.compose.ui.text.style.TextDecoration.combine(listOf(
+        androidx.compose.ui.text.style.TextDecoration.Underline, androidx.compose.ui.text.style.TextDecoration.LineThrough))
+    under -> androidx.compose.ui.text.style.TextDecoration.Underline
+    strike -> androidx.compose.ui.text.style.TextDecoration.LineThrough
+    else -> null
+}

@@ -32,6 +32,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import kotlin.math.roundToInt
 import androidx.compose.foundation.gestures.detectTapGestures
 import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.layout
@@ -100,9 +102,35 @@ private fun textAlignOf(a: Int) = when (a) { 1 -> TextAlign.Center; 2 -> TextAli
 @Composable
 fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int = 0,
              editSel: String? = null, onPickItem: ((String) -> Unit)? = null, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-    /** 編輯模式：項目可點選，選中的加框 */
+    // 拖曳懸浮項目：格子尺寸、吸附參考線（% 座標）
+    var tileSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    var guideX by remember { mutableStateOf<Int?>(null) }
+    var guideY by remember { mutableStateOf<Int?>(null) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    /** 編輯模式：項目可點選，選中的加框；選中的懸浮項目可直接拖曳（靠近中線或其他懸浮項目自動吸附並輕震） */
     fun Modifier.pick(id: String): Modifier = if (onPickItem == null) this else this
         .border(if (editSel == id) 2.dp else 1.dp, if (editSel == id) C.Primary else C.Primary.copy(alpha = 0.25f), RoundedCornerShape(4.dp))
+        .then(if (editSel == id && st.item(id).fl) Modifier.pointerInput(id, tileSize) {
+            var fx = 0f; var fy = 0f
+            androidx.compose.foundation.gestures.detectDragGestures(
+                onDragStart = { val it0 = AppState.wallStyle.item(id); fx = it0.fx.toFloat(); fy = it0.fy.toFloat(); Hist.wall.mark() },
+                onDragEnd = { guideX = null; guideY = null },
+                onDragCancel = { guideX = null; guideY = null },
+            ) { change, d ->
+                change.consume()
+                if (tileSize.width <= 0 || tileSize.height <= 0) return@detectDragGestures
+                fx = (fx + d.x / tileSize.width * 100f).coerceIn(0f, 100f)
+                fy = (fy + d.y / tileSize.height * 100f).coerceIn(0f, 100f)
+                val others = AppState.wallStyle.items.filter { it.fl && it.show && it.id != id }
+                fun snap(v: Float, targets: List<Int>): Int? = targets.minByOrNull { kotlin.math.abs(it - v) }?.takeIf { kotlin.math.abs(it - v) <= 2.5f }
+                val sx = snap(fx, listOf(50) + others.map { it.fx })
+                val sy = snap(fy, listOf(50) + others.map { it.fy })
+                if ((sx != null && sx != guideX) || (sy != null && sy != guideY)) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                guideX = sx; guideY = sy
+                val nx = sx ?: fx.roundToInt(); val ny = sy ?: fy.roundToInt()
+                Hist.wall.live { s -> s.withItem(s.item(id).copy(fx = nx, fy = ny)) }
+            }
+        } else Modifier)
         .clickable { onPickItem(id) }
     val q = AppState.quote(h.symbol)
     val chg = q?.change ?: 0.0
@@ -229,7 +257,8 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
             fontWeight = if (i.bold) FontWeight.Bold else FontWeight.Normal, fontFamily = com.claudeetf.app.ui.fontOf(i.font.ifEmpty { if (i.mono) "mono" else "" }),
             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = textAlignOf(i.align),
             fontStyle = if (i.italic) androidx.compose.ui.text.font.FontStyle.Italic else null,
-            textDecoration = if (i.under) androidx.compose.ui.text.style.TextDecoration.Underline else null,
+            textDecoration = com.claudeetf.app.ui.decoOf(i.under, i.strike),
+            style = if (i.tnum) androidx.compose.material3.LocalTextStyle.current.copy(fontFeatureSettings = "tnum") else androidx.compose.material3.LocalTextStyle.current,
             modifier = Modifier
                 .then(if (i.ox != 0 || i.oy != 0) Modifier.offset(i.ox.dp, i.oy.dp) else Modifier)
                 .pick(i.id)
@@ -272,7 +301,7 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
     val headBg = if (inv) lerp(trend, Color.Black, 0.12f) else if (st.header) C.Bg.copy(alpha = 0.7f) else Color.Transparent
     val bodyBg = if (inv) lerp(trend, Color.Black, 0.45f) else C.Card
     Box(
-        modifier.clip(RoundedCornerShape(6.dp)).background(bodyBg)
+        modifier.onSizeChanged { tileSize = it }.clip(RoundedCornerShape(6.dp)).background(bodyBg)
             .then(if (st.border || inv) Modifier.border(1.dp, if (inv) lerp(trend, Color.White, 0.25f) else trend.copy(alpha = 0.55f), RoundedCornerShape(6.dp)) else Modifier)
             .then(if (onPickItem != null) Modifier
                 else if (onLongClick != null) Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -301,6 +330,13 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
                 val y = (H * i.fy / 100f - pl.height * ay).toInt().coerceIn(0, (H - pl.height).coerceAtLeast(0))
                 layout(W, H) { pl.place(x, y) }
             }
+        }
+        // 拖曳時的吸附參考線
+        if (guideX != null || guideY != null) androidx.compose.foundation.Canvas(Modifier.matchParentSize().padding((pad.value * 0.5f).dp)) {
+            guideX?.let { gx -> val x = size.width * gx / 100f; drawLine(C.Primary, androidx.compose.ui.geometry.Offset(x, 0f), androidx.compose.ui.geometry.Offset(x, size.height), 1.dp.toPx(),
+                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f, 6f))) }
+            guideY?.let { gy -> val y = size.height * gy / 100f; drawLine(C.Primary, androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), 1.dp.toPx(),
+                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f, 6f))) }
         }
     }
 }
@@ -407,7 +443,7 @@ private val LABELED = setOf("band", "mv", "day", "ret", "pl", "avg", "cost", "we
 /** 行情牆即時預覽（設定頁置頂用） */
 @Composable
 fun WallPreview(modifier: Modifier = Modifier) {
-    val st = AppState.wallStyle
+    val st = Hist.wall.peek ?: AppState.wallStyle
     val samples = AppState.holdings.take(2).ifEmpty { listOf(Holding("0050", 1000.0, 85.0), Holding("0056", 1000.0, 36.0)) }
     var demo by remember { mutableStateOf(0) }
     Column(modifier.fillMaxWidth().trackPreviewEdge().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
@@ -478,63 +514,84 @@ fun WallStyleSettings(showPreview: Boolean = true) {
 }
 
 
-/** 編輯工具分頁：位置、文字、顏色、間距、動畫（跨項目切換時保留目前分頁） */
-object WallEditorTab { var tab by mutableStateOf(0) }
-
-/** 行情牆單一項目的完整編輯內容：設定頁的項目清單與「編輯工具」面板共用，依分頁歸類 */
+/** 行情牆單一項目的完整編輯內容：設定頁的項目清單與「編輯工具」面板共用；分頁與行情卡片、持股卡片一致（排版、色彩、版面、動效） */
 @Composable
 fun WallItemEditor(i: WallItem, st: WallStyle, set: ((WallStyle) -> WallStyle) -> Unit) {
     fun upd(f: (WallItem) -> WallItem) = set { it.withItem(f(it.item(i.id))) }
-    val tabs = listOf("位置", "文字", "顏色", "間距", "動畫")
-    val tab = WallEditorTab.tab.coerceIn(0, tabs.lastIndex)
+    val tabs = listOf("排版", "色彩", "版面", "動效")
+    val tab = DeckTab.tab.coerceIn(0, tabs.lastIndex)
     Column(Modifier.fillMaxWidth()) {
-        // 分頁列
-        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(3.dp)) {
-            tabs.forEachIndexed { k, t ->
-                val on = k == tab
-                Box(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).background(if (on) C.Primary else Color.Transparent)
-                    .clickable { WallEditorTab.tab = k }.padding(vertical = 7.dp), contentAlignment = Alignment.Center) {
-                    Text(t, color = if (on) C.OnPrimary else C.Text2, fontSize = 13.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal)
-                }
-            }
-        }
+        DeckTabs(tabs, tab) { DeckTab.tab = it }
         // 摘要：一眼看出目前設定
         Label(listOf(
             if (i.fl) "懸浮 X ${i.fx}%・Y ${i.fy}%" else if (i.head) "標題列" else "內容區",
-            "${i.size} sp" + (if (i.bold) "・粗" else "") + (if (i.italic) "・斜" else "") + (if (i.under) "・底線" else ""),
+            "${i.size} sp" + (if (i.bold) "・粗" else "") + (if (i.italic) "・斜" else "") + (if (i.under) "・底線" else "") + (if (i.strike) "・刪除線" else ""),
             "動畫：" + (if (i.an == 0) "無" else com.claudeetf.app.ui.TextFx.nameOf(i.an)),
-        ).joinToString("　"), Modifier.padding(bottom = 4.dp))
+        ).joinToString("　"))
 
         when (tab) {
             0 -> {
-                WSub("擺放區域")
-                WChips(null, listOf(1 to "標題列", 0 to "內容區", 2 to "懸浮（自由位置）"), if (i.fl) 2 else if (i.head) 1 else 0) { v ->
-                    upd { it.copy(fl = v == 2, head = if (v == 2) it.head else v == 1) } }
+                DeckGroup("文字樣式") {
+                    StyleToggles(i.bold, i.italic, i.under, i.strike, i.tnum,
+                        onBold = { v -> upd { it.copy(bold = v) } }, onItalic = { v -> upd { it.copy(italic = v) } },
+                        onUnder = { v -> upd { it.copy(under = v) } }, onStrike = { v -> upd { it.copy(strike = v) } },
+                        onTnum = { v -> upd { it.copy(tnum = v) } })
+                }
+                DeckGroup("字級與字體") {
+                    StepperSlider("字級", i.size, 8, 60, 1, " sp") { v -> upd { it.copy(size = v) } }
+                    WChips("字體", com.claudeetf.app.ui.FONT_OPTS.mapIndexed { k, p -> k to p.second },
+                        com.claudeetf.app.ui.FONT_OPTS.indexOfFirst { it.first == i.font.ifEmpty { if (i.mono) "mono" else "" } }.coerceAtLeast(0)) { k ->
+                        val key = com.claudeetf.app.ui.FONT_OPTS[k].first
+                        upd { it.copy(font = key, mono = key == "mono") } }
+                }
+                if (i.id in LABELED) DeckGroup("前綴文字") {
+                    WToggle("顯示前綴（例如「市值」）", i.label) { v -> upd { it.copy(label = v) } }
+                }
+            }
+            1 -> {
+                val graded = i.id == "entry" || i.id == "band" || i.id == "rank" || i.id == "kbar"
+                DeckGroup("文字顏色") {
+                    WChips(null, COLOR_OPTS + (if (graded) listOf(6 to "依等級") else emptyList()), i.color) { v -> upd { it.copy(color = v) } }
+                }
+                DeckGroup("標籤底色") {
+                    WChips(null, BG_OPTS.filter { it.first != 2 || graded }, i.bg) { v -> upd { it.copy(bg = v) } }
+                    if (i.bg != 0) StepperSlider("濃度", i.ba, 10, 100, 5, "%") { v -> upd { it.copy(ba = v) } }
+                }
+                if (i.id in LABELED && i.label) DeckGroup("前綴文字顏色") {
+                    WChips(null, LABEL_COLOR_OPTS, i.lc) { v -> upd { it.copy(lc = v) } }
+                }
+            }
+            2 -> {
+                DeckGroup("擺放區域") {
+                    WChips(null, listOf(1 to "標題列", 0 to "內容區", 2 to "懸浮（自由位置）"), if (i.fl) 2 else if (i.head) 1 else 0) { v ->
+                        upd { it.copy(fl = v == 2, head = if (v == 2) it.head else v == 1) } }
+                    if (i.fl) Label("懸浮項目也可以在上方預覽直接拖曳，靠近中線或其他項目會自動吸附。")
+                }
                 if (i.fl) {
-                    WSub("座標")
-                    var stepBig by remember { mutableStateOf(false) }
-                    WChips("微調幅度", listOf(0 to "1%", 1 to "5%（吸附格線）"), if (stepBig) 1 else 0) { v -> stepBig = v == 1 }
-                    val stp = if (stepBig) 5 else 1
-                    fun snap(v: Int) = if (stepBig) (Math.round(v / 5f) * 5).coerceIn(0, 100) else v
-                    WStep("水平 X（0% 最左）", i.fx, 0, 100, stp, "%") { v -> upd { it.copy(fx = snap(v)) } }
-                    WStep("垂直 Y（0% 最上）", i.fy, 0, 100, stp, "%") { v -> upd { it.copy(fy = snap(v)) } }
-                    WSub("基準點")
-                    WChips("水平", listOf(0 to "左緣", 1 to "中心", 2 to "右緣", 3 to "自動"), i.fa) { v -> upd { it.copy(fa = v) } }
-                    WChips("垂直", listOf(0 to "上緣", 1 to "中線", 2 to "下緣", 3 to "自動"), i.fva) { v -> upd { it.copy(fva = v) } }
-                    Label("基準點落在座標上：兩個項目都設「右緣」且 X 相同，右邊就會切齊。")
+                    DeckGroup("座標（%）") {
+                        DPad(i.fx, i.fy, "%", listOf(1, 5),
+                            onMove = { dx, dy -> upd { it.copy(fx = (it.fx + dx).coerceIn(0, 100), fy = (it.fy + dy).coerceIn(0, 100)) } },
+                            onReset = { upd { it.copy(fx = 50, fy = 50) } })
+                        StepperSlider("X", i.fx, 0, 100, 1, "%") { v -> upd { it.copy(fx = v) } }
+                        StepperSlider("Y", i.fy, 0, 100, 1, "%") { v -> upd { it.copy(fy = v) } }
+                    }
+                    DeckGroup("基準點") {
+                        WChips("水平", listOf(0 to "左緣", 1 to "中心", 2 to "右緣", 3 to "自動"), i.fa) { v -> upd { it.copy(fa = v) } }
+                        WChips("垂直", listOf(0 to "上緣", 1 to "中線", 2 to "下緣", 3 to "自動"), i.fva) { v -> upd { it.copy(fva = v) } }
+                        Label("基準點落在座標上：兩個項目都設「右緣」且 X 相同，右邊就會切齊。")
+                    }
                     val others = st.items.filter { it.fl && it.show && it.id != i.id }
-                    if (others.isNotEmpty()) {
-                        WSub("對齊到其他懸浮項目")
+                    if (others.isNotEmpty()) DeckGroup("對齊到其他懸浮項目") {
                         others.forEach { o ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text((WallStyle.NAMES[o.id] ?: o.id) + "（${o.fx}%, ${o.fy}%）", Modifier.weight(1f), color = C.Text2, fontSize = 12.sp, maxLines = 1)
                                 listOf("左" to 0, "中" to 1, "右" to 2).forEach { (n, an) ->
-                                    Text(n, color = C.Primary, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(C.Selected).clickable {
+                                    Text(n, color = C.Primary, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(C.Card).clickable {
                                         set { s -> s.withItem(s.item(o.id).copy(fa = an)).let { s2 -> s2.withItem(s2.item(i.id).copy(fa = an, fx = o.fx)) } }
                                     }.padding(horizontal = 8.dp, vertical = 4.dp))
                                     Spacer(Modifier.width(4.dp))
                                 }
-                                Text("同列", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(C.Selected).clickable {
+                                Text("同列", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(C.Card).clickable {
                                     set { s -> s.withItem(s.item(o.id).copy(fva = 1)).let { s2 -> s2.withItem(s2.item(i.id).copy(fva = 1, fy = o.fy)) } }
                                 }.padding(horizontal = 8.dp, vertical = 4.dp))
                             }
@@ -542,58 +599,28 @@ fun WallItemEditor(i: WallItem, st: WallStyle, set: ((WallStyle) -> WallStyle) -
                         Label("左／中／右：上下切齊（同一 X）；同列：中線對齊（同一 Y）。")
                     }
                 } else {
-                    WSub("排列")
-                    WToggle("與上一項同一行", i.inline) { v -> upd { it.copy(inline = v) } }
-                    WChips("對齊", listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), i.align) { v -> upd { it.copy(align = v) } }
-                    WSub("位置微調")
-                    WStep("水平偏移", i.ox, -60, 60, 1, " dp") { v -> upd { it.copy(ox = v) } }
-                    WStep("垂直偏移", i.oy, -40, 40, 1, " dp") { v -> upd { it.copy(oy = v) } }
+                    DeckGroup("排列") {
+                        WToggle("與上一項同一行", i.inline) { v -> upd { it.copy(inline = v) } }
+                        WChips("對齊", listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), i.align) { v -> upd { it.copy(align = v) } }
+                    }
+                    DeckGroup("位置微調（dp）") {
+                        DPad(i.ox, i.oy, "dp", listOf(1, 4, 8),
+                            onMove = { dx, dy -> upd { it.copy(ox = (it.ox + dx).coerceIn(-60, 60), oy = (it.oy + dy).coerceIn(-40, 40)) } },
+                            onReset = { upd { it.copy(ox = 0, oy = 0) } })
+                    }
+                }
+                DeckGroup("間距（可負）") {
+                    StepperSlider("外距左右", i.mx, -8, 24, 1, " dp") { v -> upd { it.copy(mx = v) } }
+                    StepperSlider("外距上下", i.my, -12, 24, 1, " dp") { v -> upd { it.copy(my = v) } }
+                    StepperSlider("內距左右", i.px, -10, 20, 1, " dp") { v -> upd { it.copy(px = v) } }
+                    StepperSlider("內距上下", i.py, -10, 16, 1, " dp") { v -> upd { it.copy(py = v) } }
+                    if (!i.inline && !i.fl) StepperSlider("行距", i.lg, -12, 16, 1, " dp") { v -> upd { it.copy(lg = v) } }
+                    StepperSlider("字高", i.lh, 0, 170, 5, "%", show = { if (it == 0) "跟隨" else "$it%" }) { v ->
+                        upd { it.copy(lh = if (v in 1..69) (if (v > it.lh) 70 else 0) else v) } }
                 }
             }
-            1 -> {
-                WSub("字級與字型")
-                WStep("字級", i.size, 8, 60, 1, " sp") { v -> upd { it.copy(size = v) } }
-                WChips("字體", com.claudeetf.app.ui.FONT_OPTS.mapIndexed { k, p -> k to p.second },
-                    com.claudeetf.app.ui.FONT_OPTS.indexOfFirst { it.first == i.font.ifEmpty { if (i.mono) "mono" else "" } }.coerceAtLeast(0)) { k ->
-                    val key = com.claudeetf.app.ui.FONT_OPTS[k].first
-                    upd { it.copy(font = key, mono = key == "mono") } }
-                WSub("樣式")
-                WToggle("粗體", i.bold) { v -> upd { it.copy(bold = v) } }
-                WToggle("斜體", i.italic) { v -> upd { it.copy(italic = v) } }
-                WToggle("底線", i.under) { v -> upd { it.copy(under = v) } }
-                if (i.id in LABELED) {
-                    WSub("前綴文字")
-                    WToggle("顯示前綴（例如「市值」）", i.label) { v -> upd { it.copy(label = v) } }
-                }
-            }
-            2 -> {
-                val graded = i.id == "entry" || i.id == "band" || i.id == "rank" || i.id == "kbar"
-                WSub("文字")
-                WChips(null, COLOR_OPTS + (if (graded) listOf(6 to "依等級") else emptyList()), i.color) { v -> upd { it.copy(color = v) } }
-                WSub("標籤底色")
-                WChips(null, BG_OPTS.filter { it.first != 2 || graded }, i.bg) { v -> upd { it.copy(bg = v) } }
-                if (i.bg != 0) WStep("底色濃度", i.ba, 10, 100, 5, "%") { v -> upd { it.copy(ba = v) } }
-                if (i.id in LABELED && i.label) {
-                    WSub("前綴文字")
-                    WChips(null, LABEL_COLOR_OPTS, i.lc) { v -> upd { it.copy(lc = v) } }
-                }
-            }
-            3 -> {
-                WSub("外距（可負，增減佔用空間）")
-                WStep("左右", i.mx, -8, 24, 1, " dp") { v -> upd { it.copy(mx = v) } }
-                WStep("上下", i.my, -12, 24, 1, " dp") { v -> upd { it.copy(my = v) } }
-                WSub("內距（可負，文字與底色邊緣）")
-                WStep("左右", i.px, -10, 20, 1, " dp") { v -> upd { it.copy(px = v) } }
-                WStep("上下", i.py, -10, 16, 1, " dp") { v -> upd { it.copy(py = v) } }
-                WSub("行距與字高")
-                if (!i.inline && !i.fl) WStep("與上一行距離", i.lg, -12, 16, 1, " dp") { v -> upd { it.copy(lg = v) } }
-                WStep("字高（行高倍率）", i.lh, 0, 170, 5, "%", show = { if (it == 0) "跟隨" else "$it%" }) { v ->
-                    upd { it.copy(lh = if (v in 1..69) (if (v > it.lh) 70 else 0) else v) } }
-            }
-            else -> {
-                Box(Modifier.padding(vertical = 4.dp)) {
-                    com.claudeetf.app.ui.FxPicker(i.an, i.at, i.asp, i.apw) { f, t, sp, pw -> upd { it.copy(an = f, at = t, asp = sp, apw = pw) } }
-                }
+            else -> DeckGroup {
+                com.claudeetf.app.ui.FxPicker(i.an, i.at, i.asp, i.apw) { f, t, sp, pw -> upd { it.copy(an = f, at = t, asp = sp, apw = pw) } }
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -604,7 +631,7 @@ fun WallItemEditor(i: WallItem, st: WallStyle, set: ((WallStyle) -> WallStyle) -
                 val d = WallStyle.DEFAULT_ITEMS.first { it.id == i.id }
                 upd { it.copy(head = d.head, inline = d.inline, align = d.align, size = d.size, bold = d.bold, color = d.color, mono = d.mono, font = d.font, label = d.label,
                     fl = d.fl, fx = d.fx, fy = d.fy, mx = d.mx, my = d.my, px = d.px, py = d.py, lg = d.lg, lh = d.lh, bg = d.bg, ba = d.ba, lc = d.lc,
-                    fa = d.fa, fva = d.fva, ox = d.ox, oy = d.oy, an = d.an, at = d.at, asp = d.asp, apw = d.apw, italic = d.italic, under = d.under) } }
+                    fa = d.fa, fva = d.fva, ox = d.ox, oy = d.oy, an = d.an, at = d.at, asp = d.asp, apw = d.apw, italic = d.italic, under = d.under, strike = d.strike, tnum = d.tnum) } }
                 .padding(horizontal = 10.dp, vertical = 6.dp))
         }
         if (i.id == "entry") Label("進場建議依 K 線分析（與個股頁相同），未分析過的個股會在背景分析後顯示。")

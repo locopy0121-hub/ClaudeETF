@@ -72,10 +72,20 @@ internal fun StyledItem(ist: com.claudeetf.app.data.ItemStyle, recolor: Boolean,
         .drawWithContent { drawContent(); drawRect(tint, blendMode = androidx.compose.ui.graphics.BlendMode.SrcIn) }
     if (ist.fx > 0 && q != null) m = m.itemEffect(ist, q)
     if (ist.gap > 0) m = m.padding(vertical = (ist.gap / 2f).dp)
+    if (ist.bg != 0L) m = m.background(Color(ist.bg.toInt()), RoundedCornerShape(6.dp))
     if (ist.pad > 0) m = m.padding(ist.pad.dp)
+    if (ist.ox != 0 || ist.oy != 0) m = Modifier.offset(ist.ox.dp, ist.oy.dp).then(m)
+    // 斜體、底線、刪除線、等寬數字：透過 LocalTextStyle 套到項目內所有文字
+    val base = androidx.compose.material3.LocalTextStyle.current
+    val ts = if (!ist.italic && !ist.under && !ist.strike && !ist.tnum) base else base.copy(
+        fontStyle = if (ist.italic) androidx.compose.ui.text.font.FontStyle.Italic else base.fontStyle,
+        textDecoration = com.claudeetf.app.ui.decoOf(ist.under, ist.strike) ?: base.textDecoration,
+        fontFeatureSettings = if (ist.tnum) "tnum" else base.fontFeatureSettings,
+    )
     CompositionLocalProvider(
         LocalItemWeight provides (if (ist.weight > 0) FontWeight(ist.weight) else null),
         com.claudeetf.app.ui.LocalItemLineGap provides ist.gap,
+        androidx.compose.material3.LocalTextStyle provides ts,
     ) {
         Box(m) { content() }
     }
@@ -472,7 +482,7 @@ private fun infoLine(q: Quote, id: String, st: WatchStyle): (@Composable RowScop
 /** 行情卡片樣式預覽：固定在設定頁頂部，點項目即選取（卡片／清單切換） */
 @Composable
 fun WatchStylePreview() {
-    val st = AppState.watchStyle
+    val st = Hist.watch.peek ?: AppState.watchStyle
     val sample = AppState.quotes.firstOrNull { it.price > 0 } ?: Quote("0050", "元大台灣50", Market.TW, 92.50, 97.15)
     Column(Modifier.fillMaxWidth().trackPreviewEdge().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -486,11 +496,11 @@ fun WatchStylePreview() {
         }
         if (EditSel.watchView == 0) Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val sel = EditSel.watch?.takeIf { it.startsWith("c:") }?.removePrefix("c:")
-            WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)), sel) { EditSel.watch = "c:$it"; EditSel.watchSheet = true }
+            WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)), sel) { Hist.watch.begin(); EditSel.watch = "c:$it"; EditSel.watchSheet = true }
             // 只預覽單一個股，寬度與實際每列張數相同，騰出畫面給編輯工具
             Spacer(Modifier.weight((st.cardCols - 1).coerceAtLeast(1).toFloat()))
         } else Box(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(horizontal = 6.dp)) {
-            WatchRowBody(sample, st, Modifier, false, EditSel.watch?.takeIf { it.startsWith("l:") }?.removePrefix("l:")) { EditSel.watch = "l:$it"; EditSel.watchSheet = true }
+            WatchRowBody(sample, st, Modifier, false, EditSel.watch?.takeIf { it.startsWith("l:") }?.removePrefix("l:")) { Hist.watch.begin(); EditSel.watch = "l:$it"; EditSel.watchSheet = true }
         }
     }
     val t = EditSel.watch
@@ -498,8 +508,18 @@ fun WatchStylePreview() {
         val card = t.startsWith("c:"); val id = t.substringAfter(":")
         val names = if (card) WatchStyle.CARD_NAMES else WatchStyle.LIST_NAMES
         val title = when (id) { "name" -> "名稱"; "code" -> "代號"; "price" -> "價格"; "change" -> "漲跌"; else -> names[id] ?: id }
-        ItemEditSheet(title, if (card) "行情卡片 · 套用到全部卡片" else "行情清單 · 套用到全部列", onDone = { EditSel.watchSheet = false; EditSel.watch = null }) {
-            Editor(t, AppState.watchStyle, { f -> AppState.updateWatchStyle(f(AppState.watchStyle)) }, bare = true) { EditSel.watchSheet = false; EditSel.watch = null }
+        var ai by remember { mutableStateOf(false) }
+        val allow = id !in setOf("entry", "market", "spark")
+        if (ai) AiStyleDialog(title, AppState.watchStyle.style(t).toJson(), itemStyleSchema(allow), listOf("放大加粗", "改成金色", "依漲跌變色", "數字跳動時閃一下", "等寬數字"),
+            onDismiss = { ai = false }) { patch ->
+            val (n, changed) = mergeItemStyle(AppState.watchStyle.style(t), patch, allow)
+            if (changed.isNotEmpty()) Hist.watch.apply { s -> s.copy(itemStyles = if (n.isDefault) s.itemStyles - t else s.itemStyles + (t to n)) }
+            changed
+        }
+        fun close() { Hist.watch.end(); EditSel.watchSheet = false; EditSel.watch = null }
+        ItemEditSheet(title, if (card) "行情卡片 · 套用到全部卡片" else "行情清單 · 套用到全部列", Hist.watch, AbSlots.Target.WATCH,
+            onAi = if (id == "spark") null else ({ ai = true }), onCancel = { Hist.watch.cancel(); close() }, onDone = { close() }) {
+            Editor(t, AppState.watchStyle, { f -> Hist.watch.apply(f) }, bare = true) { close() }
         }
     }
 }
@@ -565,29 +585,37 @@ private fun Editor(target: String, st: WatchStyle, set: ((WatchStyle) -> WatchSt
             Text((if (card) "卡片 › " else "清單 › ") + title, Modifier.weight(1f), color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Text("完成", color = C.Primary, fontSize = 13.sp, modifier = Modifier.clickable(onClick = onClose).padding(6.dp))
         }
-        when (id) {
-            "name" -> {
-                Chips(listOf(0 to "名稱在前", 1 to "代號在前", 2 to "只顯示名稱", 3 to "只顯示代號"), st.nameMode) { v -> set { it.copy(nameMode = v) } }
-                if (st.nameMode != 3) Chips(listOf(1 to "1 行", 2 to "最多 2 行"), st.nameLines) { v -> set { it.copy(nameLines = v) } }
-                Chips(listOf(0 to "精簡", 1 to "標準", 2 to "大字"), st.density) { v -> set { it.copy(density = v) } }
-            }
-            "code" -> Chips(listOf(0 to "名稱在前", 1 to "代號在前", 2 to "只顯示名稱", 3 to "只顯示代號"), st.nameMode) { v -> set { it.copy(nameMode = v) } }
-            "price" -> {
-                if (card) Chips(listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), st.priceAlign) { v -> set { it.copy(priceAlign = v) } }
-                Chips(listOf(0 to "精簡", 1 to "標準", 2 to "大字"), st.density) { v -> set { it.copy(density = v) } }
-            }
-            "change" -> {
-                Chips(listOf(0 to "金額＋百分比", 1 to "只顯示百分比", 2 to "只顯示金額"), st.changeMode) { v -> set { it.copy(changeMode = v) } }
-                if (st.changeMode != 2) Chips(listOf(0 to "文字", 1 to "色塊"), st.changeStyle) { v -> set { it.copy(changeStyle = v) } }
-                if (card) MoveHide(card, id, st, set)
-            }
-            else -> {
-                if (id == "entry") Chips(listOf(0 to "依項目順序", 1 to "名稱旁", 2 to "價格旁"), st.tagPos) { v -> set { it.copy(tagPos = v) } }
-                if (card) Chips(listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), st.tagAlign) { v -> set { it.copy(tagAlign = v) } }
-                MoveHide(card, id, st, set)
+        val textBody: @Composable ColumnScope.() -> Unit = {
+            when (id) {
+                "name" -> {
+                    Chips(listOf(0 to "名稱在前", 1 to "代號在前", 2 to "只顯示名稱", 3 to "只顯示代號"), st.nameMode) { v -> set { it.copy(nameMode = v) } }
+                    if (st.nameMode != 3) Chips(listOf(1 to "1 行", 2 to "最多 2 行"), st.nameLines) { v -> set { it.copy(nameLines = v) } }
+                    Chips(listOf(0 to "精簡", 1 to "標準", 2 to "大字"), st.density) { v -> set { it.copy(density = v) } }
+                }
+                "code" -> Chips(listOf(0 to "名稱在前", 1 to "代號在前", 2 to "只顯示名稱", 3 to "只顯示代號"), st.nameMode) { v -> set { it.copy(nameMode = v) } }
+                "price" -> {
+                    if (card) Chips(listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), st.priceAlign) { v -> set { it.copy(priceAlign = v) } }
+                    Chips(listOf(0 to "精簡", 1 to "標準", 2 to "大字"), st.density) { v -> set { it.copy(density = v) } }
+                }
+                "change" -> {
+                    Chips(listOf(0 to "金額＋百分比", 1 to "只顯示百分比", 2 to "只顯示金額"), st.changeMode) { v -> set { it.copy(changeMode = v) } }
+                    if (st.changeMode != 2) Chips(listOf(0 to "文字", 1 to "色塊"), st.changeStyle) { v -> set { it.copy(changeStyle = v) } }
+                }
+                "entry" -> Chips(listOf(0 to "依項目順序", 1 to "名稱旁", 2 to "價格旁"), st.tagPos) { v -> set { it.copy(tagPos = v) } }
             }
         }
-        ItemStyleControls(target, st, set)
+        val textExtra = if (id in setOf("name", "code", "price", "change", "entry")) textBody else null
+        val fixed = id in setOf("name", "code", "price", "change")
+        val movable = !(id in setOf("name", "code", "price")) && (card || id != "change")
+        val layoutBody: @Composable ColumnScope.() -> Unit = {
+            if (card && !fixed) Chips(listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), st.tagAlign) { v -> set { it.copy(tagAlign = v) } }
+            if (movable) MoveHide(card, id, st, set)
+        }
+        val layoutExtra = if (movable || (card && !fixed)) layoutBody else null
+        if (id == "spark") {
+            textExtra?.invoke(this)
+            layoutExtra?.invoke(this)
+        } else ItemStyleControls(target, st, set, textExtra, layoutExtra)
     }
 }
 
@@ -623,69 +651,112 @@ private fun Stepper(title: String, value: Int, min: Int, max: Int, step: Int, un
 
 /** 單一欄位：字級、字重、文字顏色（自訂色／漲跌色） */
 @Composable
-private fun ItemStyleControls(key: String, st: WatchStyle, set: ((WatchStyle) -> WatchStyle) -> Unit) {
+private fun ItemStyleControls(key: String, st: WatchStyle, set: ((WatchStyle) -> WatchStyle) -> Unit,
+                              textExtra: (@Composable ColumnScope.() -> Unit)? = null, layoutExtra: (@Composable ColumnScope.() -> Unit)? = null) {
     val id = key.substringAfter(":")
     if (id == "spark") return
     ItemStyleEditor(st.style(key), id !in setOf("entry", "market"), { f ->
         set { s -> val n = f(s.style(key)); s.copy(itemStyles = if (n.isDefault) s.itemStyles - key else s.itemStyles + (key to n)) }
-    })
+    }, textExtra, layoutExtra)
 }
 
-/** 通用單一欄位編輯：字級、粗細、文字顏色、動畫 */
+/** 工具艙目前分頁（跨項目切換時保留）：0 排版、1 色彩、2 版面、3 動效 */
+object DeckTab { var tab by mutableStateOf(0) }
+
+/**
+ * 通用單一欄位編輯（行情卡片、持股卡片共用），依分頁歸類：
+ * 排版（B/I/U/S、等寬數字、字級、粗細）、色彩（文字色、底色）、版面（行距、內距、十字微調）、動效（文字動畫）。
+ * textExtra／layoutExtra：各卡片專屬的排版、排列設定。
+ */
 @Composable
 internal fun ItemStyleEditor(cur: com.claudeetf.app.data.ItemStyle, allowColor: Boolean,
-                             upd: ((com.claudeetf.app.data.ItemStyle) -> com.claudeetf.app.data.ItemStyle) -> Unit) {
-    Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(1.dp).background(C.Border))
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("字級", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
-        SmallBtn("－", cur.size > 50) { upd { it.copy(size = (it.size - 10).coerceAtLeast(50)) } }
-        Text("${cur.size}%", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        SmallBtn("＋", cur.size < 250) { upd { it.copy(size = (it.size + 10).coerceAtMost(250)) } }
-    }
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("行距", color = C.Text, fontSize = 13.sp)
-            Text("項目上下間距；多行資料的行與行之間也一起加大", color = C.Muted, fontSize = 10.sp)
-        }
-        SmallBtn("－", cur.gap > 0) { upd { it.copy(gap = (it.gap - 2).coerceAtLeast(0)) } }
-        Text("${cur.gap} dp", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        SmallBtn("＋", cur.gap < 24) { upd { it.copy(gap = (it.gap + 2).coerceAtMost(24)) } }
-    }
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("內距", color = C.Text, fontSize = 13.sp)
-            Text("項目四周留白", color = C.Muted, fontSize = 10.sp)
-        }
-        SmallBtn("－", cur.pad > 0) { upd { it.copy(pad = (it.pad - 1).coerceAtLeast(0)) } }
-        Text("${cur.pad} dp", Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        SmallBtn("＋", cur.pad < 24) { upd { it.copy(pad = (it.pad + 1).coerceAtMost(24)) } }
-    }
-    Text("粗細", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-    Chips(listOf(0 to "預設", 300 to "300", 400 to "400", 500 to "500", 600 to "600", 700 to "700", 800 to "800", 900 to "900"), cur.weight) { v -> upd { it.copy(weight = v) } }
-    if (allowColor) {
-        var picking by remember { mutableStateOf(false) }
-        if (picking) ColorPickerDialog(
-            title = "文字顏色", initial = if (cur.color != 0L) Color(cur.color.toInt()) else C.Text,
-            onPick = { c -> upd { it.copy(color = c.toArgb().toLong() and 0xFFFFFFFFL, trend = false) }; picking = false },
-            onReset = { upd { it.copy(color = 0L, trend = false) }; picking = false },
-            onDismiss = { picking = false },
-        )
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("文字顏色", Modifier.weight(1f), color = C.Text, fontSize = 13.sp)
-            SmallBtn(if (cur.color == 0L && !cur.trend) "✓ 預設" else "預設", true) { upd { it.copy(color = 0L, trend = false) } }
-            SmallBtn(if (cur.trend) "✓ 漲跌色" else "漲跌色", true) { upd { it.copy(trend = !it.trend, color = 0L) } }
-            Box(Modifier.size(width = 40.dp, height = 26.dp).clip(RoundedCornerShape(8.dp))
-                .background(if (cur.color != 0L) Color(cur.color.toInt()) else C.Bg)
-                .border(1.dp, C.Border, RoundedCornerShape(8.dp)).clickable { picking = true }, contentAlignment = Alignment.Center) {
-                if (cur.color == 0L) Text("🎨", fontSize = 12.sp)
+                             upd: ((com.claudeetf.app.data.ItemStyle) -> com.claudeetf.app.data.ItemStyle) -> Unit,
+                             textExtra: (@Composable ColumnScope.() -> Unit)? = null,
+                             layoutExtra: (@Composable ColumnScope.() -> Unit)? = null) {
+    val tabs = listOf("排版", "色彩", "版面", "動效")
+    val tab = DeckTab.tab.coerceIn(0, tabs.lastIndex)
+    Column(Modifier.fillMaxWidth()) {
+        DeckTabs(tabs, tab) { DeckTab.tab = it }
+        when (tab) {
+            0 -> {
+                DeckGroup("文字樣式") {
+                    StyleToggles(cur.weight >= 600, cur.italic, cur.under, cur.strike, cur.tnum,
+                        onBold = { v -> upd { it.copy(weight = if (v) 700 else 0) } },
+                        onItalic = { v -> upd { it.copy(italic = v) } },
+                        onUnder = { v -> upd { it.copy(under = v) } },
+                        onStrike = { v -> upd { it.copy(strike = v) } },
+                        onTnum = { v -> upd { it.copy(tnum = v) } })
+                }
+                DeckGroup("字級與粗細") {
+                    StepperSlider("字級", cur.size, 50, 250, 5, "%") { v -> upd { it.copy(size = v) } }
+                    Chips(listOf(0 to "預設", 300 to "300", 400 to "400", 500 to "500", 600 to "600", 700 to "700", 800 to "800", 900 to "900"), cur.weight) { v -> upd { it.copy(weight = v) } }
+                }
+                if (textExtra != null) DeckGroup("此項目專屬", textExtra)
+            }
+            1 -> {
+                if (allowColor) DeckGroup {
+                    SwatchRow("文字顏色", cur.color, cur.trend) { c, t -> upd { it.copy(color = c, trend = t) } }
+                    Spacer(Modifier.height(4.dp))
+                    SwatchRow("底色", cur.bg, null) { c, _ -> upd { it.copy(bg = c) } }
+                } else DeckGroup { Label("此項目有自己的配色（標籤、走勢圖），不提供改色。") }
+            }
+            2 -> {
+                DeckGroup("間距") {
+                    StepperSlider("行距", cur.gap, 0, 24, 1, " dp") { v -> upd { it.copy(gap = v) } }
+                    StepperSlider("內距", cur.pad, 0, 24, 1, " dp") { v -> upd { it.copy(pad = v) } }
+                }
+                DeckGroup("位置微調") {
+                    DPad(cur.ox, cur.oy, "dp", listOf(1, 4, 8),
+                        onMove = { dx, dy -> upd { it.copy(ox = (it.ox + dx).coerceIn(-60, 60), oy = (it.oy + dy).coerceIn(-40, 40)) } },
+                        onReset = { upd { it.copy(ox = 0, oy = 0) } })
+                }
+                if (layoutExtra != null) DeckGroup("排列", layoutExtra)
+            }
+            else -> DeckGroup {
+                com.claudeetf.app.ui.FxPicker(cur.fx, cur.trig, cur.speed, cur.power) { f, t, sp, pw -> upd { it.copy(fx = f, trig = t, speed = sp, power = pw) } }
             }
         }
+        if (!cur.isDefault) Text("此欄位恢復預設", color = C.Muted, fontSize = 12.sp,
+            modifier = Modifier.clickable { upd { com.claudeetf.app.data.ItemStyle() } }.padding(top = 8.dp))
     }
-    Box(Modifier.padding(top = 8.dp)) {
-        com.claudeetf.app.ui.FxPicker(cur.fx, cur.trig, cur.speed, cur.power) { f, t, sp, pw -> upd { it.copy(fx = f, trig = t, speed = sp, power = pw) } }
+}
+
+/** ItemStyle 給 AI 的欄位說明 */
+internal fun itemStyleSchema(allowColor: Boolean): String = buildString {
+    appendLine("s: 字級百分比 50~250（100 為預設）")
+    appendLine("w: 粗細 0（預設）或 300~900")
+    appendLine("it/ul/sk/tn: 斜體/底線/刪除線/等寬數字 true 或 false")
+    if (allowColor) {
+        appendLine("c: 文字顏色 \"#RRGGBB\"，0 為預設；t: true 表示依漲跌變色（會清除 c）")
+        appendLine("bg: 底色 \"#RRGGBB\"，0 為無")
     }
-    if (!cur.isDefault) Text("此欄位恢復預設", color = C.Muted, fontSize = 12.sp,
-        modifier = Modifier.clickable { upd { com.claudeetf.app.data.ItemStyle() } }.padding(top = 6.dp))
+    appendLine("g: 行距 0~24（dp）；pd: 內距 0~24（dp）")
+    appendLine("ox: 水平位移 -60~60（dp）；oy: 垂直位移 -40~40（dp）")
+    appendLine("fx: 文字動畫 " + fxSchema())
+    appendLine("tg: 觸發 0 常駐、1 數值變動、2 上漲時、3 下跌時、4 進場時；sp: 速度 0~2；pw: 強度 0~2")
+}
+
+/** 把 AI 回傳的修改合併進 ItemStyle（只接受允許欄位，數值經 fromJson 限制範圍）；回傳改了哪些項目 */
+internal fun mergeItemStyle(cur: com.claudeetf.app.data.ItemStyle, patch: org.json.JSONObject, allowColor: Boolean): Pair<com.claudeetf.app.data.ItemStyle, List<String>> {
+    val names = linkedMapOf("s" to "字級", "w" to "粗細", "it" to "斜體", "ul" to "底線", "sk" to "刪除線", "tn" to "等寬數字",
+        "c" to "文字顏色", "t" to "漲跌色", "bg" to "底色", "g" to "行距", "pd" to "內距", "ox" to "水平位移", "oy" to "垂直位移",
+        "fx" to "動畫", "tg" to "動畫觸發", "sp" to "動畫速度", "pw" to "動畫強度")
+    val o = cur.toJson()
+    val changed = mutableListOf<String>()
+    names.forEach { (k, n) ->
+        if (!patch.has(k)) return@forEach
+        if (!allowColor && k in setOf("c", "t", "bg")) return@forEach
+        val v = patch.get(k)
+        when (k) {
+            "c", "bg" -> aiColor(v)?.let { o.put(k, it); if (k == "c") o.put("t", false) } ?: return@forEach
+            "w" -> (v as? Number)?.toInt()?.let { o.put(k, if (it <= 0) 0 else it.coerceIn(100, 900)) } ?: return@forEach
+            "it", "ul", "sk", "tn", "t" -> (v as? Boolean)?.let { o.put(k, it); if (k == "t" && it) o.put("c", 0L) } ?: return@forEach
+            else -> (v as? Number)?.toInt()?.let { o.put(k, it) } ?: return@forEach
+        }
+        changed += n
+    }
+    val next = com.claudeetf.app.data.ItemStyle.fromJson(o)
+    return next to (if (next == cur) emptyList() else changed)
 }
 
 @Composable

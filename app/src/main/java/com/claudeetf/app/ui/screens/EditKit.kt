@@ -16,6 +16,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -111,8 +114,10 @@ fun DockedPanel(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Un
     val density = LocalDensity.current
     val rootH = view.rootView.height.toFloat().coerceAtLeast(1f)
     val gap = with(density) { 6.dp.toPx() }
-    // 預覽位置未知或太低時，至少保留畫面 45% 給面板
-    val top = (if (PreviewEdge.bottom > 0f) PreviewEdge.bottom + gap else rootH * 0.4f).coerceIn(rootH * 0.15f, rootH * 0.55f)
+    // 半高：頂端停在預覽下緣（預覽位置未知或太低時，至少保留畫面 45%）；全高：佔畫面約 85%
+    var full by remember { mutableStateOf(false) }
+    val half = (if (PreviewEdge.bottom > 0f) PreviewEdge.bottom + gap else rootH * 0.4f).coerceIn(rootH * 0.15f, rootH * 0.55f)
+    val top = if (full) minOf(rootH * 0.15f, half) else half
     val heightDp = with(density) { (rootH - top).toDp() }
     val provider = remember(top) {
         object : PopupPositionProvider {
@@ -124,28 +129,31 @@ fun DockedPanel(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Un
         Column(Modifier.fillMaxWidth().height(heightDp)
             .shadow(16.dp, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)).background(C.Card)
-            .border(1.dp, C.Border, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .padding(top = 8.dp)) {
-            Box(Modifier.align(Alignment.CenterHorizontally).size(width = 40.dp, height = 4.dp).clip(RoundedCornerShape(2.dp)).background(C.Border))
+            .border(1.dp, C.Border, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))) {
+            // 把手：點一下或上下拖曳切換半高／全高
+            Box(Modifier.fillMaxWidth().height(22.dp)
+                .pointerInput(Unit) {
+                    var acc = 0f
+                    detectVerticalDragGestures(onDragStart = { acc = 0f }, onDragEnd = {
+                        if (acc < -30f) full = true else if (acc > 30f) { if (full) full = false else onDismiss() }
+                    }) { _, d -> acc += d }
+                }
+                .clickable { full = !full }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(width = 40.dp, height = 4.dp).clip(RoundedCornerShape(2.dp)).background(C.Border))
+            }
             content()
         }
     }
 }
 
-/** 從預覽點項目叫出的編輯工具：停靠在預覽下方；按完成收起 */
+/** 從預覽點項目叫出的編輯工具：停靠在預覽下方；頂部為復原／比較／方案／AI 與完成 */
 @Composable
-fun ItemEditSheet(title: String, subtitle: String, onDone: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+fun ItemEditSheet(title: String, subtitle: String, hist: StyleHistory<*>, ab: AbSlots.Target,
+                  onAi: (() -> Unit)?, onCancel: () -> Unit, onDone: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     DockedPanel(onDismiss = onDone) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("編輯工具・$title", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    Text(subtitle, color = C.Muted, fontSize = 11.sp)
-                }
-                Text("完成", color = C.OnPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Primary).clickable(onClick = onDone).padding(horizontal = 14.dp, vertical = 7.dp))
-            }
-            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 6.dp, bottom = 56.dp), content = content)
+            DeckHeader(title, subtitle, hist, ab, onAi, onCancel, onDone)
+            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 2.dp, bottom = 56.dp), content = content)
         }
     }
 }

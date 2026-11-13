@@ -52,11 +52,14 @@ data class WallItem(
     /** 斜體、底線 */
     val italic: Boolean = false,
     val under: Boolean = false,
+    /** 刪除線、等寬數字（數字寬度固定，跳動時不左右晃） */
+    val strike: Boolean = false,
+    val tnum: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("s", show).put("h", head).put("i", inline).put("a", align)
         .put("z", size).put("b", bold).put("c", color).put("m", mono).put("l", label)
         .put("mx", mx).put("my", my).put("px", px).put("py", py).put("lg", lg).put("lh", lh).put("bg", bg).put("ba", ba).put("lc", lc).put("fl", fl).put("fx", fx).put("fy", fy).put("f", font)
-        .put("fa", fa).put("fva", fva).put("ox", ox).put("oy", oy).put("an", an).put("at", at).put("asp", asp).put("apw", apw).put("it", italic).put("ul", under)
+        .put("fa", fa).put("fva", fva).put("ox", ox).put("oy", oy).put("an", an).put("at", at).put("asp", asp).put("apw", apw).put("it", italic).put("ul", under).put("sk", strike).put("tn", tnum)
 
     companion object {
         fun fromJson(o: JSONObject, d: WallItem) = WallItem(
@@ -69,8 +72,9 @@ data class WallItem(
             o.optString("f", d.font),
             o.optInt("fa", d.fa).coerceIn(0, 3), o.optInt("fva", d.fva).coerceIn(0, 3),
             o.optInt("ox", d.ox).coerceIn(-60, 60), o.optInt("oy", d.oy).coerceIn(-40, 40),
-            o.optInt("an", d.an).coerceIn(0, 16), o.optInt("at", d.at).coerceIn(0, 3), o.optInt("asp", d.asp).coerceIn(0, 2), o.optInt("apw", d.apw).coerceIn(0, 2),
-            o.optBoolean("it", false), o.optBoolean("ul", false),
+            o.optInt("an", d.an).coerceIn(0, 20), o.optInt("at", d.at).coerceIn(0, 4), o.optInt("asp", d.asp).coerceIn(0, 2), o.optInt("apw", d.apw).coerceIn(0, 2),
+            o.optBoolean("it", d.italic), o.optBoolean("ul", d.under),
+            o.optBoolean("sk", d.strike), o.optBoolean("tn", d.tnum),
         )
     }
 }
