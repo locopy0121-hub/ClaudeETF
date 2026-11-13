@@ -1,5 +1,6 @@
 package com.claudeetf.app.ui.screens
 
+import com.claudeetf.app.ui.textFx
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -115,14 +116,17 @@ private fun Group(tag: String, color: androidx.compose.ui.graphics.Color, live: 
     items.forEachIndexed { i, q ->
         HGap(if (i == 0) 6.dp else st.gap.dp)
         val c = Trend.fg(q.changePct)
-        Row(Modifier.then(if (nav != null) Modifier.clickable { nav.navigate(Routes.index(q.symbol)) } else Modifier), verticalAlignment = Alignment.CenterVertically) {
+        @Composable fun fxm(target: Int): Modifier = if (st.fx > 0 && st.fxOn == target) Modifier.textFx(st.fx, st.fxTrig, st.fxSpeed, st.fxPower, q.value, c) else Modifier
+        Row(Modifier.then(if (nav != null) Modifier.clickable { nav.navigate(Routes.index(q.symbol)) } else Modifier).then(fxm(2)), verticalAlignment = Alignment.CenterVertically) {
             if (st.showName) { Text(TICKER_CHOICES[q.symbol] ?: q.name, color = C.Text, fontSize = st.nameSize.sp, fontFamily = nf,
                 fontWeight = if (st.nameBold) FontWeight.Bold else FontWeight.Normal, maxLines = 1); HGap(5.dp) }
             if (st.showValue) { Text(Fmt.num(q.value, 2), color = if (st.valueColor == 1) c else C.Text, fontSize = st.valueSize.sp, fontFamily = mf,
-                fontWeight = if (st.valueBold) FontWeight.Bold else FontWeight.Normal, maxLines = 1); HGap(5.dp) }
+                fontWeight = if (st.valueBold) FontWeight.Bold else FontWeight.Normal, maxLines = 1, modifier = fxm(1)); HGap(5.dp) }
             if (st.showArrow) { Text(if (q.change > 0) "▲" else if (q.change < 0) "▼" else "－", color = c, fontSize = (st.changeSize - 2).coerceAtLeast(8).sp); HGap(3.dp) }
-            if (st.showChange) { Text(Fmt.signed(q.change, 2), color = c, fontSize = st.changeSize.sp, fontFamily = mf, maxLines = 1); HGap(4.dp) }
-            if (st.showPct) Text("(" + Fmt.pct(q.changePct) + ")", color = c, fontSize = st.changeSize.sp, fontFamily = mf, maxLines = 1)
+            Row(fxm(0), verticalAlignment = Alignment.CenterVertically) {
+                if (st.showChange) { Text(Fmt.signed(q.change, 2), color = c, fontSize = st.changeSize.sp, fontFamily = mf, maxLines = 1); HGap(4.dp) }
+                if (st.showPct) Text("(" + Fmt.pct(q.changePct) + ")", color = c, fontSize = st.changeSize.sp, fontFamily = mf, maxLines = 1)
+            }
         }
     }
 }

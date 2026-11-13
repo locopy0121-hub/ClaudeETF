@@ -636,6 +636,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
             }
             if (section == "monitor") item { MonitorSettings() }
             if (section == "kcond") item { KCondSettings() }
+            if (section == "studio") item { EditorStudio(nav) }
             if (section == "analysis") item { AnalysisSettings() }
             if (section == "ai") item { AiSettings() }
             if (section == "widget") item { WidgetSettings() }
@@ -1194,6 +1195,7 @@ internal data class SettingsEntry(val key: String, val icon: String, val title: 
 /** 「設置」頁分組：每一項點進去是獨立子頁，不再整頁展開拉長 */
 internal val SETTINGS_SECTIONS = listOf(
     "外觀與顯示" to listOf(
+        SettingsEntry("studio", "🖌️", "編輯工作室"),
         SettingsEntry("look", "🎨", "主題、配色與 App 圖示"),
         SettingsEntry("watch", "📈", "行情卡片樣式"),
         SettingsEntry("hold", "💼", "持股卡片樣式"),
@@ -1226,6 +1228,7 @@ internal val SETTINGS_SECTIONS = listOf(
 
 /** 設定搜尋用的關鍵字 */
 private val SETTINGS_KEYWORDS = mapOf(
+    "studio" to "編輯 工作室 樣式 動畫 文字動畫 對齊 座標 跑馬燈 行情牆 卡片 版面",
     "look" to "主題 深色 淺色 配色 紅漲綠跌 綠漲紅跌 字體 App圖示 icon 圖示 漲停 跌停 反白 標籤",
     "watch" to "行情 自選 卡片 樣式 字級 欄位 進場標籤 動畫",
     "hold" to "持股 卡片 樣式 欄位 市值 損益 行距 內距 行情牆 字高 字級",
@@ -1270,6 +1273,7 @@ private fun SettingsMenu(nav: NavController, version: String) {
         "backup" -> "匯出、匯入與備份"
         "alerts" -> "${AppState.alerts.count { it.enabled }} 項開啟"
         "analysis" -> if (com.claudeetf.app.data.AnalysisConfig.isDefault) "預設值" else "已自訂"
+        "studio" -> "行情卡片、行情牆、跑馬燈等樣式與文字動畫"
         "kcond" -> com.claudeetf.app.data.KlineConditions.enabled().size.let { if (it == 0) "未開啟" else "$it 項條件" } + (if (AppState.kcondNotify) " · 達成通知" else "")
         "widget" -> listOf("跟隨 App", "深色", "淺色", "透明")[AppState.widgetStyle.theme.coerceIn(0, 3)] + " · " +
             (if (AppState.widgetStyle.source == 0) "持股" else "自選") + " ${AppState.widgetStyle.rows} 列"
@@ -2158,6 +2162,13 @@ fun TickerStyleSettings() {
             TStep("圓角", st.radius, 0, 24, " dp") { v -> set { it.copy(radius = v) } }
             if (AppState.tickerAuto) TStep("跑馬燈速度", st.speed, 10, 120, "") { v -> set { it.copy(speed = v) } }
         }
+        Sec("fx", "文字動畫") {
+            Text("套用對象", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+            ChipRow(listOf(0 to "漲跌與漲跌幅", 1 to "指數點數", 2 to "整組指數"), st.fxOn) { v -> set { it.copy(fxOn = v) } }
+            Box(Modifier.padding(top = 6.dp)) {
+                com.claudeetf.app.ui.FxPicker(st.fx, st.fxTrig, st.fxSpeed, st.fxPower) { f, t, sp, pw -> set { it.copy(fx = f, fxTrig = t, fxSpeed = sp, fxPower = pw) } }
+            }
+        }
         Text("恢復預設", color = C.Muted, fontSize = 12.sp, modifier = Modifier.clickable { AppState.updateTickerStyle(com.claudeetf.app.data.TickerStyle()) }.padding(vertical = 10.dp))
     }
 }
@@ -2174,5 +2185,36 @@ private fun BondTaxCard() {
         Segmented(listOf("至 2026/12/31（現行）", "至 2036/12/31（延長）"), opts.indexOf(until).coerceAtLeast(0), onSelect = { i ->
             until = opts[i]; com.claudeetf.app.data.TaxRules.setBondExemptUntil(opts[i])
         })
+    }
+}
+
+
+/** 編輯工作室：集中所有可自訂樣式的對象，點選直接進入各自的編輯器 */
+@Composable
+private fun EditorStudio(nav: androidx.navigation.NavController) {
+    data class T(val title: String, val desc: String, val section: String)
+    val list = listOf(
+        T("行情卡片／清單", "版面、項目順序、每項字級顏色、文字動畫", "watch"),
+        T("持股行情牆", "格數、懸浮座標與基準點、對齊、位置微調、文字動畫", "hold"),
+        T("指數跑馬燈", "字級、字體、顯示項目、配色、速度、文字動畫", "pages"),
+        T("首頁卡片", "卡片順序與顯示", "pages"),
+        T("個股頁與進場角色", "懸浮徽章、動畫等級、即時訊號列", "stock"),
+        T("桌面小工具", "主題、透明度、顯示項目", "widget"),
+        T("主題與配色", "深淺色、漲跌色、字級、標籤外框", "look"),
+    )
+    com.claudeetf.app.ui.Card(padding = 14.dp) {
+        Text("編輯工作室", color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Label("所有可自訂的樣式集中在這裡。文字動畫有 16 種款式（強調、移動、光影三類），行情卡片、持股行情牆、指數跑馬燈共用同一套。")
+        list.forEach { t ->
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(C.Bg)
+                .clickable { nav.navigate(com.claudeetf.app.ui.Routes.settings(t.section)) }.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(t.title, color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Label(t.desc)
+                }
+                Text("›", color = C.Muted, fontSize = 18.sp)
+            }
+        }
     }
 }

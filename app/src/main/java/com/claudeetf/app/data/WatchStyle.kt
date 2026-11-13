@@ -137,7 +137,7 @@ data class WatchStyle(
  */
 data class ItemStyle(
     val size: Int = 100, val weight: Int = 0, val color: Long = 0L, val trend: Boolean = false,
-    /** 動畫效果：0 無、1 淡入、2 脈衝、3 變動閃爍、4 跳動 */
+    /** 文字動畫款式（見 ui/TextFx.STYLES，0＝無） */
     val fx: Int = 0,
     /** 觸發：0 常駐、1 數值變動、2 上漲時、3 下跌時 */
     val trig: Int = 1,
@@ -162,7 +162,7 @@ data class ItemStyle(
     companion object {
         fun fromJson(o: JSONObject?): ItemStyle = if (o == null) ItemStyle() else
             ItemStyle(o.optInt("s", 100).coerceIn(50, 250), o.optInt("w", 0), o.optLong("c", 0L), o.optBoolean("t", false),
-                o.optInt("fx", 0).coerceIn(0, 4), o.optInt("tg", 1).coerceIn(0, 3), o.optInt("sp", 1).coerceIn(0, 2), o.optInt("pw", 1).coerceIn(0, 2),
+                o.optInt("fx", 0).coerceIn(0, 16), o.optInt("tg", 1).coerceIn(0, 3), o.optInt("sp", 1).coerceIn(0, 2), o.optInt("pw", 1).coerceIn(0, 2),
                 o.optInt("g", 0).coerceIn(0, 24), o.optInt("pd", 0).coerceIn(0, 24),
                 o.optLong("bg", 0L), o.optInt("wd", 0).coerceIn(0, 240), o.optInt("al", 0).coerceIn(0, 2))
     }

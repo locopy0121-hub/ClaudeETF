@@ -1,5 +1,7 @@
 package com.claudeetf.app.ui.screens
 
+import androidx.compose.foundation.layout.offset
+import com.claudeetf.app.ui.textFx
 import com.claudeetf.app.ui.theme.readable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -219,7 +221,10 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
         Text(txt, color = main, fontSize = i.size.sp, lineHeight = (i.size * 1.18f * ilh).sp,
             fontWeight = if (i.bold) FontWeight.Bold else FontWeight.Normal, fontFamily = com.claudeetf.app.ui.fontOf(i.font.ifEmpty { if (i.mono) "mono" else "" }),
             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = textAlignOf(i.align),
-            modifier = Modifier.outer(i.mx, i.my)
+            modifier = Modifier
+                .then(if (i.ox != 0 || i.oy != 0) Modifier.offset(i.ox.dp, i.oy.dp) else Modifier)
+                .then(if (i.an > 0 && q != null) Modifier.textFx(i.an, i.at, i.asp, i.apw, q.price, Trend.fg(q.change)) else Modifier)
+                .outer(i.mx, i.my)
                 .then(if (bgc != null) Modifier.drawBehind { drawRoundRect(bgc, cornerRadius = CornerRadius(6.dp.toPx())) } else Modifier)
                 .outer(i.px, i.py))
     }
@@ -269,7 +274,15 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
         }
         // 懸浮項目：限制在格內，依水平／垂直位置百分比擺放
         vis.filter { it.fl }.forEach { i ->
-            Box(Modifier.matchParentSize().padding((pad.value * 0.5f).dp), contentAlignment = BiasAlignment(i.fx / 50f - 1f, i.fy / 50f - 1f)) { Item(i) }
+            // 依基準點擺放：座標＝格內百分比，基準點（左緣／中心／右緣）落在該座標上，方便上下項目精準對齊
+            Layout(content = { Item(i) }, modifier = Modifier.matchParentSize().padding((pad.value * 0.5f).dp)) { ms, c ->
+                val pl = ms.first().measure(c.copy(minWidth = 0, minHeight = 0))
+                val ax = when (i.fa) { 0 -> 0f; 1 -> 0.5f; 2 -> 1f; else -> i.fx / 100f }
+                val ay = when (i.fva) { 0 -> 0f; 1 -> 0.5f; 2 -> 1f; else -> i.fy / 100f }
+                val x = (c.maxWidth * i.fx / 100f - pl.width * ax).toInt().coerceIn(0, (c.maxWidth - pl.width).coerceAtLeast(0))
+                val y = (c.maxHeight * i.fy / 100f - pl.height * ay).toInt().coerceIn(0, (c.maxHeight - pl.height).coerceAtLeast(0))
+                layout(c.maxWidth, c.maxHeight) { pl.place(x, y) }
+            }
         }
     }
 }
@@ -450,9 +463,42 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                                 upd { it.copy(fl = v == 2, head = if (v == 2) it.head else v == 1) } }
                             if (i.fl) {
                                 Label("懸浮項目不佔版面、置於最上層，只能在格子範圍內移動。水平 0% 最左、100% 最右；垂直 0% 最上、100% 最下。每次 1%，按住 ＋／－ 可連續調整。")
-                                WStep("水平位置", i.fx, 0, 100, 1, "%") { v -> upd { it.copy(fx = v) } }
-                                WStep("垂直位置", i.fy, 0, 100, 1, "%") { v -> upd { it.copy(fy = v) } }
+                                var stepBig by remember { mutableStateOf(false) }
+                                WChips("微調幅度", listOf(0 to "1%", 1 to "5%（吸附格線）"), if (stepBig) 1 else 0) { v -> stepBig = v == 1 }
+                                val stp = if (stepBig) 5 else 1
+                                fun snap(v: Int) = if (stepBig) (Math.round(v / 5f) * 5).coerceIn(0, 100) else v
+                                WStep("水平座標 X", i.fx, 0, 100, stp, "%") { v -> upd { it.copy(fx = snap(v)) } }
+                                WStep("垂直座標 Y", i.fy, 0, 100, stp, "%") { v -> upd { it.copy(fy = snap(v)) } }
+                                WChips("水平基準點", listOf(0 to "左緣", 1 to "中心", 2 to "右緣", 3 to "自動"), i.fa) { v -> upd { it.copy(fa = v) } }
+                                WChips("垂直基準點", listOf(0 to "上緣", 1 to "中線", 2 to "下緣", 3 to "自動"), i.fva) { v -> upd { it.copy(fva = v) } }
+                                Label("基準點落在座標上：例如兩個項目都設「右緣」且 X 相同，右邊會切齊；「自動」＝0% 靠左緣、50% 靠中心、100% 靠右緣。")
+                                // 對齊到其他懸浮項目：複製座標與基準點，上下或左右精準對齊
+                                val others = st.items.filter { it.fl && it.show && it.id != i.id }
+                                if (others.isNotEmpty()) {
+                                    WSub("對齊到其他懸浮項目")
+                                    others.forEach { o ->
+                                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Text((WallStyle.NAMES[o.id] ?: o.id) + "（${o.fx}%, ${o.fy}%）", Modifier.weight(1f), color = C.Text2, fontSize = 12.sp, maxLines = 1)
+                                            listOf("左" to 0, "中" to 1, "右" to 2).forEach { (n, an) ->
+                                                Text(n, color = C.Primary, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(C.Selected).clickable {
+                                                    // 兩者用同一水平基準點、同一 X：左／中／右切齊（上下排列的項目）
+                                                    set { s -> s.withItem(s.item(o.id).copy(fa = an)).let { s2 -> s2.withItem(s2.item(i.id).copy(fa = an, fx = o.fx)) } }
+                                                }.padding(horizontal = 8.dp, vertical = 4.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                            }
+                                            Text("同列", color = C.Primary, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(C.Selected).clickable {
+                                                set { s -> s.withItem(s.item(o.id).copy(fva = 1)).let { s2 -> s2.withItem(s2.item(i.id).copy(fva = 1, fy = o.fy)) } }
+                                            }.padding(horizontal = 8.dp, vertical = 4.dp))
+                                        }
+                                    }
+                                    Label("左／中／右：與該項目上下切齊（同一 X）；同列：與該項目中線對齊（同一 Y）。")
+                                }
                             } else WToggle("與上一項同一行", i.inline) { v -> upd { it.copy(inline = v) } }
+                            if (!i.fl) {
+                                WSub("位置微調（與上下行其他項目對齊）")
+                                WStep("水平偏移", i.ox, -60, 60, 1, " dp") { v -> upd { it.copy(ox = v) } }
+                                WStep("垂直偏移", i.oy, -40, 40, 1, " dp") { v -> upd { it.copy(oy = v) } }
+                            }
                             WChips("對齊", listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), i.align) { v -> upd { it.copy(align = v) } }
                             WStep("字級", i.size, 8, 60, 1, " sp") { v -> upd { it.copy(size = v) } }
                             WToggle("粗體", i.bold) { v -> upd { it.copy(bold = v) } }
@@ -461,6 +507,9 @@ fun WallStyleSettings(showPreview: Boolean = true) {
                                 val key = com.claudeetf.app.ui.FONT_OPTS[k].first
                                 upd { it.copy(font = key, mono = key == "mono") } }
 
+                            Box(Modifier.padding(vertical = 6.dp)) {
+                                com.claudeetf.app.ui.FxPicker(i.an, i.at, i.asp, i.apw) { f, t, sp, pw -> upd { it.copy(an = f, at = t, asp = sp, apw = pw) } }
+                            }
                             WSub("間距與字高（外距、內距、行距皆可設負值）")
                             WStep("外距・左右", i.mx, -8, 24, 1, " dp") { v -> upd { it.copy(mx = v) } }
                             WStep("外距・上下", i.my, -12, 24, 1, " dp") { v -> upd { it.copy(my = v) } }

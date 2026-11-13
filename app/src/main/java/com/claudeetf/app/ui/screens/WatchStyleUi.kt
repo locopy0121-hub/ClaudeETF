@@ -1,5 +1,6 @@
 package com.claudeetf.app.ui.screens
 
+import com.claudeetf.app.ui.textFx
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
@@ -85,41 +86,8 @@ internal fun StyledItem(ist: com.claudeetf.app.data.ItemStyle, recolor: Boolean,
  * 動畫值只在 graphicsLayer／drawBehind 讀取，不觸發重組。
  */
 @Composable
-private fun Modifier.itemEffect(ist: com.claudeetf.app.data.ItemStyle, q: Quote): Modifier {
-    val dur = when (ist.speed) { 0 -> 1400; 2 -> 450; else -> 800 }
-    val pw = when (ist.power) { 0 -> 0.5f; 2 -> 1.6f; else -> 1f }
-    val p = remember { androidx.compose.animation.core.Animatable(0f) }
-    var dir by remember { mutableStateOf(0) }
-    if (ist.trig == 0) {
-        LaunchedEffect(ist.fx, dur) {
-            while (true) {
-                p.animateTo(1f, androidx.compose.animation.core.tween(dur / 2))
-                p.animateTo(0f, androidx.compose.animation.core.tween(dur / 2))
-                if (ist.fx == 1) kotlinx.coroutines.delay(dur.toLong())
-            }
-        }
-    } else {
-        var last by remember { mutableStateOf(q.price) }
-        LaunchedEffect(q.price) {
-            val d = q.price.compareTo(last)
-            last = q.price
-            if (d == 0) return@LaunchedEffect
-            if ((ist.trig == 2 && d < 0) || (ist.trig == 3 && d > 0)) return@LaunchedEffect
-            dir = d
-            p.snapTo(0f)
-            p.animateTo(1f, androidx.compose.animation.core.tween(dur / 3))
-            p.animateTo(0f, androidx.compose.animation.core.tween(dur * 2 / 3))
-        }
-    }
-    val flashColor = Trend.fg(if (dir != 0) dir.toDouble() else q.change)
-    return when (ist.fx) {
-        1 -> graphicsLayer { alpha = 1f - 0.7f * p.value.coerceIn(0f, 1f) }
-        2 -> graphicsLayer { val s = 1f + 0.08f * pw * p.value; scaleX = s; scaleY = s }
-        3 -> drawBehind { drawRoundRect(flashColor.copy(alpha = (0.35f * pw * p.value).coerceIn(0f, 0.8f)), cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx())) }
-        4 -> graphicsLayer { translationY = -4f * pw * p.value * density }
-        else -> this
-    }
-}
+private fun Modifier.itemEffect(ist: com.claudeetf.app.data.ItemStyle, q: Quote): Modifier =
+    textFx(ist.fx, ist.trig, ist.speed, ist.power, q.price, Trend.fg(q.change))
 
 /** 預覽可點選：點了回報目標；選中的加框 */
 private class Tap(val sel: String?, val onTap: ((String) -> Unit)?)
@@ -694,15 +662,8 @@ internal fun ItemStyleEditor(cur: com.claudeetf.app.data.ItemStyle, allowColor: 
             }
         }
     }
-    Text("動畫效果", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-    Chips(listOf(0 to "無", 1 to "淡入", 2 to "脈衝", 3 to "變動閃爍", 4 to "跳動"), cur.fx) { v -> upd { it.copy(fx = v) } }
-    if (cur.fx > 0) {
-        Text("觸發條件", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-        Chips(listOf(0 to "常駐", 1 to "數值變動", 2 to "上漲時", 3 to "下跌時"), cur.trig) { v -> upd { it.copy(trig = v) } }
-        Text("速度", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-        Chips(listOf(0 to "慢", 1 to "正常", 2 to "快"), cur.speed) { v -> upd { it.copy(speed = v) } }
-        Text("強度", color = C.Text, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
-        Chips(listOf(0 to "弱", 1 to "中", 2 to "強"), cur.power) { v -> upd { it.copy(power = v) } }
+    Box(Modifier.padding(top = 8.dp)) {
+        com.claudeetf.app.ui.FxPicker(cur.fx, cur.trig, cur.speed, cur.power) { f, t, sp, pw -> upd { it.copy(fx = f, trig = t, speed = sp, power = pw) } }
     }
     if (!cur.isDefault) Text("此欄位恢復預設", color = C.Muted, fontSize = 12.sp,
         modifier = Modifier.clickable { upd { com.claudeetf.app.data.ItemStyle() } }.padding(top = 6.dp))

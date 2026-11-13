@@ -38,10 +38,22 @@ data class WallItem(
     val fy: Int = 30,
     /** 字體（FONT_OPTS 代號；空白＝依「等寬」設定） */
     val font: String = "",
+    /** 懸浮對齊基準點：水平 0 左緣、1 中心、2 右緣、3 自動（依位置）；垂直 0 上緣、1 中線、2 下緣、3 自動 */
+    val fa: Int = 3,
+    val fva: Int = 3,
+    /** 位置微調（dp，可負）：流動排版的項目也能逐一對齊上下其他項目 */
+    val ox: Int = 0,
+    val oy: Int = 0,
+    /** 文字動畫（TextFx）：款式、觸發、速度、強度 */
+    val an: Int = 0,
+    val at: Int = 1,
+    val asp: Int = 1,
+    val apw: Int = 1,
 ) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("s", show).put("h", head).put("i", inline).put("a", align)
         .put("z", size).put("b", bold).put("c", color).put("m", mono).put("l", label)
         .put("mx", mx).put("my", my).put("px", px).put("py", py).put("lg", lg).put("lh", lh).put("bg", bg).put("ba", ba).put("lc", lc).put("fl", fl).put("fx", fx).put("fy", fy).put("f", font)
+        .put("fa", fa).put("fva", fva).put("ox", ox).put("oy", oy).put("an", an).put("at", at).put("asp", asp).put("apw", apw)
 
     companion object {
         fun fromJson(o: JSONObject, d: WallItem) = WallItem(
@@ -52,6 +64,9 @@ data class WallItem(
             o.optInt("bg", d.bg).coerceIn(0, 7), o.optInt("ba", d.ba).coerceIn(10, 100), o.optInt("lc", d.lc).coerceIn(0, 5),
             o.optBoolean("fl", d.fl), o.optInt("fx", d.fx).coerceIn(0, 100), o.optInt("fy", d.fy).coerceIn(0, 100),
             o.optString("f", d.font),
+            o.optInt("fa", d.fa).coerceIn(0, 3), o.optInt("fva", d.fva).coerceIn(0, 3),
+            o.optInt("ox", d.ox).coerceIn(-60, 60), o.optInt("oy", d.oy).coerceIn(-40, 40),
+            o.optInt("an", d.an).coerceIn(0, 16), o.optInt("at", d.at).coerceIn(0, 3), o.optInt("asp", d.asp).coerceIn(0, 2), o.optInt("apw", d.apw).coerceIn(0, 2),
         )
     }
 }
