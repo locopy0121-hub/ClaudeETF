@@ -100,6 +100,7 @@ fun Modifier.textFx(style: Int, trig: Int, speed: Int, power: Int, value: Double
         when {
             enter -> { p.snapTo(1f); p.animateTo(0f, if (style == 20) androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 380f) else tween(dur, easing = if (style == 18) LinearEasing else FastOutSlowInEasing)) }
             style == 8 || style == 15 -> { p.snapTo(0f); p.animateTo(1f, tween(dur, easing = LinearEasing)); p.snapTo(0f) }
+            style == 19 -> { p.snapTo(0f); p.animateTo(1f, tween(dur * 4, easing = LinearEasing)); p.snapTo(0f) }
             else -> { p.snapTo(0f); p.animateTo(1f, tween(dur / 3)); p.animateTo(0f, tween(dur * 2 / 3)) }
         }
     }
@@ -177,7 +178,7 @@ fun Modifier.textFx(style: Int, trig: Int, speed: Int, power: Int, value: Double
         // 打字機：由左到右逐步顯現
         18 -> drawWithContent { clipRect(right = size.width * (1f - p.value)) { this@drawWithContent.drawContent() } }
         // 跑馬燈：在自身範圍內由右往左循環
-        19 -> graphicsLayer { clip = true; translationX = size.width * (1f - 2f * p.value) }
+        19 -> graphicsLayer { clip = true; translationX = if (p.value <= 0f || p.value >= 1f) 0f else size.width * (1f - 2f * p.value) }
         // 彈性浮現：由小彈到原尺寸（彈簧可略為超過）
         20 -> graphicsLayer { val s = (1f - 0.45f * pw.coerceAtMost(1.3f) * p.value).coerceAtLeast(0.2f); scaleX = s; scaleY = s; alpha = (1f - p.value).coerceIn(0.2f, 1f) }
         else -> this
