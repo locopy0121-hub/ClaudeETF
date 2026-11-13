@@ -413,6 +413,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
 
             if (section == "backup") {
                 item { DataCard() }
+                item { ProfileCard() }
             }
 
             if (section == "security") {
@@ -650,7 +651,7 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
             }
             if (section == "monitor") item { MonitorSettings() }
             if (section == "kcond") item { KCondSettings() }
-            if (section == "studio") item { EditorStudio(nav) }
+            if (section == "studio") { item { EditorStudio(nav) }; item { ProfileCard() } }
             if (section == "analysis") item { AnalysisSettings() }
             if (section == "ai") item { AiSettings() }
             if (section == "widget") item { WidgetSettings() }
@@ -1287,7 +1288,7 @@ private fun SettingsMenu(nav: NavController, version: String) {
         "backup" -> "匯出、匯入與備份"
         "alerts" -> "${AppState.alerts.count { it.enabled }} 項開啟"
         "analysis" -> if (com.claudeetf.app.data.AnalysisConfig.isDefault) "預設值" else "已自訂"
-        "studio" -> "行情卡片、行情牆、跑馬燈等樣式與文字動畫"
+        "studio" -> "各板塊樣式、文字動畫與設定檔（存檔／讀取／套用）"
         "kcond" -> com.claudeetf.app.data.KlineConditions.enabled().size.let { if (it == 0) "未開啟" else "$it 項條件" } + (if (AppState.kcondNotify) " · 達成通知" else "")
         "widget" -> listOf("跟隨 App", "深色", "淺色", "透明")[AppState.widgetStyle.theme.coerceIn(0, 3)] + " · " +
             (if (AppState.widgetStyle.source == 0) "持股" else "自選") + " ${AppState.widgetStyle.rows} 列"

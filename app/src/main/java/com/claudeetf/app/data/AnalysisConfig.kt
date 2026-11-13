@@ -76,6 +76,9 @@ object AnalysisConfig {
             return state
         }
 
+    /** 套用設定檔後重新從偏好設定讀取 */
+    fun reloadFromPrefs() { loaded = false }
+
     fun update(f: (Cfg) -> Cfg) {
         val n = f(cfg)
         state = n
