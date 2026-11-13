@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -213,17 +214,23 @@ private fun OptToggleSmall(label: String, on: Boolean, set: (Boolean) -> Unit) {
 /** 指定 ETF 配息試算：單次目標配息 → 需要張數、參考本金，與目前持股比較 */
 @Composable
 fun DivSimulatorCard() {
-    val candidates = (AppState.holdings.mapNotNull { AppState.quote(it.symbol) } +
+    // 搜尋任選的個股／ETF（不在持股與自選中也可以試算）
+    var extra by remember { mutableStateOf<com.claudeetf.app.data.Quote?>(null) }
+    var query by remember { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val candidates = (listOfNotNull(extra) + AppState.holdings.mapNotNull { AppState.quote(it.symbol) } +
         AppState.quotes.filter { EtfTags.isEtf(it) }).distinctBy { it.symbol }.filter { it.price > 0 }
-    if (candidates.isEmpty()) return
-    var sym by remember { mutableStateOf(candidates.first().symbol) }
+    if (candidates.isEmpty() && extra == null) return
+    var sym by remember { mutableStateOf(candidates.firstOrNull()?.symbol ?: "") }
     val q = candidates.firstOrNull { it.symbol == sym } ?: candidates.first()
     var targetText by remember { mutableStateOf("10000") }
     var custom by remember { mutableStateOf(false) }
     var customText by remember { mutableStateOf("") }
     var whole by remember { mutableStateOf(true) }
-    LaunchedEffect(q.symbol) { EtfTags.ensureFreq(q) }
-    val last = EtfTags.divs[q.symbol]?.firstOrNull()
+    LaunchedEffect(q.symbol) { EtfTags.ensureFreq(q); com.claudeetf.app.data.DivPortfolio.ensure(q.symbol, q.name) }
+    val last = EtfTags.divs[q.symbol]?.firstOrNull() ?: com.claudeetf.app.data.DivPortfolio.infos[q.symbol]?.takeIf { it.last > 0 }
+        ?.let { com.claudeetf.app.data.remote.YahooExtra.Dividend(it.lastTime, it.last) }
     val perUnit = if (custom) customText.toDoubleOrNull() ?: 0.0 else last?.amount ?: 0.0
     val target = targetText.toDoubleOrNull() ?: 0.0
     val sim = DividendFlow.simulate(q, target, perUnit, whole)
@@ -238,6 +245,20 @@ fun DivSimulatorCard() {
                     modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.Primary else C.Bg).clickable { sym = c.symbol }.padding(horizontal = 11.dp, vertical = 6.dp))
             }
         }
+        OutlinedTextField(query, { query = it }, placeholder = { Text("搜尋任一個股或 ETF（代號、名稱）", fontSize = 13.sp) }, singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp), colors = fieldColors())
+        StockSuggestions(query, maxHeight = 220.dp, onPick = { it ->
+            query = ""; searching = true
+            scope.launch {
+                val inf = com.claudeetf.app.data.DivPortfolio.ensure(it.symbol, it.name)
+                if (inf != null) {
+                    extra = com.claudeetf.app.data.Quote(inf.symbol, inf.name, inf.market, inf.price, inf.price, isEtf = inf.isEtf)
+                    sym = inf.symbol
+                }
+                searching = false
+            }
+        })
+        if (searching) Label("讀取價格與配息紀錄中…")
         Text(q.symbol + " " + q.name, color = C.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
         OutlinedTextField(targetText, { targetText = it.filter { c -> c.isDigit() } }, label = { Text("單次目標配息（稅前，台幣）") }, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp), colors = fieldColors(),

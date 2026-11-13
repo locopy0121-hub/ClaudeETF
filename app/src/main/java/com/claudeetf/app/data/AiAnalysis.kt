@@ -231,6 +231,50 @@ object AiAnalysis {
         }
     }
 
+    /**
+     * 通用 AI 問答（配息組合推薦等）：依優先順序嘗試已設定的服務，回傳（文字, 服務名稱 · 模型）。
+     * 只傳入本地整理好的數據，不讓 AI 自行推估數字。
+     */
+    suspend fun ask(system: String, user: String, maxTokens: Int = 1500): Pair<String, String> = withContext(Dispatchers.IO) {
+        if (!AppState.aiOn) throw IllegalStateException("AI 功能未開啟")
+        val chain = AiProviders.chain()
+        if (chain.isEmpty()) throw IllegalStateException("未設定 AI 服務金鑰")
+        var last: Throwable? = null
+        for (p in chain) {
+            val r = runCatching {
+                val key = AppState.aiKey(p.id); val model = AiProviders.modelOf(p)
+                val req = when (p.kind) {
+                    AiProviders.Kind.ANTHROPIC -> Request.Builder().url(AiProviders.urlOf(p) + "/messages")
+                        .header("x-api-key", key).header("anthropic-version", "2023-06-01")
+                        .post(JSONObject().put("model", model).put("max_tokens", maxTokens).put("temperature", 0.2)
+                            .put("system", system)
+                            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", user))).toString()
+                            .toRequestBody("application/json".toMediaType())).build()
+                    AiProviders.Kind.OPENAI -> Request.Builder().url(AiProviders.urlOf(p) + "/chat/completions")
+                        .header("Authorization", "Bearer $key")
+                        .post(JSONObject().put("model", model).put("max_tokens", maxTokens).put("temperature", 0.2)
+                            .put("messages", JSONArray().put(JSONObject().put("role", "system").put("content", system))
+                                .put(JSONObject().put("role", "user").put("content", user))).toString()
+                            .toRequestBody("application/json".toMediaType())).build()
+                }
+                client.newCall(req).execute().use { r ->
+                    val txt = r.body?.string().orEmpty()
+                    if (!r.isSuccessful) throw IllegalStateException("HTTP ${r.code} " + (runCatching { JSONObject(txt).optJSONObject("error")?.optString("message") }.getOrNull() ?: ""))
+                    val o = JSONObject(txt)
+                    val text = when (p.kind) {
+                        AiProviders.Kind.ANTHROPIC -> o.optJSONArray("content")?.let { c -> (0 until c.length()).mapNotNull { c.optJSONObject(it) }.joinToString("") { it.optString("text") } }
+                        AiProviders.Kind.OPENAI -> o.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")
+                    }.orEmpty()
+                    if (text.isBlank()) throw IllegalStateException("回應沒有內容")
+                    text to (p.name + " · " + model)
+                }
+            }
+            r.getOrNull()?.let { return@withContext it }
+            last = r.exceptionOrNull()
+        }
+        throw IllegalStateException(friendlyAi(last))
+    }
+
     /** 設定頁「測試連線」：送一個極短請求確認金鑰與模型可用 */
     suspend fun test(p: AiProviders.Provider): String = withContext(Dispatchers.IO) {
         runCatching {

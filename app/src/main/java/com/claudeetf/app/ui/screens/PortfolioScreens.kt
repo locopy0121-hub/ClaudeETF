@@ -870,6 +870,7 @@ fun DividendScreen(nav: NavController) {
             item { EtfDividendCard { nav.navigate(Routes.stock(it)) } }
             item { DivHoldingList(nav) }
             item { DivSimulatorCard() }
+            item { DivComboCard(nav) }
             item {
                 Card(padding = 14.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
