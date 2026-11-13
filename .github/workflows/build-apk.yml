@@ -61,7 +61,7 @@ jobs:
           name: ClaudeETF-v1.${{ env.MINOR }}.${{ env.PATCH }}
           path: ${{ steps.apk.outputs.name }}
 
-      # 每次推送都會建置、測試並發布線上更新。
+      # 每次推送都會建置與測試；線上更新只在「[發布]」或手動執行時發布。
       # 更新說明：彙整上次發布以來的 commit 訊息，去掉署名行與 [發布] 標記
       - name: Release notes
         run: |
@@ -82,8 +82,11 @@ jobs:
           google-chrome --headless=new --no-sandbox --disable-gpu --no-pdf-header-footer --print-to-pdf="$PWD/ClaudeETF-Manual.pdf" file:///tmp/manual.html
           ls -la ClaudeETF-Manual.pdf
 
-      # 發布到 Releases，手機直接下載安裝；App 內線上更新也從這裡取得
+      # 發布到 Releases，手機直接下載安裝；App 內線上更新也從這裡取得。
+      # 目前暫停自動發布：只有 commit 訊息含「[發布]」或手動執行（workflow_dispatch）才發布線上更新；
+      # 其餘推送只建置、測試並保留 APK 於 Actions artifacts。
       - uses: softprops/action-gh-release@v2
+        if: contains(github.event.head_commit.message, '[發布]') || github.event_name == 'workflow_dispatch'
         with:
           tag_name: v1.${{ env.MINOR }}.${{ env.PATCH }}
           name: ClaudeETF v1.${{ env.MINOR }}.${{ env.PATCH }}

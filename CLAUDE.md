@@ -1,6 +1,6 @@
 # ClaudeETF（台美股資產）開發規範
 
-Android 原生 App：Kotlin＋Jetpack Compose（Material3）。只在 GitHub Actions 建置（`.github/workflows/build-apk.yml`：先跑 `testReleaseUnitTest`，再 `assembleRelease`，成功即發布 Release，App 內線上更新）。所有文字、更新說明、commit 訊息一律使用繁體中文。
+Android 原生 App：Kotlin＋Jetpack Compose（Material3）。只在 GitHub Actions 建置（`.github/workflows/build-apk.yml`：先跑 `testReleaseUnitTest`，再 `assembleRelease`；**目前暫停自動發布**，commit 訊息含「[發布]」或手動執行 workflow 才發布 Release／App 內線上更新）。所有文字、更新說明、commit 訊息一律使用繁體中文。
 
 ## 1. 架構（實際專案結構）
 - 狀態：`data/AppState.kt` 單例（Compose `mutableStateOf`／`mutableStateListOf`），以 SharedPreferences「claudeetf」保存；機密（金鑰）用 `saveSecret／loadSecret`（Keystore 加密）。
