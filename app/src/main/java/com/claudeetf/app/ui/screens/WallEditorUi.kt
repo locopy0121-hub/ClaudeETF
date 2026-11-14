@@ -41,7 +41,7 @@ object WallEdit {
     fun apply(f: (WallStyle) -> WallStyle) = Hist.wall.apply(f)
     fun undo() = Hist.wall.undo()
     fun redo() = Hist.wall.redo()
-    fun openSheet() { Hist.wall.begin(); sheet = true }
+    fun openSheet() { Hist.wall.begin(); DeckTab.tab = 0; sheet = true }
     /** 完成：保留修改 */
     fun done() { Hist.wall.end(); sheet = false }
     /** 取消：還原到開始編輯前 */
@@ -124,20 +124,36 @@ fun WallEditSheet() {
     if (!WallEdit.sheet) return
     val id = WallEdit.sel ?: run { WallEdit.sheet = false; return }
     val st = AppState.wallStyle
-    var ai by remember { mutableStateOf(false) }
-    if (ai) {
-        val cur = st.item(id)
-        AiStyleDialog(WallStyle.NAMES[id] ?: id, cur.toJson(), wallItemSchema(), listOf("放大加粗", "改成金色", "加上膠囊底色", "數字跳動時閃一下", "靠右對齊"),
-            onDismiss = { ai = false }) { patch -> mergeWallItem(id, patch) }
-    }
-    DockedPanel(onDismiss = { WallEdit.done() }) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            DeckHeader(WallStyle.NAMES[id] ?: id, "持股行情牆 · 套用到全部格子", Hist.wall, AbSlots.Target.WALL,
-                onAi = { ai = true }, onCancel = { WallEdit.cancel() }, onDone = { WallEdit.done() })
+    val name = WallStyle.NAMES[id] ?: id
+    val ai = AiSpec(name, listOf("欄寬 60% 適寬", "放大加粗", "拉開主次對比", "修正閱讀對比", "改成金色", "加上膠囊底色", "數字跳動時閃一下"),
+        current = { AppState.wallStyle.item(id).toJson() }, schema = wallItemSchema(),
+        apply = { p -> mergeWallItem(id, p) },
+        cardCurrent = { org.json.JSONObject().also { o -> AppState.wallStyle.items.filter { it.show }.forEach { o.put(it.id, it.toJson()) } } },
+        cardApply = { p ->
+            val all = mutableListOf<String>()
+            WallEdit.apply { s0 ->
+                var s1 = s0
+                s0.items.filter { it.show }.forEach { it0 ->
+                    val pp = p.optJSONObject(it0.id) ?: return@forEach
+                    val (n, ch) = patchWallItem(s1.item(it0.id), pp)
+                    if (ch.isNotEmpty()) { all += ch; s1 = s1.withItem(n) }
+                }
+                s1
+            }
+            all.distinct()
+        })
+    DesignerPanel("持股行情牆", name, Hist.wall, AbSlots.Target.WALL, ai,
+        onCopy = { StylePaint.wall = AppState.wallStyle.item(id) },
+        onPaste = { StylePaint.wall?.let { c -> WallEdit.apply { s -> s.withItem(s.item(id).let { cur -> cur.copy(size = c.size, bold = c.bold, color = c.color, mono = c.mono, font = c.font,
+            bg = c.bg, ba = c.ba, lc = c.lc, lh = c.lh, px = c.px, py = c.py, italic = c.italic, under = c.under, strike = c.strike, tnum = c.tnum,
+            an = c.an, at = c.at, asp = c.asp, apw = c.apw, fit = c.fit, bh = c.bh) }) } } },
+        canPaste = StylePaint.wall != null,
+        onCancel = { WallEdit.cancel() }, onDone = { WallEdit.done() },
+        top = {
             // 切換要編輯的項目（分頁保持不變）
             Row(Modifier.fillMaxWidth().padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("項目", color = C.Muted, fontSize = 11.sp)
+                Text("☰ 項目", color = C.Muted, fontSize = 11.sp)
                 st.items.filter { it.show || it.id == id }.forEach { o ->
                     val on = o.id == id
                     Text(WallStyle.NAMES[o.id] ?: o.id, color = if (on) C.OnPrimary else C.Text2, fontSize = 12.sp,
@@ -145,10 +161,8 @@ fun WallEditSheet() {
                             .padding(horizontal = 10.dp, vertical = 4.dp))
                 }
             }
-            Box(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 56.dp)) {
-                WallItemEditor(st.item(id), st) { f -> WallEdit.apply(f) }
-            }
-        }
+        }) {
+        WallItemEditor(st.item(id), st) { f -> WallEdit.apply(f) }
     }
 }
 
@@ -166,17 +180,25 @@ fun wallItemSchema(): String = buildString {
     appendLine("at: 觸發 0 常駐、1 數值變動、2 上漲時、3 下跌時、4 進場時；asp: 速度 0~2；apw: 強度 0~2")
 }
 
-/** 套用 AI 修改到行情牆項目（只接受允許欄位；範圍由 WallItem.fromJson 限制）；記入復原歷史 */
-fun mergeWallItem(id: String, patch: org.json.JSONObject): List<String> {
+/** 把 AI 修改合併進行情牆項目（只接受允許欄位；範圍由 WallItem.fromJson 限制）；回傳新項目與改了哪些 */
+fun patchWallItem(cur: WallItem, patch: org.json.JSONObject): Pair<WallItem, List<String>> {
     val names = linkedMapOf("z" to "字級", "b" to "粗體", "it" to "斜體", "ul" to "底線", "sk" to "刪除線", "tn" to "等寬數字",
         "c" to "文字顏色", "bg" to "底色", "ba" to "底色濃度", "a" to "對齊", "h" to "標題列", "mx" to "外距", "my" to "外距",
         "px" to "內距", "py" to "內距", "ox" to "水平位移", "oy" to "垂直位移", "fl" to "懸浮", "fx" to "X 座標", "fy" to "Y 座標",
-        "fa" to "水平基準點", "fva" to "垂直基準點", "bw" to "欄寬", "bh" to "欄高", "fit" to "適寬字體", "an" to "動畫", "at" to "動畫觸發", "asp" to "動畫速度", "apw" to "動畫強度")
-    val cur = AppState.wallStyle.item(id)
+        "fa" to "水平基準點", "fva" to "垂直基準點", "bw" to "欄寬", "bh" to "欄高", "fit" to "適寬字體",
+        "an" to "動畫", "at" to "動畫觸發", "asp" to "動畫速度", "apw" to "動畫強度")
     val o = org.json.JSONObject()
     names.keys.forEach { k -> if (patch.has(k)) { val v = patch.get(k); if (v is Number || v is Boolean) o.put(k, v) } }
-    val next = WallItem.fromJson(o, cur)
-    if (next == cur) return emptyList()
-    WallEdit.apply { it.withItem(next) }
-    return names.filterKeys { o.has(it) }.values.distinct()
+    var next = WallItem.fromJson(o, cur)
+    // 適寬防呆：開啟適寬但未設欄寬與欄高時，自動設欄寬 50%
+    if (next.fit && next.bw == 0 && next.bh == 0) next = next.copy(bw = 50)
+    if (next == cur) return cur to emptyList()
+    return next to names.filterKeys { o.has(it) }.values.distinct()
+}
+
+/** 套用 AI 修改到行情牆單一項目；記入復原歷史 */
+fun mergeWallItem(id: String, patch: org.json.JSONObject): List<String> {
+    val (next, ch) = patchWallItem(AppState.wallStyle.item(id), patch)
+    if (ch.isNotEmpty()) WallEdit.apply { it.withItem(next) }
+    return ch
 }

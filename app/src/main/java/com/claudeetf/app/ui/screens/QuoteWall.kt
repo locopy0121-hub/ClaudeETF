@@ -33,6 +33,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.compositeOver
 import kotlin.math.roundToInt
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -541,8 +542,14 @@ fun WallStyleSettings(showPreview: Boolean = true) {
 @Composable
 fun WallItemEditor(i: WallItem, st: WallStyle, set: ((WallStyle) -> WallStyle) -> Unit) {
     fun upd(f: (WallItem) -> WallItem) = set { it.withItem(f(it.item(i.id))) }
-    val tabs = listOf("排版", "色彩", "版面", "動效")
+    val tabs = listOf("⚡ 常用", "排印", "版面", "色彩", "動態")
     val tab = DeckTab.tab.coerceIn(0, tabs.lastIndex)
+    // 閱讀對比（以上漲色示意依漲跌的項目）
+    val bgc = when (i.bg) { 1 -> Trend.fg(1.0); 2 -> Trend.fg(1.0); 3 -> C.Muted; 4 -> GOLD; 5 -> C.Primary; 6 -> Color.White; 7 -> C.Bg; else -> null }
+        ?.copy(alpha = i.ba / 100f)?.compositeOver(C.Card) ?: C.Card
+    val fgc = when (i.color) { 1, 6 -> Trend.fg(1.0); 2 -> C.Text; 3 -> C.Muted; 4 -> GOLD; 5 -> C.Primary
+        else -> if (i.bg != 0 && i.ba >= 60) onColor(bgc) else if (i.id in setOf("price", "arrow", "chg", "pct", "day", "pl", "ret")) Trend.fg(1.0) else C.Text }
+    val fixContrast = { upd { it.copy(color = if (it.bg != 0 && it.ba >= 60) 0 else 2) } }
     Column(Modifier.fillMaxWidth()) {
         DeckTabs(tabs, tab) { DeckTab.tab = it }
         // 摘要：一眼看出目前設定
@@ -552,7 +559,29 @@ fun WallItemEditor(i: WallItem, st: WallStyle, set: ((WallStyle) -> WallStyle) -
             "動畫：" + (if (i.an == 0) "無" else com.claudeetf.app.ui.TextFx.nameOf(i.an)),
         ).joinToString("　"))
 
-        when (tab) {
+        if (tab == 0) {
+            SliderRow("欄寬比例", i.bw, 0, 100, 5, "%", sub = "0＝自動", show = { if (it == 0) "自動" else "$it%" }) { v -> upd { it.copy(bw = v) } }
+            SliderRow("欄高尺寸", i.bh, 0, 160, 2, " dp", sub = "0＝自動", show = { if (it == 0) "自動" else "$it dp" }) { v -> upd { it.copy(bh = v) } }
+            SwitchRow("適寬字體", if (i.bw == 0 && i.bh == 0) "開啟時自動設欄寬 50%" else "自動縮放填滿欄寬或欄高", i.fit) { v ->
+                upd { it.copy(fit = v, bw = if (v && it.bw == 0 && it.bh == 0) 50 else it.bw) } }
+            PropertyRow("字體樣式") {
+                StyleToggles(i.bold, i.italic, i.under, i.strike, i.tnum,
+                    onBold = { v -> upd { it.copy(bold = v) } }, onItalic = { v -> upd { it.copy(italic = v) } },
+                    onUnder = { v -> upd { it.copy(under = v) } }, onStrike = { v -> upd { it.copy(strike = v) } }, onTnum = { v -> upd { it.copy(tnum = v) } })
+            }
+            ChipsRow("對齊", listOf(0 to "靠左", 1 to "置中", 2 to "靠右"), i.align) { v -> upd { it.copy(align = v) } }
+            SliderRow("字級微調", i.size, 8, 60, 1, " sp", sub = if (i.fit) "適寬時為基準" else null) { v -> upd { it.copy(size = v) } }
+            ChipsRow("氛圍色票", COLOR_OPTS, i.color) { v -> upd { it.copy(color = v) } }
+            PropertyRow("閱讀對比") { ContrastBadge(fgc, bgc, fixContrast) }
+            if (i.fl) {
+                NudgeRow("水平位置 X", i.fx, "%", "◀", "▶", listOf(1, 5), { d -> upd { it.copy(fx = (it.fx + d).coerceIn(0, 100)) } }) { upd { it.copy(fx = 50) } }
+                NudgeRow("垂直位置 Y", i.fy, "%", "▲", "▼", listOf(1, 5), { d -> upd { it.copy(fy = (it.fy + d).coerceIn(0, 100)) } }) { upd { it.copy(fy = 50) } }
+            } else {
+                NudgeRow("水平微調 X", i.ox, "dp", "◀", "▶", listOf(1, 4, 8), { d -> upd { it.copy(ox = (it.ox + d).coerceIn(-60, 60)) } }) { upd { it.copy(ox = 0) } }
+                NudgeRow("垂直微調 Y", i.oy, "dp", "▲", "▼", listOf(1, 4, 8), { d -> upd { it.copy(oy = (it.oy + d).coerceIn(-40, 40)) } }) { upd { it.copy(oy = 0) } }
+            }
+            MotionRow(i.an, i.asp, i.apw) { sp, pw -> upd { it.copy(asp = sp, apw = pw) } }
+        } else when (when (tab) { 1 -> 0; 3 -> 1; 2 -> 2; else -> 3 }) {
             0 -> {
                 DeckGroup("文字樣式") {
                     StyleToggles(i.bold, i.italic, i.under, i.strike, i.tnum,
@@ -575,6 +604,7 @@ fun WallItemEditor(i: WallItem, st: WallStyle, set: ((WallStyle) -> WallStyle) -
                 val graded = i.id == "entry" || i.id == "band" || i.id == "rank" || i.id == "kbar"
                 DeckGroup("文字顏色") {
                     WChips(null, COLOR_OPTS + (if (graded) listOf(6 to "依等級") else emptyList()), i.color) { v -> upd { it.copy(color = v) } }
+                    ContrastBadge(fgc, bgc, fixContrast)
                 }
                 DeckGroup("標籤底色") {
                     WChips(null, BG_OPTS.filter { it.first != 2 || graded }, i.bg) { v -> upd { it.copy(bg = v) } }
@@ -649,8 +679,11 @@ fun WallItemEditor(i: WallItem, st: WallStyle, set: ((WallStyle) -> WallStyle) -
                         upd { it.copy(lh = if (v in 1..69) (if (v > it.lh) 70 else 0) else v) } }
                 }
             }
-            else -> DeckGroup {
-                com.claudeetf.app.ui.FxPicker(i.an, i.at, i.asp, i.apw) { f, t, sp, pw -> upd { it.copy(an = f, at = t, asp = sp, apw = pw) } }
+            else -> {
+                MotionRow(i.an, i.asp, i.apw) { sp, pw -> upd { it.copy(asp = sp, apw = pw) } }
+                DeckGroup {
+                    com.claudeetf.app.ui.FxPicker(i.an, i.at, i.asp, i.apw) { f, t, sp, pw -> upd { it.copy(an = f, at = t, asp = sp, apw = pw) } }
+                }
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {

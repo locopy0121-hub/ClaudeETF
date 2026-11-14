@@ -146,14 +146,9 @@ fun DockedPanel(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Un
     }
 }
 
-/** 從預覽點項目叫出的編輯工具：停靠在預覽下方；頂部為復原／比較／方案／AI 與完成 */
+/** 從預覽點項目叫出的編輯工具：設計師工具艙 */
 @Composable
-fun ItemEditSheet(title: String, subtitle: String, hist: StyleHistory<*>, ab: AbSlots.Target,
-                  onAi: (() -> Unit)?, onCancel: () -> Unit, onDone: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    DockedPanel(onDismiss = onDone) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-            DeckHeader(title, subtitle, hist, ab, onAi, onCancel, onDone)
-            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 2.dp, bottom = 56.dp), content = content)
-        }
-    }
-}
+fun ItemEditSheet(crumb: String, item: String, hist: StyleHistory<*>, ab: AbSlots.Target, ai: AiSpec?,
+                  onCopy: (() -> Unit)?, onPaste: (() -> Unit)?, canPaste: Boolean,
+                  onCancel: () -> Unit, onDone: () -> Unit, content: @Composable ColumnScope.() -> Unit) =
+    DesignerPanel(crumb, item, hist, ab, ai, onCopy, onPaste, canPaste, onCancel, onDone, content = content)

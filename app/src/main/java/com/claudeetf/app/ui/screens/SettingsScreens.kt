@@ -1380,22 +1380,39 @@ internal fun HoldStylePreview() {
     com.claudeetf.app.ui.FxDemo {
     Column(Modifier.fillMaxWidth().trackPreviewEdge().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
         Label("預覽：點任一項目叫出編輯工具", Modifier.padding(top = 4.dp))
-        samples.forEach { h -> HoldingRow(h, true, st, sel = EditSel.hold, onPick = { Hist.hold.begin(); EditSel.hold = it; EditSel.holdSheet = true }) {} }
+        samples.forEach { h -> HoldingRow(h, true, st, sel = EditSel.hold, onPick = { Hist.hold.begin(); if (!EditSel.holdSheet) DeckTab.tab = 0; EditSel.hold = it; EditSel.holdSheet = true }) {} }
     }
     val hid = EditSel.hold
     if (EditSel.holdSheet && hid != null) {
         val HS = com.claudeetf.app.data.HoldStyle
-        var ai by remember { mutableStateOf(false) }
         val allow = hid !in HS.NO_RECOLOR
-        if (ai) AiStyleDialog(HS.NAMES[hid] ?: hid, AppState.holdStyle.style(hid).toJson(), itemStyleSchema(allow), listOf("放大加粗", "改成金色", "依漲跌變色", "加上底色", "數字跳動時閃一下"),
-            onDismiss = { ai = false }) { patch ->
-            val (n, changed) = mergeItemStyle(AppState.holdStyle.style(hid), patch, allow)
-            if (changed.isNotEmpty()) Hist.hold.apply { it.withStyle(hid, n) }
-            changed
-        }
+        val ai = AiSpec(HS.NAMES[hid] ?: hid, listOf("放大加粗", "等寬數字", "依漲跌變色", "加上底色", "拉開主次對比", "修正閱讀對比"),
+            current = { AppState.holdStyle.style(hid).toJson() }, schema = itemStyleSchema(allow),
+            apply = { patch ->
+                val (n, changed) = mergeItemStyle(AppState.holdStyle.style(hid), patch, allow)
+                if (changed.isNotEmpty()) Hist.hold.apply { it.withStyle(hid, n) }
+                changed
+            },
+            cardCurrent = { org.json.JSONObject().also { o -> AppState.holdStyle.items.filter { AppState.holdStyle.shows(it) }.forEach { k -> o.put(k, AppState.holdStyle.style(k).toJson()) } } },
+            cardApply = { patch ->
+                val all = mutableListOf<String>()
+                Hist.hold.apply { s0 ->
+                    var s = s0
+                    s0.items.filter { s0.shows(it) }.forEach { k ->
+                        val p = patch.optJSONObject(k) ?: return@forEach
+                        val (n, ch) = mergeItemStyle(s.style(k), p, k !in HS.NO_RECOLOR)
+                        if (ch.isNotEmpty()) { all += ch; s = s.withStyle(k, n) }
+                    }
+                    s
+                }
+                all.distinct()
+            })
         fun close() { Hist.hold.end(); EditSel.holdSheet = false; EditSel.hold = null }
-        ItemEditSheet(HS.NAMES[hid] ?: hid, "持股卡片 · 套用到全部持股", Hist.hold, AbSlots.Target.HOLD,
-            onAi = { ai = true }, onCancel = { Hist.hold.cancel(); close() }, onDone = { close() }) {
+        ItemEditSheet("持股卡片", HS.NAMES[hid] ?: hid, Hist.hold, AbSlots.Target.HOLD, ai,
+            onCopy = { StylePaint.item = AppState.holdStyle.style(hid) },
+            onPaste = { StylePaint.item?.let { c -> Hist.hold.apply { s -> val cur = s.style(hid); s.withStyle(hid, c.copy(ox = cur.ox, oy = cur.oy, width = cur.width)) } } },
+            canPaste = StylePaint.item != null,
+            onCancel = { Hist.hold.cancel(); close() }, onDone = { close() }) {
             HoldItemDetail(hid, withOrder = true)
         }
     }

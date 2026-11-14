@@ -100,6 +100,8 @@ object AbSlots {
         AppState.cachePut("ab_${t.key}_on", slot)
         tick++
     }
+    /** 把目前設定直接存入指定方案（不切換） */
+    fun saveTo(t: Target, slot: String) { AppState.cachePut("ab_${t.key}_$slot", current(t)); tick++ }
 }
 
 /** 工具艙頂部：標題、取消／完成、復原重做、按住比較、A/B、AI */
@@ -174,7 +176,7 @@ fun DeckGroup(title: String? = null, content: @Composable ColumnScope.() -> Unit
 fun StepperSlider(label: String, value: Int, min: Int, max: Int, step: Int = 1, unit: String = "",
                   show: ((Int) -> String)? = null, onChange: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, maxLines = 2)
+        if (label.isNotEmpty()) Text(label, Modifier.width(56.dp), color = C.Text, fontSize = 13.sp, maxLines = 2)
         StepBtn("－", value > min) { onChange((value - step).coerceAtLeast(min)) }
         var drag by remember(value) { mutableFloatStateOf(value.toFloat()) }
         val n = (max - min) / step
@@ -226,8 +228,8 @@ fun SwatchRow(label: String, value: Long, trend: Boolean?, onPick: (Long, Boolea
         onPick = { c -> onPick(c.toArgb().toLong() and 0xFFFFFFFFL, false); picking = false },
         onReset = { onPick(0L, false); picking = false }, onDismiss = { picking = false })
     Column {
-        Text(label, color = C.Text, fontSize = 13.sp)
-        Row(Modifier.padding(top = 4.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (label.isNotEmpty()) Text(label, color = C.Text, fontSize = 13.sp)
+        Row(Modifier.padding(top = if (label.isNotEmpty()) 4.dp else 0.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val none = value == 0L && trend != true
             Text("預設", color = if (none) C.OnPrimary else C.Text2, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(14.dp))
                 .background(if (none) C.Primary else C.Card).clickable { onPick(0L, false) }.padding(horizontal = 10.dp, vertical = 6.dp))
