@@ -101,6 +101,12 @@ fun WallQuickBar() {
             tb("↔", i.align == 1) { upd { it.copy(align = 1) } }
             tb("⇥", i.align == 2) { upd { it.copy(align = 2) } }
             Spacer(Modifier.width(4.dp))
+            // 欄寬：每次 ±5%（0＝自動）；「適」切換適寬字體
+            tb("寬－", false) { upd { it.copy(bw = if (it.bw <= 10) 0 else it.bw - 5) } }
+            Text(if (i.bw == 0) "自動" else "${i.bw}%", color = C.Text, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 2.dp))
+            tb("寬＋", false) { upd { it.copy(bw = if (it.bw == 0) 50 else (it.bw + 5).coerceAtMost(100)) } }
+            tb("適", i.fit) { upd { it.copy(fit = !it.fit, bw = if (!it.fit && it.bw == 0 && it.bh == 0) 50 else it.bw) } }
+            Spacer(Modifier.width(4.dp))
             // 動畫：快速切換常用款式（完整 16 款在 ✎）
             val quick = listOf(0, 2, 6, 3, 8, 7)
             tb(if (i.an == 0) "動畫" else com.claudeetf.app.ui.TextFx.nameOf(i.an), i.an != 0) {
@@ -154,6 +160,7 @@ fun wallItemSchema(): String = buildString {
     appendLine("a: 對齊 0 靠左、1 置中、2 靠右；h: 放在標題列 true/false")
     appendLine("mx/my: 外距 -8~24 / -12~24；px/py: 內距 -10~20 / -10~16（dp）")
     appendLine("ox: 水平位移 -60~60；oy: 垂直位移 -40~40（dp）")
+    appendLine("bw: 欄寬 0（自動）或 10~100（格寬 %）；bh: 欄高 0（自動）或 12~160（dp）；fit: 適寬字體 true/false（字級自動填滿欄寬／欄高）")
     appendLine("fl: 懸浮 true/false；fx/fy: 懸浮座標 0~100（%）；fa/fva: 基準點 0 左/上、1 中、2 右/下、3 自動")
     appendLine("an: 文字動畫 " + fxSchema())
     appendLine("at: 觸發 0 常駐、1 數值變動、2 上漲時、3 下跌時、4 進場時；asp: 速度 0~2；apw: 強度 0~2")
@@ -164,7 +171,7 @@ fun mergeWallItem(id: String, patch: org.json.JSONObject): List<String> {
     val names = linkedMapOf("z" to "字級", "b" to "粗體", "it" to "斜體", "ul" to "底線", "sk" to "刪除線", "tn" to "等寬數字",
         "c" to "文字顏色", "bg" to "底色", "ba" to "底色濃度", "a" to "對齊", "h" to "標題列", "mx" to "外距", "my" to "外距",
         "px" to "內距", "py" to "內距", "ox" to "水平位移", "oy" to "垂直位移", "fl" to "懸浮", "fx" to "X 座標", "fy" to "Y 座標",
-        "fa" to "水平基準點", "fva" to "垂直基準點", "an" to "動畫", "at" to "動畫觸發", "asp" to "動畫速度", "apw" to "動畫強度")
+        "fa" to "水平基準點", "fva" to "垂直基準點", "bw" to "欄寬", "bh" to "欄高", "fit" to "適寬字體", "an" to "動畫", "at" to "動畫觸發", "asp" to "動畫速度", "apw" to "動畫強度")
     val cur = AppState.wallStyle.item(id)
     val o = org.json.JSONObject()
     names.keys.forEach { k -> if (patch.has(k)) { val v = patch.get(k); if (v is Number || v is Boolean) o.put(k, v) } }

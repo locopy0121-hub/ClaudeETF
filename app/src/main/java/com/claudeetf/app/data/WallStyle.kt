@@ -55,11 +55,15 @@ data class WallItem(
     /** 刪除線、等寬數字（數字寬度固定，跳動時不左右晃） */
     val strike: Boolean = false,
     val tnum: Boolean = false,
+    /** 欄寬（格寬的 %，0＝自動）、欄高（dp，0＝自動）、適寬字體（字級自動填滿欄寬／欄高） */
+    val bw: Int = 0,
+    val bh: Int = 0,
+    val fit: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("s", show).put("h", head).put("i", inline).put("a", align)
         .put("z", size).put("b", bold).put("c", color).put("m", mono).put("l", label)
         .put("mx", mx).put("my", my).put("px", px).put("py", py).put("lg", lg).put("lh", lh).put("bg", bg).put("ba", ba).put("lc", lc).put("fl", fl).put("fx", fx).put("fy", fy).put("f", font)
-        .put("fa", fa).put("fva", fva).put("ox", ox).put("oy", oy).put("an", an).put("at", at).put("asp", asp).put("apw", apw).put("it", italic).put("ul", under).put("sk", strike).put("tn", tnum)
+        .put("fa", fa).put("fva", fva).put("ox", ox).put("oy", oy).put("an", an).put("at", at).put("asp", asp).put("apw", apw).put("it", italic).put("ul", under).put("sk", strike).put("tn", tnum).put("bw", bw).put("bh", bh).put("fit", fit)
 
     companion object {
         fun fromJson(o: JSONObject, d: WallItem) = WallItem(
@@ -75,6 +79,7 @@ data class WallItem(
             o.optInt("an", d.an).coerceIn(0, 20), o.optInt("at", d.at).coerceIn(0, 4), o.optInt("asp", d.asp).coerceIn(0, 2), o.optInt("apw", d.apw).coerceIn(0, 2),
             o.optBoolean("it", d.italic), o.optBoolean("ul", d.under),
             o.optBoolean("sk", d.strike), o.optBoolean("tn", d.tnum),
+            o.optInt("bw", d.bw).coerceIn(0, 100), o.optInt("bh", d.bh).coerceIn(0, 160), o.optBoolean("fit", d.fit),
         )
     }
 }

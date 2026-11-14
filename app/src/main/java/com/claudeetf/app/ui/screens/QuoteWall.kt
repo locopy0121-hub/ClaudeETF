@@ -254,7 +254,24 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
             if (pre.isNotEmpty()) { withStyle(SpanStyle(color = labelColor(i, main), fontWeight = FontWeight.Normal)) { append(pre) }; append(" ") }
             append(v)
         }
-        Text(txt, color = main, fontSize = i.size.sp, lineHeight = (i.size * 1.18f * ilh).sp,
+        // 欄寬（格寬 %）、欄高（dp）；適寬字體：字級自動放大或縮小到剛好填滿欄寬／欄高
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val boxW = if (i.bw > 0 && tileSize.width > 0) with(density) { (tileSize.width * i.bw / 100f).toDp() } else null
+        val boxH = if (i.bh > 0) i.bh.dp else null
+        val fs = if (i.fit && (boxW != null || boxH != null)) {
+            val tm = androidx.compose.ui.text.rememberTextMeasurer()
+            val ff = com.claudeetf.app.ui.fontOf(i.font.ifEmpty { if (i.mono) "mono" else "" })
+            val base = remember(txt, i.size, ff, i.bold) {
+                tm.measure(txt, androidx.compose.ui.text.TextStyle(fontSize = i.size.sp, fontFamily = ff, fontWeight = if (i.bold) FontWeight.Bold else FontWeight.Normal), maxLines = 1).size
+            }
+            with(density) {
+                val padX = (2 * i.px.coerceAtLeast(0)).dp.toPx(); val padY = (2 * i.py.coerceAtLeast(0)).dp.toPx()
+                val sw = boxW?.let { (it.toPx() - padX) / base.width.coerceAtLeast(1) } ?: Float.MAX_VALUE
+                val sh = boxH?.let { (it.toPx() - padY) / (base.height.coerceAtLeast(1) / 1.0f) } ?: Float.MAX_VALUE
+                (i.size * minOf(sw, sh) * 0.98f).coerceIn(6f, 200f)
+            }
+        } else i.size.toFloat()
+        Text(txt, color = main, fontSize = fs.sp, lineHeight = (fs * 1.18f * ilh).sp,
             fontWeight = if (i.bold) FontWeight.Bold else FontWeight.Normal, fontFamily = com.claudeetf.app.ui.fontOf(i.font.ifEmpty { if (i.mono) "mono" else "" }),
             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = textAlignOf(i.align),
             fontStyle = if (i.italic) androidx.compose.ui.text.font.FontStyle.Italic else null,
@@ -265,8 +282,11 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
                 .pick(i.id)
                 .then(if (i.an > 0 && (q != null || com.claudeetf.app.ui.LocalFxDemo.current)) Modifier.textFx(i.an, i.at, i.asp, i.apw, q?.price ?: 0.0, if (q != null) Trend.fg(q.change) else trend) else Modifier)
                 .outer(i.mx, i.my)
+                .then(if (boxW != null) Modifier.width(boxW) else Modifier)
+                .then(if (boxH != null) Modifier.height(boxH) else Modifier)
                 .then(if (bgc != null) Modifier.drawBehind { drawRoundRect(bgc, cornerRadius = CornerRadius(6.dp.toPx())) } else Modifier)
-                .outer(i.px, i.py))
+                .outer(i.px, i.py)
+                .then(if (boxH != null) Modifier.wrapContentHeight(Alignment.CenterVertically) else Modifier))
     }
     @Composable fun Line(line: List<WallItem>) {
         // 左、中、右三組：右組貼齊右緣、中組以整格寬度置中、左組使用剩下的寬度（不足時省略）
@@ -612,6 +632,13 @@ fun WallItemEditor(i: WallItem, st: WallStyle, set: ((WallStyle) -> WallStyle) -
                             onReset = { upd { it.copy(ox = 0, oy = 0) } })
                     }
                 }
+                DeckGroup("欄寬與欄高") {
+                    StepperSlider("欄寬", i.bw, 0, 100, 5, "%", show = { if (it == 0) "自動" else "$it%" }) { v -> upd { it.copy(bw = v) } }
+                    StepperSlider("欄高", i.bh, 0, 160, 2, " dp", show = { if (it == 0) "自動" else "$it dp" }) { v -> upd { it.copy(bh = v) } }
+                    WToggle("適寬字體（字級自動填滿欄寬／欄高）", i.fit) { v -> upd { it.copy(fit = v) } }
+                    Label(if (i.fit && i.bw == 0 && i.bh == 0) "請先設定欄寬或欄高，適寬字體才會作用。"
+                        else "欄寬以格子寬度的百分比計算，跨裝置與橫向都一致；欄內文字依「對齊」靠左、置中或靠右。")
+                }
                 DeckGroup("間距（可負）") {
                     StepperSlider("外距左右", i.mx, -8, 24, 1, " dp") { v -> upd { it.copy(mx = v) } }
                     StepperSlider("外距上下", i.my, -12, 24, 1, " dp") { v -> upd { it.copy(my = v) } }
@@ -634,7 +661,7 @@ fun WallItemEditor(i: WallItem, st: WallStyle, set: ((WallStyle) -> WallStyle) -
                 val d = WallStyle.DEFAULT_ITEMS.first { it.id == i.id }
                 upd { it.copy(head = d.head, inline = d.inline, align = d.align, size = d.size, bold = d.bold, color = d.color, mono = d.mono, font = d.font, label = d.label,
                     fl = d.fl, fx = d.fx, fy = d.fy, mx = d.mx, my = d.my, px = d.px, py = d.py, lg = d.lg, lh = d.lh, bg = d.bg, ba = d.ba, lc = d.lc,
-                    fa = d.fa, fva = d.fva, ox = d.ox, oy = d.oy, an = d.an, at = d.at, asp = d.asp, apw = d.apw, italic = d.italic, under = d.under, strike = d.strike, tnum = d.tnum) } }
+                    fa = d.fa, fva = d.fva, ox = d.ox, oy = d.oy, an = d.an, at = d.at, asp = d.asp, apw = d.apw, italic = d.italic, under = d.under, strike = d.strike, tnum = d.tnum, bw = d.bw, bh = d.bh, fit = d.fit) } }
                 .padding(horizontal = 10.dp, vertical = 6.dp))
         }
         if (i.id == "entry") Label("進場建議依 K 線分析（與個股頁相同），未分析過的個股會在背景分析後顯示。")
