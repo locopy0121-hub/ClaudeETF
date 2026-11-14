@@ -105,58 +105,33 @@ fun DesignerPanel(
 
     DockedPanel(onDismiss = onDone) {
         Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
-            // ① 視圖列
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("取消", color = C.Text2, fontSize = 14.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onCancel).padding(horizontal = 4.dp, vertical = 8.dp))
-                Row(Modifier.weight(1f).padding(horizontal = 6.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                    Text("$crumb › ", color = C.Muted, fontSize = 12.sp, maxLines = 1)
-                    Text(item, color = C.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                }
-                Box(Modifier.clip(RoundedCornerShape(8.dp)).background(if (hist.peek != null) C.Primary else C.Bg)
-                    .pointerInput(hist) { detectTapGestures(onPress = { hist.peekOn(); tryAwaitRelease(); hist.peekOff() }) }
-                    .padding(horizontal = 8.dp, vertical = 6.dp)) { Text("👁", fontSize = 13.sp) }
-                Spacer(Modifier.width(4.dp))
-                val on = remember(AbSlots.tick, ab) { AbSlots.active(ab) }
-                Row(Modifier.clip(RoundedCornerShape(8.dp)).background(C.Bg).padding(2.dp)) {
-                    listOf("A", "B").forEach { s ->
-                        Text(s, color = if (on == s) C.OnPrimary else C.Text2, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(if (on == s) C.Primary else Color.Transparent)
-                                .clickable { AbSlots.switchTo(ab, s) }.padding(horizontal = 9.dp, vertical = 4.dp))
+            // 點預覽中的項目即直接顯示工具內容：分頁＋單項性質列；其餘功能收在底部動作列
+            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 8.dp), content = content)
+            msg?.let { Text(it, color = if (it.startsWith("失敗") || it.startsWith("尚未")) C.Red else C.Primary, fontSize = 11.sp, maxLines = 2, modifier = Modifier.padding(bottom = 2.dp)) }
+            // 底部動作列：左側可橫向滑動，「完成」固定在右側
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ActBtn("↩", hist.undoCount > 0) { hist.undo() }
+                    ActBtn("↪", hist.redoCount > 0) { hist.redo() }
+                    Box(Modifier.clip(RoundedCornerShape(10.dp)).background(if (hist.peek != null) C.Primary else C.Bg)
+                        .pointerInput(hist) { detectTapGestures(onPress = { hist.peekOn(); tryAwaitRelease(); hist.peekOff() }) }
+                        .padding(horizontal = 10.dp, vertical = 8.dp)) { Text("👁", fontSize = 12.sp) }
+                    if (onCopy != null) ActBtn("🖌 吸取", true) { onCopy(); msg = "已吸取「$item」的樣式，點其他項目後按「貼上」" }
+                    if (onPaste != null) ActBtn("貼上", canPaste) { onPaste(); msg = null }
+                    val on = remember(AbSlots.tick, ab) { AbSlots.active(ab) }
+                    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(2.dp)) {
+                        listOf("A", "B").forEach { sl ->
+                            Text(sl, color = if (on == sl) C.OnPrimary else C.Text2, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (on == sl) C.Primary else Color.Transparent)
+                                    .clickable { AbSlots.switchTo(ab, sl) }.padding(horizontal = 9.dp, vertical = 6.dp))
+                        }
                     }
+                    if (ai != null) ActBtn(if (busy) "✨ …" else "✨ AI", !busy) { aiOpen = true }
+                    ActBtn("取消", true, onCancel)
                 }
                 Spacer(Modifier.width(6.dp))
-                Text("完成", color = C.OnPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Primary).clickable(onClick = onDone).padding(horizontal = 12.dp, vertical = 7.dp))
-            }
-            // ② AI 設計助手列
-            if (ai != null) {
-                Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (ai.cardCurrent != null) Text(if (card) "🧩 整卡" else "🎯 單點", color = C.Primary, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(C.Primary.copy(alpha = 0.12f)).clickable { card = !card }.padding(horizontal = 8.dp, vertical = 7.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("✨ " + (if (card) "描述整張卡片的風格…" else "如：${ai.target}欄寬 60%、字體填滿…"), color = C.Muted, fontSize = 12.sp, maxLines = 1,
-                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).border(1.dp, C.Border, RoundedCornerShape(16.dp))
-                            .clickable { aiOpen = true }.padding(horizontal = 12.dp, vertical = 7.dp))
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ai.chips.forEach { c ->
-                        Text(c, color = if (busy) C.Muted else C.Primary, fontSize = 12.sp, modifier = Modifier.clip(RoundedCornerShape(14.dp))
-                            .background(C.Primary.copy(alpha = 0.10f)).clickable(enabled = !busy) { runAi(c) }.padding(horizontal = 10.dp, vertical = 5.dp))
-                    }
-                }
-                msg?.let { Text(it, color = if (it.startsWith("失敗") || it.startsWith("尚未")) C.Red else C.Primary, fontSize = 11.sp, maxLines = 2, modifier = Modifier.padding(top = 2.dp)) }
-            }
-            top?.invoke(this)
-            // ③④ 分頁與單項性質列
-            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 8.dp), content = content)
-            // ⑤ 底部動作列
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 40.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                ActBtn("↩ 復原", hist.undoCount > 0) { hist.undo() }
-                ActBtn("↪ 重做", hist.redoCount > 0) { hist.redo() }
-                if (onCopy != null) ActBtn("🖌 吸取", true) { onCopy(); msg = "已吸取「$item」的樣式，點其他項目後按「貼上」" }
-                if (onPaste != null) ActBtn("貼上", canPaste) { onPaste() }
-                Spacer(Modifier.weight(1f))
-                ActBtn("💾 存 B 版", true) { AbSlots.saveTo(ab, "B"); msg = "已把目前設定存為方案 B" }
+                Text("完成", color = C.OnPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(C.Primary).clickable(onClick = onDone).padding(horizontal = 14.dp, vertical = 8.dp))
             }
         }
     }

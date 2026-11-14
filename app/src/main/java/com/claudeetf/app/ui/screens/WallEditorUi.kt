@@ -36,16 +36,17 @@ object WallEdit {
     val undoCount get() = Hist.wall.undoCount
     val redoCount get() = Hist.wall.redoCount
 
-    fun select(id: String) { Hist.wall.begin(); sel = if (sel == id && !sheet) null else id }
+    /** 點預覽中的項目：直接開啟工具內容（已開啟時切換項目，分頁不變） */
+    fun select(id: String) { Hist.wall.begin(); if (!sheet) DeckTab.tab = 0; sel = id; sheet = true }
     /** 每次修改都記一步（最多 50 步） */
     fun apply(f: (WallStyle) -> WallStyle) = Hist.wall.apply(f)
     fun undo() = Hist.wall.undo()
     fun redo() = Hist.wall.redo()
     fun openSheet() { Hist.wall.begin(); DeckTab.tab = 0; sheet = true }
     /** 完成：保留修改 */
-    fun done() { Hist.wall.end(); sheet = false }
+    fun done() { Hist.wall.end(); sheet = false; sel = null }
     /** 取消：還原到開始編輯前 */
-    fun cancel() { Hist.wall.cancel(); sheet = false }
+    fun cancel() { Hist.wall.cancel(); sheet = false; sel = null }
 }
 
 @Composable

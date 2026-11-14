@@ -482,8 +482,7 @@ fun WallPreview(modifier: Modifier = Modifier) {
             if (EditorMode.on) WallUndoRedo()
         }
         if (!EditorMode.on) Text(EDITOR_OFF_HINT, color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
-        else if (WallEdit.sel == null) Text("點格子裡的項目即可編輯", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
-        else WallQuickBar()
+        else if (!WallEdit.sheet) Text("點格子裡的任一項目即可編輯", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
     }
     if (EditorMode.on) WallEditSheet()
     }
