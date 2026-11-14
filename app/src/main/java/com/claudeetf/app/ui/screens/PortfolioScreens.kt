@@ -230,7 +230,7 @@ fun PortfolioScreen(nav: NavController) {
             item { Segmented(listOf("清單", "行情牆", "熱度圖"), view, { AppState.updateHoldView(it) }) }
             if (view == 1) {
                 // 長按格子：直接進入行情牆編輯（預覽即編輯）
-                item { QuoteWall(tw + us, onLongPress = { nav.navigate(Routes.settings("hold")) }) { nav.navigate(Routes.stock(it)) } }
+                item { QuoteWall(tw + us, onLongPress = if (EditorMode.on) ({ _ -> nav.navigate(Routes.settings("hold")) }) else null) { nav.navigate(Routes.stock(it)) } }
             }
             if (heat) {
                 item { HeatOptions() }

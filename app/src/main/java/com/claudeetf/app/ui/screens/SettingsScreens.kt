@@ -664,7 +664,12 @@ fun SettingsScreen(nav: NavController, section: String? = null) {
                 item { SettingRow("提醒中心", "${AppState.alerts.count { it.enabled }} 項開啟 ›") { nav.navigate(Routes.ALERTS) } }
             }
             if (section == "about") {
-                item { SettingRow("版本", version) }
+                item {
+                    // 連點版本 5 下開啟／關閉編輯工具（如同手機的開發人員選項）
+                    SettingRow("版本", version + if (EditorMode.on) " · 編輯工具已開啟" else "") {
+                        EditorMode.tap()?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show() }
+                    }
+                }
                 item { UpdateCard() }
                 item { ReleaseHistoryCard() }
                 item { ManualCard(nav) }
@@ -1327,7 +1332,8 @@ private fun SettingsMenu(nav: NavController, version: String) {
                 )
             }
             val q = query.trim()
-            val groups = if (q.isEmpty()) SETTINGS_SECTIONS else listOf("搜尋結果" to SETTINGS_SECTIONS.flatMap { it.second }.filter { e ->
+            val visible = SETTINGS_SECTIONS.map { (g, l) -> g to l.filter { it.key != "studio" || EditorMode.on } }
+            val groups = if (q.isEmpty()) visible else listOf("搜尋結果" to visible.flatMap { it.second }.filter { e ->
                 q.split(Regex("\\s+")).all { w -> e.title.contains(w, true) || (SETTINGS_KEYWORDS[e.key] ?: "").contains(w, true) || summary(e.key).contains(w, true) }
             })
             if (q.isNotEmpty() && groups.first().second.isEmpty()) item { Label("找不到「$q」相關的設定", Modifier.padding(8.dp)) }
@@ -1380,7 +1386,7 @@ internal fun HoldStylePreview() {
     com.claudeetf.app.ui.FxDemo {
     Column(Modifier.fillMaxWidth().trackPreviewEdge().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
         Label("預覽：點任一項目叫出編輯工具", Modifier.padding(top = 4.dp))
-        samples.forEach { h -> HoldingRow(h, true, st, sel = EditSel.hold, onPick = { Hist.hold.begin(); if (!EditSel.holdSheet) DeckTab.tab = 0; EditSel.hold = it; EditSel.holdSheet = true }) {} }
+        samples.forEach { h -> HoldingRow(h, true, st, sel = EditSel.hold, onPick = if (!EditorMode.on) null else { k -> Hist.hold.begin(); if (!EditSel.holdSheet) DeckTab.tab = 0; EditSel.hold = k; EditSel.holdSheet = true }) {} }
     }
     val hid = EditSel.hold
     if (EditSel.holdSheet && hid != null) {
@@ -1456,7 +1462,7 @@ private fun HoldStyleSettings(showPreview: Boolean = true) {
         st.items.forEachIndexed { i, id ->
             val on = st.shows(id)
             CollapsibleItem(HS.NAMES[id] ?: id, on, open == id, i > 0, i < st.items.lastIndex,
-                onName = { open = if (open == id) null else id },
+                onName = { if (EditorMode.on) open = if (open == id) null else id },
                 onShow = { v -> set { s -> s.copy(hidden = if (v) s.hidden - id else s.hidden + id) } },
                 onUp = { move(id, -1) }, onDown = { move(id, 1) },
                 summary = HS.ZONE_NAMES[st.zoneOf(id)] + (if (id in st.inline) " · 同上一行" else "")) {

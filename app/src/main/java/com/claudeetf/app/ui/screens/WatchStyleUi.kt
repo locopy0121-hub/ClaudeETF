@@ -500,11 +500,11 @@ fun WatchStylePreview() {
         }
         if (EditSel.watchView == 0) Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val sel = EditSel.watch?.takeIf { it.startsWith("c:") }?.removePrefix("c:")
-            WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)), sel) { Hist.watch.begin(); if (!EditSel.watchSheet) DeckTab.tab = 0; EditSel.watch = "c:$it"; EditSel.watchSheet = true }
+            WatchCardBody(sample, st, 0, Modifier.weight(1f).border(1.dp, C.Border, RoundedCornerShape(12.dp)), sel, if (!EditorMode.on) null else { k -> Hist.watch.begin(); if (!EditSel.watchSheet) DeckTab.tab = 0; EditSel.watch = "c:$k"; EditSel.watchSheet = true })
             // 只預覽單一個股，寬度與實際每列張數相同，騰出畫面給編輯工具
             Spacer(Modifier.weight((st.cardCols - 1).coerceAtLeast(1).toFloat()))
         } else Box(Modifier.fillMaxWidth().padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).background(C.Bg).padding(horizontal = 6.dp)) {
-            WatchRowBody(sample, st, Modifier, false, EditSel.watch?.takeIf { it.startsWith("l:") }?.removePrefix("l:")) { Hist.watch.begin(); if (!EditSel.watchSheet) DeckTab.tab = 0; EditSel.watch = "l:$it"; EditSel.watchSheet = true }
+            WatchRowBody(sample, st, Modifier, false, EditSel.watch?.takeIf { it.startsWith("l:") }?.removePrefix("l:"), if (!EditorMode.on) null else { k -> Hist.watch.begin(); if (!EditSel.watchSheet) DeckTab.tab = 0; EditSel.watch = "l:$k"; EditSel.watchSheet = true })
         }
     }
     val t = EditSel.watch
@@ -824,12 +824,12 @@ private fun ItemList(title: String, items: List<String>, names: Map<String, Stri
                      onMove: (Int, Int) -> Unit, onToggle: (String, Boolean) -> Unit,
                      detail: (@Composable (String) -> Unit)? = null) {
     Text(title, color = C.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-    if (detail != null) Label("點項目名稱展開細部設定；或直接點上方預覽中的項目叫出編輯工具")
+    if (detail != null) Label(if (EditorMode.on) "點項目名稱展開細部設定；或直接點上方預覽中的項目叫出編輯工具" else EDITOR_OFF_HINT)
     var open by remember { mutableStateOf<String?>(null) }
     items.forEachIndexed { i, id ->
         val on = id !in hidden
         CollapsibleItem(names[id] ?: id, on, open == id, i > 0, i < items.lastIndex,
-            onName = { if (detail != null) open = if (open == id) null else id },
+            onName = { if (detail != null && EditorMode.on) open = if (open == id) null else id },
             onShow = { onToggle(id, it) }, onUp = { onMove(i, i - 1) }, onDown = { onMove(i, i + 1) }) {
             detail?.invoke(id)
         }

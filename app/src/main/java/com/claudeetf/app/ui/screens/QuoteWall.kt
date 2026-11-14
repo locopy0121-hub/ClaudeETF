@@ -471,7 +471,7 @@ fun WallPreview(modifier: Modifier = Modifier) {
     com.claudeetf.app.ui.FxDemo {
     Column(modifier.fillMaxWidth().trackPreviewEdge().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
         // 預覽即編輯：點格子裡的任一項目即選取，下方出現快速工具列，✎ 叫出完整編輯工具
-        QuoteWall(samples, st, demo, editSel = WallEdit.sel, onPickItem = { WallEdit.select(it) }) {}
+        QuoteWall(samples, st, demo, editSel = if (EditorMode.on) WallEdit.sel else null, onPickItem = if (EditorMode.on) ({ k -> WallEdit.select(k) }) else null) {}
         Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("預覽", color = C.Muted, fontSize = 11.sp)
             listOf(0 to "一般", 1 to "漲停", -1 to "跌停").forEach { (v, n) ->
@@ -479,12 +479,13 @@ fun WallPreview(modifier: Modifier = Modifier) {
                     .background(if (demo == v) C.Primary else C.Bg).clickable { demo = v }.padding(horizontal = 9.dp, vertical = 3.dp))
             }
             Spacer(Modifier.weight(1f))
-            WallUndoRedo()
+            if (EditorMode.on) WallUndoRedo()
         }
-        if (WallEdit.sel == null) Text("點格子裡的項目即可編輯", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        if (!EditorMode.on) Text(EDITOR_OFF_HINT, color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        else if (WallEdit.sel == null) Text("點格子裡的項目即可編輯", color = C.Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
         else WallQuickBar()
     }
-    WallEditSheet()
+    if (EditorMode.on) WallEditSheet()
     }
 }
 
@@ -524,7 +525,7 @@ fun WallStyleSettings(showPreview: Boolean = true) {
             Label("點項目名稱展開細部設定；或直接點上方預覽格子裡的項目叫出編輯工具。")
             st.items.forEachIndexed { idx, i ->
                 CollapsibleItem(WallStyle.NAMES[i.id] ?: i.id, i.show, editing == i.id, idx > 0, idx < st.items.lastIndex,
-                    onName = { editing = if (editing == i.id) null else i.id },
+                    onName = { if (EditorMode.on) editing = if (editing == i.id) null else i.id },
                     onShow = { v -> set { it.withItem(i.copy(show = v)) } },
                     onUp = { set { s -> s.copy(items = s.items.toMutableList().also { l -> l.add(idx - 1, l.removeAt(idx)) }) } },
                     onDown = { set { s -> s.copy(items = s.items.toMutableList().also { l -> l.add(idx + 1, l.removeAt(idx)) }) } },
