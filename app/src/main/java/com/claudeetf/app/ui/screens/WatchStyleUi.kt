@@ -484,6 +484,7 @@ private fun infoLine(q: Quote, id: String, st: WatchStyle): (@Composable RowScop
 fun WatchStylePreview() {
     val st = Hist.watch.peek ?: AppState.watchStyle
     val sample = AppState.quotes.firstOrNull { it.price > 0 } ?: Quote("0050", "元大台灣50", Market.TW, 92.50, 97.15)
+    com.claudeetf.app.ui.FxDemo {
     Column(Modifier.fillMaxWidth().trackPreviewEdge().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("預覽", color = C.Muted, fontSize = 11.sp)
@@ -521,6 +522,7 @@ fun WatchStylePreview() {
             onAi = if (id == "spark") null else ({ ai = true }), onCancel = { Hist.watch.cancel(); close() }, onDone = { close() }) {
             Editor(t, AppState.watchStyle, { f -> Hist.watch.apply(f) }, bare = true) { close() }
         }
+    }
     }
 }
 

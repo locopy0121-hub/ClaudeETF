@@ -87,9 +87,17 @@ object TextFx {
  * @param value 監看的數值（變動時觸發）
  * @param tone 依漲跌的顏色（底色閃動、變色、光暈用）
  */
+/** 編輯預覽模式：動畫自動反覆示範，不必等數值變動 */
+val LocalFxDemo = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+@Composable
+fun FxDemo(content: @Composable () -> Unit) = androidx.compose.runtime.CompositionLocalProvider(LocalFxDemo provides true, content = content)
+
 @Composable
 fun Modifier.textFx(style: Int, trig: Int, speed: Int, power: Int, value: Double, tone: Color): Modifier {
     if (style <= 0) return this
+    // 編輯預覽中：非常駐的觸發（數值變動、上漲、下跌、進場）自動反覆示範，選了款式立刻看得到效果
+    val demo = LocalFxDemo.current
     val dur = when (speed) { 0 -> 1400; 2 -> 450; else -> 800 }
     val pw = when (power) { 0 -> 0.5f; 2 -> 1.6f; else -> 1f }
     val p = remember { Animatable(0f) }
@@ -104,7 +112,14 @@ fun Modifier.textFx(style: Int, trig: Int, speed: Int, power: Int, value: Double
             else -> { p.snapTo(0f); p.animateTo(1f, tween(dur / 3)); p.animateTo(0f, tween(dur * 2 / 3)) }
         }
     }
-    when (trig) {
+    if (demo && trig != 0) LaunchedEffect(style, trig, dur, power) {
+        var k = 0
+        while (true) {
+            dir = when (trig) { 2 -> 1; 3 -> -1; else -> if (k++ % 2 == 0) 1 else -1 }
+            playOnce()
+            kotlinx.coroutines.delay(maxOf(700L, dur.toLong()))
+        }
+    } else when (trig) {
         0 -> LaunchedEffect(style, dur) {
             while (true) {
                 when {
@@ -217,19 +232,17 @@ fun FxPicker(style: Int, trig: Int, speed: Int, power: Int, onChange: (style: In
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 androidx.compose.material3.Text("預覽", color = com.claudeetf.app.ui.theme.C.Muted, fontSize = 11.sp)
                 androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
-                // 常駐：持續循環；其他觸發：按「▶ 重播」模擬一次觸發
-                var replay by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+                // 預覽自動反覆示範（含數值變動、上漲、下跌、進場等觸發），選了就看得到
                 val down = trig == 3
                 val tone = com.claudeetf.app.ui.theme.Trend.fg(if (down) -1.0 else 1.0)
-                androidx.compose.runtime.key(if (trig == 4) replay else 0) {
+                FxDemo {
                     androidx.compose.material3.Text(if (down) "▼ 1,234.50" else "▲ 1,234.50", color = tone, fontSize = 18.sp,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                        modifier = Modifier.textFx(style, trig, speed, power, (if (down) -replay else replay).toDouble(), tone).padding(horizontal = 6.dp, vertical = 2.dp))
+                        modifier = Modifier.textFx(style, trig, speed, power, 0.0, tone).padding(horizontal = 6.dp, vertical = 2.dp))
                 }
                 androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
                 androidx.compose.material3.Text(TextFx.STYLES.firstOrNull { it.id == style }?.desc ?: "", color = com.claudeetf.app.ui.theme.C.Muted, fontSize = 11.sp,
                     modifier = Modifier.weight(1f))
-                if (trig != 0) chip("▶ 重播", false) { replay++ }
             }
             androidx.compose.material3.Text("觸發", color = com.claudeetf.app.ui.theme.C.Text, fontSize = 12.sp)
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {

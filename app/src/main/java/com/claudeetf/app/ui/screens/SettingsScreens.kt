@@ -1377,6 +1377,7 @@ internal fun AnimChooser(sel: Int, set: (Int) -> Unit) {
 internal fun HoldStylePreview() {
     val st = Hist.hold.peek ?: AppState.holdStyle
     val samples = AppState.holdings.take(1).ifEmpty { listOf(com.claudeetf.app.data.Holding("0050", 1000.0, 85.0)) }
+    com.claudeetf.app.ui.FxDemo {
     Column(Modifier.fillMaxWidth().trackPreviewEdge().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
         Label("預覽：點任一項目叫出編輯工具", Modifier.padding(top = 4.dp))
         samples.forEach { h -> HoldingRow(h, true, st, sel = EditSel.hold, onPick = { Hist.hold.begin(); EditSel.hold = it; EditSel.holdSheet = true }) {} }
@@ -1397,6 +1398,7 @@ internal fun HoldStylePreview() {
             onAi = { ai = true }, onCancel = { Hist.hold.cancel(); close() }, onDone = { close() }) {
             HoldItemDetail(hid, withOrder = true)
         }
+    }
     }
 }
 

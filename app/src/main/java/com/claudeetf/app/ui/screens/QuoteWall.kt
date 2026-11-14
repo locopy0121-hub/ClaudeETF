@@ -263,7 +263,7 @@ fun WallTile(h: Holding, st: WallStyle, modifier: Modifier = Modifier, demo: Int
             modifier = Modifier
                 .then(if (i.ox != 0 || i.oy != 0) Modifier.offset(i.ox.dp, i.oy.dp) else Modifier)
                 .pick(i.id)
-                .then(if (i.an > 0 && q != null) Modifier.textFx(i.an, i.at, i.asp, i.apw, q.price, Trend.fg(q.change)) else Modifier)
+                .then(if (i.an > 0 && (q != null || com.claudeetf.app.ui.LocalFxDemo.current)) Modifier.textFx(i.an, i.at, i.asp, i.apw, q?.price ?: 0.0, if (q != null) Trend.fg(q.change) else trend) else Modifier)
                 .outer(i.mx, i.my)
                 .then(if (bgc != null) Modifier.drawBehind { drawRoundRect(bgc, cornerRadius = CornerRadius(6.dp.toPx())) } else Modifier)
                 .outer(i.px, i.py))
@@ -447,6 +447,7 @@ fun WallPreview(modifier: Modifier = Modifier) {
     val st = Hist.wall.peek ?: AppState.wallStyle
     val samples = AppState.holdings.take(2).ifEmpty { listOf(Holding("0050", 1000.0, 85.0), Holding("0056", 1000.0, 36.0)) }
     var demo by remember { mutableStateOf(0) }
+    com.claudeetf.app.ui.FxDemo {
     Column(modifier.fillMaxWidth().trackPreviewEdge().clip(RoundedCornerShape(12.dp)).background(C.Card).border(1.dp, C.Border, RoundedCornerShape(12.dp)).padding(8.dp)) {
         // 預覽即編輯：點格子裡的任一項目即選取，下方出現快速工具列，✎ 叫出完整編輯工具
         QuoteWall(samples, st, demo, editSel = WallEdit.sel, onPickItem = { WallEdit.select(it) }) {}
@@ -463,6 +464,7 @@ fun WallPreview(modifier: Modifier = Modifier) {
         else WallQuickBar()
     }
     WallEditSheet()
+    }
 }
 
 /** 設定頁：行情牆樣式（即時預覽＋百葉窗分區） */

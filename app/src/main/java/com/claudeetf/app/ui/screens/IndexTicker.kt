@@ -87,6 +87,7 @@ fun IndexTicker(nav: NavController?, inList: Boolean = false, preview: Boolean =
         2 -> Trend.fg((tw.firstOrNull() ?: list.first()).changePct).copy(alpha = 0.14f)
         else -> C.Card
     }
+    androidx.compose.runtime.CompositionLocalProvider(com.claudeetf.app.ui.LocalFxDemo provides preview) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = if (inList || preview) 0.dp else 16.dp, vertical = 2.dp).clip(RoundedCornerShape(st.radius.dp)).background(bg)
             .padding(horizontal = st.padH.dp, vertical = st.padV.dp)
@@ -99,6 +100,7 @@ fun IndexTicker(nav: NavController?, inList: Boolean = false, preview: Boolean =
         if (tw.isNotEmpty()) Group("TW", C.Tw, MarketData.isTwIntraday(), tw, nav, st)
         if (tw.isNotEmpty() && us.isNotEmpty()) HGap((st.gap + 4).dp)
         if (us.isNotEmpty()) Group("US", C.Us, MarketData.usLive(), us, nav, st)
+    }
     }
 }
 
